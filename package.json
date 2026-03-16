@@ -16,9 +16,7 @@
     "dev": "vite",
     "build": "vite build && tsc -p tsconfig.lib.json",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "demo:dev": "npm --prefix demo run dev",
-    "demo:build": "npm --prefix demo run build"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.8",

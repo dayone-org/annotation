@@ -11,6 +11,8 @@ export type AnnotationRect = {
   scrollY: number
   pageX: number
   pageY: number
+  offsetX?: number
+  offsetY?: number
 }
 
 export type AnnotationComment = {
@@ -31,7 +33,6 @@ export type MarkerPosition = {
   y: number
   width: number
   height: number
-  connected: boolean
 }
 
 export type PendingAnnotation = {

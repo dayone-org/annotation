@@ -7,7 +7,7 @@ import {
   type PropsWithChildren,
 } from 'react'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { AnnotationContext, type AnnotationContextValue } from './review-context'
+import { AnnotationContext, type AnnotationContextValue } from './annotation-context'
 import { querySelectorSafely } from './selector'
 import {
   ANNOTATION_AUTHOR_KEY,
@@ -21,9 +21,7 @@ import type { AnnotationComment, AnnotationOverlayProps, AnnotationRect, Pending
 import {
   getCommentMap,
   getThreadRootId,
-  measureRect,
   normalizeComment,
-  rectToViewport,
   sortComments,
 } from './utils'
 
@@ -67,8 +65,6 @@ export function AnnotationProvider({
   const [showResolved, setShowResolvedState] = useState(() => readStoredBoolean(ANNOTATION_SHOW_RESOLVED_KEY, false))
   const [currentPath, setCurrentPath] = useState(() => getActivePath(pagePath))
   const [comments, setComments] = useState<AnnotationComment[]>([])
-  const [hoveredRect, setHoveredRect] = useState<AnnotationRect | null>(null)
-  const [flashRect, setFlashRect] = useState<AnnotationRect | null>(null)
   const [composer, setComposer] = useState<PendingAnnotation | null>(null)
   const [commentMode, setCommentMode] = useState(false)
   const [isPanelOpen, setPanelOpen] = useState(initialPanelOpen)
@@ -159,20 +155,6 @@ export function AnnotationProvider({
     }
   }, [client, currentPath, loadComments])
 
-  useEffect(() => {
-    if (!flashRect) {
-      return
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setFlashRect(null)
-    }, 1200)
-
-    return () => {
-      window.clearTimeout(timeoutId)
-    }
-  }, [flashRect])
-
   const setAuthor = useCallback((value: string) => {
     const nextValue = value.trim()
     writeStoredString(ANNOTATION_AUTHOR_KEY, nextValue)
@@ -187,7 +169,6 @@ export function AnnotationProvider({
   const closeComposer = useCallback(() => {
     setComposer(null)
     setCommentMode(false)
-    setHoveredRect(null)
   }, [])
 
   const ensureAuthor = useCallback(() => {
@@ -205,14 +186,12 @@ export function AnnotationProvider({
     }
 
     setComposer(null)
-    setHoveredRect(null)
     setCommentMode(true)
-    setPanelOpen(true)
+    setPanelOpen(false)
   }, [ensureAuthor])
 
   const cancelCommentMode = useCallback(() => {
     setCommentMode(false)
-    setHoveredRect(null)
     setComposer(null)
   }, [])
 
@@ -223,28 +202,25 @@ export function AnnotationProvider({
       rect,
     })
     setCommentMode(false)
-    setHoveredRect(rect)
-    setPanelOpen(true)
+    setPanelOpen(false)
   }, [])
 
-  const openReplyComposer = useCallback(
-    (parentId: string) => {
+  const openThreadComposer = useCallback(
+    (threadId: string, rect: AnnotationRect) => {
       if (!ensureAuthor()) {
         return
       }
 
-      const threadId = getThreadRootId(parentId, commentMap)
-      const parent = commentMap.get(threadId) ?? commentMap.get(parentId) ?? null
       setComposer({
-        parentId,
+        parentId: threadId,
         selector: null,
-        rect: parent?.rect ?? null,
+        rect,
       })
       setActiveThreadId(threadId)
-      setPanelOpen(true)
       setCommentMode(false)
+      setPanelOpen(false)
     },
-    [commentMap, ensureAuthor],
+    [ensureAuthor],
   )
 
   const scrollToComment = useCallback(
@@ -267,7 +243,6 @@ export function AnnotationProvider({
           block: 'center',
           inline: 'center',
         })
-        setFlashRect(measureRect(targetElement))
         return
       }
 
@@ -277,7 +252,6 @@ export function AnnotationProvider({
           top: nextTop,
           behavior: 'smooth',
         })
-        setFlashRect(rectToViewport(anchorComment.rect))
       }
     },
     [commentMap],
@@ -319,7 +293,6 @@ export function AnnotationProvider({
       })
       setComposer(null)
       setCommentMode(false)
-      setHoveredRect(null)
       setActiveThreadId(inserted.parent_id ? getThreadRootId(inserted.parent_id, commentMap) : inserted.id)
       return true
     },
@@ -379,7 +352,11 @@ export function AnnotationProvider({
 
       if ((event.key === 'c' || event.key === 'C') && !isTyping) {
         event.preventDefault()
-        startCommentMode()
+        if (commentMode) {
+          cancelCommentMode()
+        } else {
+          startCommentMode()
+        }
         return
       }
 
@@ -414,15 +391,12 @@ export function AnnotationProvider({
       composer,
       currentPath,
       errorMessage,
-      flashRect,
-      hoveredRect,
       isLoading,
       isPanelOpen,
-      openReplyComposer,
+      openThreadComposer,
       scrollToComment,
       selectElement,
       setAuthor,
-      setHoveredRect,
       setPanelOpen,
       setShowResolved,
       showResolved,
@@ -440,11 +414,9 @@ export function AnnotationProvider({
       composer,
       currentPath,
       errorMessage,
-      flashRect,
-      hoveredRect,
       isLoading,
       isPanelOpen,
-      openReplyComposer,
+      openThreadComposer,
       scrollToComment,
       selectElement,
       setAuthor,

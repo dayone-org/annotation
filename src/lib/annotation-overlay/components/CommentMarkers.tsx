@@ -3,15 +3,50 @@ import { cn } from '@/lib/utils'
 import { querySelectorSafely } from '../selector'
 import { useAnnotation } from '../useAnnotation'
 import type { MarkerPosition } from '../types'
-import { getMarkerPosition, getThreadCount, getTopLevelComments, markerPositionsEqual } from '../utils'
+import { getMarkerPosition, getThreadCount, getTopLevelComments, markerPositionsEqual, measureRect } from '../utils'
 
 export function CommentMarkers() {
-  const { activeThreadId, comments, scrollToComment, showResolved } = useAnnotation()
+  const { activeThreadId, comments, openThreadComposer, showResolved } = useAnnotation()
   const [positions, setPositions] = useState<Record<string, MarkerPosition>>({})
 
   const topLevelComments = useMemo(() => {
     return getTopLevelComments(comments).filter((comment) => showResolved || !comment.resolved)
   }, [comments, showResolved])
+
+  const stackedOffsets = useMemo(() => {
+    const groups = new Map<string, string[]>()
+
+    for (const comment of topLevelComments) {
+      const position = positions[comment.id]
+      if (!position) {
+        continue
+      }
+
+      const key = `${Math.round(position.x)}:${Math.round(position.y)}`
+      const group = groups.get(key)
+      if (group) {
+        group.push(comment.id)
+      } else {
+        groups.set(key, [comment.id])
+      }
+    }
+
+    const nextOffsets: Record<string, { x: number; y: number }> = {}
+
+    for (const ids of groups.values()) {
+      ids.forEach((id, index) => {
+        const column = index % 3
+        const row = Math.floor(index / 3)
+
+        nextOffsets[id] = {
+          x: column * 10,
+          y: row * 10,
+        }
+      })
+    }
+
+    return nextOffsets
+  }, [positions, topLevelComments])
 
   const updateMarkers = useCallback(() => {
     setPositions((previous) => {
@@ -22,17 +57,7 @@ export function CommentMarkers() {
       for (const comment of topLevelComments) {
         visibleIds.add(comment.id)
 
-        const target = querySelectorSafely(comment.selector)
-        const targetRect = target?.getBoundingClientRect()
-        const nextPosition = targetRect
-          ? {
-              x: targetRect.left,
-              y: targetRect.top,
-              width: targetRect.width,
-              height: targetRect.height,
-              connected: true,
-            }
-          : getMarkerPosition(comment.rect)
+        const nextPosition = getMarkerPosition(comment.rect, querySelectorSafely(comment.selector))
 
         if (!nextPosition) {
           if (comment.id in nextPositions) {
@@ -61,7 +86,6 @@ export function CommentMarkers() {
 
   useEffect(() => {
     let frameId = 0
-    let timeoutId = 0
 
     const schedule = () => {
       if (frameId !== 0) {
@@ -74,31 +98,19 @@ export function CommentMarkers() {
       })
     }
 
-    const observer = new MutationObserver(() => {
-      window.clearTimeout(timeoutId)
-      timeoutId = window.setTimeout(schedule, 32)
-    })
-
     schedule()
     window.addEventListener('scroll', schedule, { passive: true })
     window.addEventListener('resize', schedule)
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-    })
 
     return () => {
       window.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', schedule)
       window.cancelAnimationFrame(frameId)
-      window.clearTimeout(timeoutId)
-      observer.disconnect()
     }
   }, [topLevelComments, updateMarkers])
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-[2147483601]">
+    <div className="pointer-events-none fixed inset-0 z-2147483601">
       {topLevelComments.map((comment) => {
         const position = positions[comment.id]
         if (!position) {
@@ -106,21 +118,21 @@ export function CommentMarkers() {
         }
 
         const threadCount = getThreadCount(comments, comment.id)
-        const offsetX = Math.min(Math.max(position.width - 36, 12), 28)
-        const offsetY = Math.min(Math.max(position.height - 36, 10), 18)
+        const offsetX = 10
+        const offsetY = 10
+        const stackedOffset = stackedOffsets[comment.id] ?? { x: 0, y: 0 }
 
         return (
           <button
             key={comment.id}
             className={cn(
-              'pointer-events-auto fixed left-0 top-0 inline-flex size-8 items-center justify-center rounded-full border border-background/80 text-[11px] font-semibold shadow-lg transition',
+              'pointer-events-auto fixed left-0 top-0 inline-flex size-8 items-center justify-center rounded-full border border-background/80 text-[11px] font-semibold shadow-lg transition cursor-pointer',
               comment.id === activeThreadId ? 'bg-primary text-primary-foreground' : 'bg-foreground text-background',
               comment.resolved && 'opacity-35',
-              !position.connected && 'bg-muted-foreground text-background',
             )}
-            onClick={() => scrollToComment(comment.id)}
+            onClick={(event) => openThreadComposer(comment.id, measureRect(event.currentTarget))}
             style={{
-              transform: `translate(${position.x + offsetX}px, ${position.y + offsetY}px)`,
+              transform: `translate(${position.x + offsetX + stackedOffset.x}px, ${position.y + offsetY + stackedOffset.y}px)`,
             }}
             title={`${comment.author} · ${comment.resolved ? 'Resolved' : 'Open'} · ${threadCount} message${
               threadCount === 1 ? '' : 's'

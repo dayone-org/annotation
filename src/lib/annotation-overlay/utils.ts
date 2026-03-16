@@ -21,6 +21,29 @@ export function measureRect(target: HTMLElement | DOMRect): AnnotationRect {
   }
 }
 
+export function measurePoint(clientX: number, clientY: number, target?: HTMLElement | DOMRect): AnnotationRect {
+  const targetRect = target instanceof DOMRect ? target : target?.getBoundingClientRect()
+  const pageX = clientX + window.scrollX
+  const pageY = clientY + window.scrollY
+
+  return {
+    x: clientX,
+    y: clientY,
+    top: clientY,
+    left: clientX,
+    right: clientX + 1,
+    bottom: clientY + 1,
+    width: 1,
+    height: 1,
+    scrollX: window.scrollX,
+    scrollY: window.scrollY,
+    pageX,
+    pageY,
+    offsetX: targetRect ? clientX - targetRect.left : undefined,
+    offsetY: targetRect ? clientY - targetRect.top : undefined,
+  }
+}
+
 export function rectToViewport(rect: AnnotationRect): AnnotationRect {
   const left = rect.pageX - window.scrollX
   const top = rect.pageY - window.scrollY
@@ -114,9 +137,20 @@ export function formatTimestamp(value: string): string {
   }).format(date)
 }
 
-export function getMarkerPosition(rect: AnnotationRect | null): MarkerPosition | null {
+export function getMarkerPosition(rect: AnnotationRect | null, target?: HTMLElement | null): MarkerPosition | null {
   if (!rect) {
     return null
+  }
+
+  if (target && rect.offsetX !== undefined && rect.offsetY !== undefined) {
+    const targetRect = target.getBoundingClientRect()
+
+    return {
+      x: targetRect.left + rect.offsetX,
+      y: targetRect.top + rect.offsetY,
+      width: 1,
+      height: 1,
+    }
   }
 
   const projected = rectToViewport(rect)
@@ -124,9 +158,8 @@ export function getMarkerPosition(rect: AnnotationRect | null): MarkerPosition |
   return {
     x: projected.left,
     y: projected.top,
-    width: projected.width,
-    height: projected.height,
-    connected: false,
+    width: 1,
+    height: 1,
   }
 }
 
@@ -143,22 +176,6 @@ export function markerPositionsEqual(left: MarkerPosition | undefined, right: Ma
     left.x === right.x &&
     left.y === right.y &&
     left.width === right.width &&
-    left.height === right.height &&
-    left.connected === right.connected
-  )
-}
-
-export function isInteractiveElement(target: HTMLElement | null): boolean {
-  if (!target) {
-    return false
-  }
-
-  const tagName = target.tagName
-  return (
-    target.isContentEditable ||
-    tagName === 'INPUT' ||
-    tagName === 'TEXTAREA' ||
-    tagName === 'SELECT' ||
-    tagName === 'BUTTON'
+    left.height === right.height
   )
 }

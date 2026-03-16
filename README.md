@@ -29,7 +29,7 @@ ANNOTATION_SUPABASE_URL=
 ANNOTATION_SUPABASE_ANON_KEY=
 ```
 
-For the local Vite demo page, mirror them as:
+For the local Vite app in this repo, mirror them as:
 
 ```bash
 VITE_ANNOTATION_SUPABASE_URL=
@@ -57,16 +57,15 @@ create table comments (
 
 - Current-page comment loading and realtime sync via Supabase
 - `C`, `Esc`, and `R` keyboard shortcuts
-- Selector generation with stored rect fallback
-- Marker repositioning on scroll, resize, and DOM mutations
+- Element selection with relative position offsets
+- Marker repositioning on scroll and resize
 - Local annotator name and resolved-thread visibility preferences
 
-## Demo app
-
-There is a standalone Vite demo in [demo/package.json](/Users/Bean.Duong/Desktop/dev/annotation/demo/package.json) with multiple routes for testing the overlay against cards, tables, sticky panels, and forms.
+## Local playground
 
 ```bash
-cd demo
 npm install
 npm run dev
 ```
+
+The root app renders [src/App.tsx](/Users/Bean.Duong/Desktop/dev/annotation/src/App.tsx), which mounts `AnnotationOverlay` directly and is the intended local sandbox for the component.

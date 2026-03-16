@@ -1,19 +1,11 @@
 import { useEffect } from 'react'
 import { generateSelector } from '../selector'
 import { useAnnotation } from '../useAnnotation'
-import { measureRect } from '../utils'
+import { measurePoint } from '../utils'
 
 function getSelectableElement(target: EventTarget | null): HTMLElement | null {
-  if (!target) {
-    return null
-  }
-
   const node = target instanceof HTMLElement ? target : target instanceof Node ? target.parentElement : null
-  if (!node) {
-    return null
-  }
-
-  if (node.closest('[data-review-overlay-root="true"]')) {
+  if (!node || node.closest('[data-annotation-overlay-root="true"]')) {
     return null
   }
 
@@ -25,22 +17,11 @@ function getSelectableElement(target: EventTarget | null): HTMLElement | null {
 }
 
 export function InteractionLayer() {
-  const { commentMode, selectElement, setHoveredRect } = useAnnotation()
+  const { commentMode, selectElement } = useAnnotation()
 
   useEffect(() => {
     if (!commentMode) {
-      setHoveredRect(null)
       return
-    }
-
-    const handlePointerMove = (event: PointerEvent) => {
-      const target = getSelectableElement(event.target)
-      if (!target) {
-        setHoveredRect(null)
-        return
-      }
-
-      setHoveredRect(measureRect(target))
     }
 
     const handleClick = (event: MouseEvent) => {
@@ -52,19 +33,15 @@ export function InteractionLayer() {
       event.preventDefault()
       event.stopPropagation()
 
-      const selector = generateSelector(target)
-      const rect = measureRect(target)
-      selectElement(selector, rect)
+      selectElement(generateSelector(target), measurePoint(event.clientX, event.clientY, target))
     }
 
-    document.addEventListener('pointermove', handlePointerMove, true)
     document.addEventListener('click', handleClick, true)
 
     return () => {
-      document.removeEventListener('pointermove', handlePointerMove, true)
       document.removeEventListener('click', handleClick, true)
     }
-  }, [commentMode, selectElement, setHoveredRect])
+  }, [commentMode, selectElement])
 
   return null
 }

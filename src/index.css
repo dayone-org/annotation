@@ -49,15 +49,6 @@
 
 @layer base {
   :root {
-    font-family: 'IBM Plex Sans', 'Avenir Next', 'Segoe UI', sans-serif;
-    line-height: 1.5;
-    font-weight: 400;
-    color: var(--foreground);
-    background: var(--background);
-    font-synthesis: none;
-    text-rendering: optimizeLegibility;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);
     --card: oklch(1 0 0);

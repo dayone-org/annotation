@@ -9,8 +9,6 @@ export type AnnotationContextValue = {
   composer: PendingAnnotation | null
   currentPath: string
   errorMessage: string | null
-  flashRect: AnnotationRect | null
-  hoveredRect: AnnotationRect | null
   isLoading: boolean
   isPanelOpen: boolean
   setPanelOpen: (open: boolean) => void
@@ -20,9 +18,8 @@ export type AnnotationContextValue = {
   startCommentMode: () => void
   cancelCommentMode: () => void
   selectElement: (selector: string, rect: AnnotationRect) => void
-  openReplyComposer: (parentId: string) => void
+  openThreadComposer: (threadId: string, rect: AnnotationRect) => void
   closeComposer: () => void
-  setHoveredRect: (rect: AnnotationRect | null) => void
   submitComment: (text: string) => Promise<boolean>
   scrollToComment: (commentId: string) => void
   toggleResolved: (commentId: string) => Promise<void>
