@@ -16,6 +16,6 @@
     "utils": "@/lib/utils"
   },
   "menuColor": "default",
-  "menuAccent": "bold",
+  "menuAccent": "subtle",
   "registries": {}
 }

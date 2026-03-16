@@ -1,7 +1,7 @@
 import { useState } from 'react'
+import { Button } from '../../../components/ui/button'
+import { Input } from '../../../components/ui/input'
 import { useAnnotation } from '../useAnnotation'
-import { Button } from './ui/button'
-import { Input } from './ui/input'
 
 export function AuthorGate() {
   const { setAuthor } = useAnnotation()
@@ -16,9 +16,7 @@ export function AuthorGate() {
       }}
     >
       <div className="grid gap-1">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Annotator name</p>
         <h3 className="text-lg font-semibold text-slate-950">What&apos;s your name?</h3>
-        <p className="text-sm text-slate-500">Stored locally and attached to every annotation you create.</p>
       </div>
 
       <label className="grid gap-2 text-sm font-medium text-slate-700">

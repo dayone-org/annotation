@@ -1,16 +1,16 @@
 import { useState } from 'react'
+import { Button } from '../../../components/ui/button'
+import { Avatar } from '../../../components/ui/avatar'
+import { Badge } from '../../../components/ui/badge'
+import { ScrollArea } from '../../../components/ui/scroll-area'
+import { Separator } from '../../../components/ui/separator'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../../../components/ui/sheet'
+import { Textarea } from '../../../components/ui/textarea'
 import { MessageSquarePlus } from 'lucide-react'
 import { useAnnotation } from '../useAnnotation'
 import type { AnnotationComment } from '../types'
 import { formatTimestamp, getInitials, getReplies, getThreadRootId, getTopLevelComments } from '../utils'
 import { AuthorGate } from './AuthorGate'
-import { Avatar } from './ui/avatar'
-import { Badge } from './ui/badge'
-import { Button } from './ui/button'
-import { ScrollArea } from './ui/scroll-area'
-import { Separator } from './ui/separator'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from './ui/sheet'
-import { Textarea } from './ui/textarea'
 
 type ComposerProps = {
   label: string

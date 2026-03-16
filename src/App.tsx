@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { AnnotationOverlay } from './index'
-import './App.css'
 
 const annotationSupabaseUrl = import.meta.env.VITE_ANNOTATION_SUPABASE_URL ?? ''
 const annotationSupabaseAnonKey = import.meta.env.VITE_ANNOTATION_SUPABASE_ANON_KEY ?? ''
@@ -30,28 +29,35 @@ function App() {
   const [isAnnotationEnabled, setAnnotationEnabled] = useState(() => Boolean(annotationSupabaseUrl && annotationSupabaseAnonKey))
 
   return (
-    <div className="app-shell">
-      <header className="hero">
-        <div className="hero-copy">
-          <p className="eyebrow">Annotation package</p>
-          <h1>Annotate live UI directly on the page you are debugging.</h1>
-          <p className="lede">
+    <div className="mx-auto w-[min(1180px,calc(100vw-40px))] px-0 pt-7 pb-[72px] max-[960px]:w-[min(calc(100vw-24px),1180px)] max-[960px]:pt-3">
+      <header className="relative mb-6 grid gap-6 overflow-hidden rounded-[28px] border border-slate-400/25 bg-[radial-gradient(circle_at_top_left,rgba(125,211,252,0.22),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.94),rgba(248,250,252,0.88))] p-[34px] shadow-[0_24px_60px_rgba(15,23,42,0.08)] md:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.9fr)] max-[960px]:grid-cols-1 max-[960px]:p-[22px]">
+        <div className="grid gap-[18px]">
+          <p className="m-0 text-[0.78rem] font-bold tracking-[0.18em] text-teal-700 uppercase">Annotation package</p>
+          <h1 className="m-0 max-w-[13ch] text-[clamp(2.6rem,6vw,5rem)] leading-[0.94] font-semibold tracking-[-0.06em]">
+            Annotate live UI directly on the page you are debugging.
+          </h1>
+          <p className="max-w-[62ch] text-[1.05rem] text-slate-700">
             This package mounts an overlay, lets an annotator click real DOM targets, and stores page-scoped threads in
             Supabase without turning the app itself into a product feature.
           </p>
         </div>
 
-        <div className="hero-panel">
-          <div className="status-row">
-            <span className={`status-dot${isAnnotationEnabled ? ' status-dot--on' : ''}`}></span>
+        <div className="grid content-between gap-[18px] rounded-[22px] bg-slate-900/95 p-[22px] text-slate-200">
+          <div className="flex items-center gap-[10px]">
+            <span
+              className={[
+                'h-3 w-3 rounded-full shadow-[0_0_0_6px_rgba(249,115,22,0.16)]',
+                isAnnotationEnabled ? 'bg-green-500 shadow-[0_0_0_6px_rgba(34,197,94,0.16)]' : 'bg-orange-500',
+              ].join(' ')}
+            ></span>
             <strong>{isAnnotationEnabled ? 'Overlay enabled' : 'Overlay disabled'}</strong>
           </div>
-          <p>
+          <p className="m-0 text-slate-200/85">
             Pass `supabaseUrl` and `supabaseAnonKey` into <code>{'<AnnotationOverlay />'}</code>. In this Vite demo, set
             <code> VITE_ANNOTATION_SUPABASE_URL</code> and <code>VITE_ANNOTATION_SUPABASE_ANON_KEY</code>.
           </p>
           <button
-            className="hero-button"
+            className="justify-self-start rounded-full bg-slate-50 px-[18px] py-3 text-[0.92rem] leading-none font-bold text-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!annotationSupabaseUrl || !annotationSupabaseAnonKey}
             onClick={() => setAnnotationEnabled((current) => !current)}
             type="button"
@@ -61,29 +67,32 @@ function App() {
         </div>
       </header>
 
-      <main className="content-grid">
-        <section className="panel panel--feature">
-          <div className="panel-heading">
-            <p className="eyebrow">Implementation shape</p>
-            <h2>What this first pass already covers</h2>
+      <main className="grid gap-6 md:grid-cols-12">
+        <section className="relative grid gap-[18px] overflow-hidden rounded-[28px] border border-slate-400/25 bg-[radial-gradient(circle_at_top_left,rgba(125,211,252,0.22),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.94),rgba(248,250,252,0.88))] p-[26px] shadow-[0_24px_60px_rgba(15,23,42,0.08)] md:col-span-8">
+          <div className="grid gap-2">
+            <p className="m-0 text-[0.78rem] font-bold tracking-[0.18em] text-teal-700 uppercase">Implementation shape</p>
+            <h2 className="m-0 text-2xl font-semibold text-slate-950">What this first pass already covers</h2>
           </div>
-          <div className="card-grid">
+          <div className="grid gap-4 sm:grid-cols-[repeat(auto-fit,minmax(210px,1fr))]">
             {featureCards.map((card) => (
-              <article className="info-card" key={card.title}>
-                <h3>{card.title}</h3>
-                <p>{card.detail}</p>
+              <article
+                className="rounded-[20px] border border-slate-400/20 bg-white/80 p-[18px]"
+                key={card.title}
+              >
+                <h3 className="m-0 text-lg font-semibold text-slate-950">{card.title}</h3>
+                <p className="m-0 text-slate-700">{card.detail}</p>
               </article>
             ))}
           </div>
         </section>
 
-        <section className="panel panel--rail">
-          <div className="panel-heading">
-            <p className="eyebrow">Checklist</p>
-            <h2>Database contract</h2>
+        <section className="relative grid gap-[18px] overflow-hidden rounded-[28px] border border-slate-400/25 bg-[radial-gradient(circle_at_top_left,rgba(125,211,252,0.22),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.94),rgba(248,250,252,0.88))] p-[26px] shadow-[0_24px_60px_rgba(15,23,42,0.08)] md:col-span-4">
+          <div className="grid gap-2">
+            <p className="m-0 text-[0.78rem] font-bold tracking-[0.18em] text-teal-700 uppercase">Checklist</p>
+            <h2 className="m-0 text-2xl font-semibold text-slate-950">Database contract</h2>
           </div>
-          <div className="schema-card">
-            <pre>{`comments(
+          <div className="rounded-[20px] border border-slate-400/20 bg-white/80 p-[18px]">
+            <pre className="m-0 whitespace-pre-wrap font-mono text-[0.92rem] leading-[1.6] text-slate-950">{`comments(
   id uuid primary key,
   page_path text not null,
   selector text,
@@ -98,24 +107,24 @@ function App() {
           </div>
         </section>
 
-        <section className="panel panel--timeline">
-          <div className="panel-heading">
-            <p className="eyebrow">Release notes</p>
-            <h2>Annotation interaction decisions</h2>
+        <section className="relative grid gap-[18px] overflow-hidden rounded-[28px] border border-slate-400/25 bg-[radial-gradient(circle_at_top_left,rgba(125,211,252,0.22),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.94),rgba(248,250,252,0.88))] p-[26px] shadow-[0_24px_60px_rgba(15,23,42,0.08)] md:col-span-8">
+          <div className="grid gap-2">
+            <p className="m-0 text-[0.78rem] font-bold tracking-[0.18em] text-teal-700 uppercase">Release notes</p>
+            <h2 className="m-0 text-2xl font-semibold text-slate-950">Annotation interaction decisions</h2>
           </div>
-          <ul className="timeline">
+          <ul className="m-0 grid gap-[14px] pl-5 text-slate-700 marker:text-teal-700">
             {releaseNotes.map((note) => (
               <li key={note}>{note}</li>
             ))}
           </ul>
         </section>
 
-        <section className="panel panel--cta">
-          <div className="panel-heading">
-            <p className="eyebrow">Try the surface</p>
-            <h2>Use this page as your local annotation sandbox.</h2>
+        <section className="relative grid gap-[18px] overflow-hidden rounded-[28px] border border-slate-400/25 bg-[radial-gradient(circle_at_top_left,rgba(125,211,252,0.22),transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.94),rgba(248,250,252,0.88))] p-[26px] shadow-[0_24px_60px_rgba(15,23,42,0.08)] md:col-span-4">
+          <div className="grid gap-2">
+            <p className="m-0 text-[0.78rem] font-bold tracking-[0.18em] text-teal-700 uppercase">Try the surface</p>
+            <h2 className="m-0 text-2xl font-semibold text-slate-950">Use this page as your local annotation sandbox.</h2>
           </div>
-          <p>
+          <p className="m-0 text-slate-700">
             Annotate headers, cards, list items, or this CTA block itself. The overlay is independent from the demo
             content so the package stays easy to lift into another React app.
           </p>

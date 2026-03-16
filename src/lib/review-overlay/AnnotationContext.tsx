@@ -27,13 +27,24 @@ import {
   sortComments,
 } from './utils'
 
-function createSupabaseClient(url: string, key: string): SupabaseClient {
-  return createClient(url, key, {
+const supabaseClientCache = new Map<string, SupabaseClient>()
+
+function getSupabaseClient(url: string, key: string): SupabaseClient {
+  const cacheKey = `${url}::${key}`
+  const cachedClient = supabaseClientCache.get(cacheKey)
+  if (cachedClient) {
+    return cachedClient
+  }
+
+  const client = createClient(url, key, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
     },
   })
+
+  supabaseClientCache.set(cacheKey, client)
+  return client
 }
 
 function getActivePath(pathOverride?: string): string {
@@ -51,7 +62,7 @@ export function AnnotationProvider({
   pagePath,
   initialPanelOpen = false,
 }: PropsWithChildren<AnnotationOverlayProps>) {
-  const [client] = useState(() => createSupabaseClient(supabaseUrl, supabaseAnonKey))
+  const client = useMemo(() => getSupabaseClient(supabaseUrl, supabaseAnonKey), [supabaseAnonKey, supabaseUrl])
   const [author, setAuthorState] = useState(() => readStoredString(ANNOTATION_AUTHOR_KEY))
   const [showResolved, setShowResolvedState] = useState(() => readStoredBoolean(ANNOTATION_SHOW_RESOLVED_KEY, false))
   const [currentPath, setCurrentPath] = useState(() => getActivePath(pagePath))
