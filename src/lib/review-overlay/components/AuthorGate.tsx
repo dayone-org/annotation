@@ -9,17 +9,17 @@ export function AuthorGate() {
 
   return (
     <form
-      className="grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4"
+      className="grid gap-4 rounded-xl border border-border bg-muted/40 p-4"
       onSubmit={(event) => {
         event.preventDefault()
         setAuthor(value)
       }}
     >
       <div className="grid gap-1">
-        <h3 className="text-lg font-semibold text-slate-950">What&apos;s your name?</h3>
+        <h3 className="text-lg font-semibold text-foreground">What&apos;s your name?</h3>
       </div>
 
-      <label className="grid gap-2 text-sm font-medium text-slate-700">
+      <label className="grid gap-2 text-sm font-medium text-foreground">
         <span>Name</span>
         <Input
           autoFocus

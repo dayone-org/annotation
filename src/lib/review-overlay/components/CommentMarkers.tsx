@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { cn } from '@/lib/utils'
 import { querySelectorSafely } from '../selector'
-import { cn } from '../cn'
 import { useAnnotation } from '../useAnnotation'
 import type { MarkerPosition } from '../types'
 import { getMarkerPosition, getThreadCount, getTopLevelComments, markerPositionsEqual } from '../utils'
@@ -113,10 +113,10 @@ export function CommentMarkers() {
           <button
             key={comment.id}
             className={cn(
-              'pointer-events-auto fixed left-0 top-0 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/70 text-[11px] font-semibold text-white shadow-lg shadow-slate-900/20 transition',
-              comment.id === activeThreadId ? 'bg-blue-600' : 'bg-slate-900',
+              'pointer-events-auto fixed left-0 top-0 inline-flex size-8 items-center justify-center rounded-full border border-background/80 text-[11px] font-semibold shadow-lg transition',
+              comment.id === activeThreadId ? 'bg-primary text-primary-foreground' : 'bg-foreground text-background',
               comment.resolved && 'opacity-35',
-              !position.connected && 'bg-amber-700',
+              !position.connected && 'bg-muted-foreground text-background',
             )}
             onClick={() => scrollToComment(comment.id)}
             style={{

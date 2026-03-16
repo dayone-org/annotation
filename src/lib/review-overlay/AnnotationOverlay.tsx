@@ -17,7 +17,7 @@ function AnnotationOverlayScene() {
       <HighlightBox rect={hoveredRect} variant="hover" />
       <HighlightBox rect={flashRect} variant="focus" />
       {commentMode && !composer ? (
-        <div className="fixed bottom-7 left-1/2 z-[2147483602] -translate-x-1/2 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-lg shadow-slate-900/30">
+        <div className="fixed bottom-7 left-1/2 z-[2147483602] -translate-x-1/2 rounded-full border border-border/70 bg-popover/95 px-4 py-2 text-sm font-medium text-popover-foreground shadow-lg backdrop-blur">
           Comment mode active
         </div>
       ) : null}
