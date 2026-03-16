@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    font-family: Arial, Helvetica, sans-serif;
+    color: #222;
+    background: #f3f3f3;
+    line-height: 1.5;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: #f3f3f3;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  a {
+    color: #222;
+  }
+
+  #root {
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .app {
+    @apply mx-auto max-w-5xl p-4;
+  }
+
+  .site-header h1,
+  .page h2,
+  .page h3 {
+    @apply mt-0;
+  }
+
+  .site-header,
+  .site-nav,
+  .toolbar,
+  .page section {
+    @apply mb-4;
+  }
+
+  .site-nav {
+    @apply flex flex-wrap gap-3;
+  }
+
+  .site-nav a {
+    @apply no-underline;
+  }
+
+  .site-nav a.active {
+    @apply font-bold underline;
+  }
+
+  .toolbar {
+    @apply flex items-center justify-between gap-4 max-md:flex-col max-md:items-stretch;
+  }
+
+  .toolbar p {
+    @apply m-0;
+  }
+
+  .page {
+    @apply grid gap-4;
+  }
+
+  button {
+    @apply border border-slate-400 bg-transparent px-2.5 py-1.5;
+  }
+}
