@@ -1,7 +1,7 @@
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { CheckCircleIcon, XIcon } from '@phosphor-icons/react'
+import { CheckCircleIcon, DotsThreeVerticalIcon, XIcon } from '@phosphor-icons/react'
 import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Popover,
@@ -9,10 +9,11 @@ import {
   PopoverContent,
   PopoverHeader,
   PopoverTitle,
+  PopoverTrigger,
 } from '@/components/ui/popover'
 import { AnnotationProvider } from './AnnotationContext'
 import type { AnnotationOverlayProps } from './types'
-import { formatTimestamp, getInitials, rectToViewport } from './utils'
+import { formatTimestamp, rectToViewport } from './utils'
 import { AnnotationComposer } from './components/AnnotationComposer'
 import { InteractionLayer } from './components/InteractionLayer'
 import { CommentMarkers } from './components/CommentMarkers'
@@ -27,6 +28,7 @@ type ThreadCommentProps = {
   createdAt: string
   text: string
   onToggleResolved?: () => void
+  onRemove?: () => void
 }
 
 function ThreadComment({
@@ -34,44 +36,78 @@ function ThreadComment({
   createdAt,
   isResolved = false,
   isRoot = false,
+  onRemove,
   onToggleResolved,
   text,
 }: ThreadCommentProps) {
+  const [isActionsOpen, setIsActionsOpen] = useState(false)
+
   return (
-    <article
-      className="flex flex-col gap-1 p-4 border-b border-border bg-background">
+    <article className="flex flex-col gap-1 border-b border-border bg-background p-4">
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Avatar size="sm">
-              <AvatarFallback>{getInitials(author)}</AvatarFallback>
-            </Avatar>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <strong className="text-sm text-foreground">{author}</strong>
-              <span>{formatTimestamp(createdAt)}</span>
-            </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <strong className="text-sm text-foreground">{author}</strong>
+            <span>{formatTimestamp(createdAt)}</span>
           </div>
-          {isRoot && onToggleResolved ? (
-            <Button
-              aria-label={isResolved ? 'Mark annotation as open' : 'Resolve annotation'}
-              className={isResolved ? 'opacity-50' : ''}
-              onClick={onToggleResolved}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <CheckCircleIcon />
-            </Button>
+          {isRoot && (onToggleResolved || onRemove) ? (
+            <div className="flex items-center gap-1">
+              {onRemove && (
+                <Popover onOpenChange={setIsActionsOpen} open={isActionsOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      aria-label="Annotation actions"
+                      size="icon"
+                      type="button"
+                      variant="ghost"
+                    >
+                      <DotsThreeVerticalIcon />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent
+                    align="end"
+                    className="z-2147483604 w-32 p-1"
+                    data-annotation-overlay-root="true"
+                    sideOffset={4}
+                  >
+                    <Button
+                      className="w-full justify-start"
+                      onClick={() => {
+                        setIsActionsOpen(false)
+                        onRemove()
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      Remove
+                    </Button>
+                  </PopoverContent>
+                </Popover>
+              )}
+              {onToggleResolved && (
+                <Button
+                  aria-label={isResolved ? 'Mark annotation as open' : 'Resolve annotation'}
+                  className={isResolved ? 'opacity-50' : ''}
+                  onClick={onToggleResolved}
+                  size="icon"
+                  type="button"
+                  variant="ghost"
+                >
+                  <CheckCircleIcon />
+                </Button>
+              )}
+            </div>
           ) : null}
         </div>
         <p className="text-sm leading-6 text-foreground">{text}</p>
       </div>
-    </article >
+    </article>
   )
 }
 
 function AnnotationComposerPopover() {
-  const { closeComposer, comments, composer, errorMessage, submitComment, toggleResolved } = useAnnotation()
+  const { closeComposer, comments, composer, errorMessage, removeThread, submitComment, toggleResolved } = useAnnotation()
 
   if (!composer || !composer.rect) {
     return null
@@ -86,6 +122,12 @@ function AnnotationComposerPopover() {
   const handleToggleResolved = () => {
     if (parentComment) {
       void toggleResolved(parentComment.id)
+    }
+  }
+
+  const handleRemoveThread = () => {
+    if (parentComment) {
+      void removeThread(parentComment.id)
     }
   }
 
@@ -105,7 +147,7 @@ function AnnotationComposerPopover() {
       </PopoverAnchor>
       <PopoverContent
         align="center"
-        className="w-[min(22rem,calc(100vw-2rem))] bg-muted p-0 overflow-hidden"
+        className="z-2147483603 w-[min(22rem,calc(100vw-2rem))] overflow-hidden bg-muted p-0"
         collisionPadding={16}
         data-annotation-overlay-root="true"
         sideOffset={12}
@@ -114,7 +156,7 @@ function AnnotationComposerPopover() {
           <PopoverTitle className="sr-only">{parentComment ? 'Reply to annotation' : 'New annotation'}</PopoverTitle>
         </PopoverHeader>
         {parentComment ? (
-          <div className="border-b border-border bg-muted/50">
+          <div>
             <ScrollArea className="max-h-[min(18rem,40vh)]">
               <div className="flex flex-col">
                 {threadComments.map((comment) => (
@@ -124,6 +166,7 @@ function AnnotationComposerPopover() {
                     isResolved={comment.resolved}
                     isRoot={comment.id === parentComment.id}
                     key={comment.id}
+                    onRemove={comment.id === parentComment.id ? handleRemoveThread : undefined}
                     onToggleResolved={comment.id === parentComment.id ? handleToggleResolved : undefined}
                     text={comment.text}
                   />
@@ -140,11 +183,43 @@ function AnnotationComposerPopover() {
   )
 }
 
+function CommentModeCursor() {
+  const { commentMode } = useAnnotation()
+
+  useEffect(() => {
+    const attributeName = 'data-annotation-comment-mode'
+
+    if (commentMode) {
+      document.documentElement.setAttribute(attributeName, 'true')
+      return () => {
+        document.documentElement.removeAttribute(attributeName)
+      }
+    }
+
+    document.documentElement.removeAttribute(attributeName)
+
+    return undefined
+  }, [commentMode])
+
+  return (
+    <style>
+      {`
+        html[data-annotation-comment-mode="true"],
+        html[data-annotation-comment-mode="true"] body,
+        html[data-annotation-comment-mode="true"] body * {
+          cursor: crosshair !important;
+        }
+      `}
+    </style>
+  )
+}
+
 function AnnotationOverlayScene() {
   const { cancelCommentMode, commentMode, composer } = useAnnotation()
 
   return createPortal(
-    <div className="relative z-2147483600" data-annotation-overlay-root="true">
+    <div className="absolute h-px w-px top-0 left-0 z-2147483600" data-annotation-overlay-root="true">
+      <CommentModeCursor />
       <InteractionLayer />
       <CommentMarkers />
       {commentMode && !composer ? (

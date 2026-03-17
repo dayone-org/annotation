@@ -1,27 +1,39 @@
-import { ChatCircleTextIcon } from '@phosphor-icons/react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
+import { CheckCircleIcon } from '@phosphor-icons/react'
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
 import { useAnnotation } from '../useAnnotation'
 import type { AnnotationComment } from '../types'
-import { formatTimestamp, getInitials, getReplies, getTopLevelComments } from '../utils'
-import { AuthorGate } from './AuthorGate'
+import { formatTimestamp, getReplies, getTopLevelComments } from '../utils'
+import { Switch } from '@/components/ui/switch'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  ANNOTATION_ONLY_CURRENT_PAGE_KEY,
+  readStoredBoolean,
+  writeStoredBoolean,
+} from '../storage'
+import { DotsThreeVerticalIcon } from '@phosphor-icons/react'
+import { Kbd } from '@/components/ui/kbd'
 
 type ThreadCardProps = {
   activeThreadId: string | null
+  canManage: boolean
   comment: AnnotationComment
   comments: AnnotationComment[]
+  currentPath: string
 }
 
-function ThreadCard({ activeThreadId, comment, comments }: ThreadCardProps) {
+function ThreadCard({ activeThreadId, canManage, comment, comments, currentPath }: ThreadCardProps) {
   const { scrollToComment, toggleResolved } = useAnnotation()
 
   const replies = getReplies(comments, comment.id)
   const isActive = activeThreadId === comment.id
+  const isCurrentPage = comment.page_path === currentPath
 
   return (
     <article
@@ -30,27 +42,34 @@ function ThreadCard({ activeThreadId, comment, comments }: ThreadCardProps) {
         isActive ? 'border-primary/40 bg-muted/50' : 'border-border bg-background',
       )}
     >
-      <button className="grid grid-cols-[auto_1fr] gap-3 text-left" onClick={() => scrollToComment(comment.id)} type="button">
-        <Avatar>
-          <AvatarFallback>{getInitials(comment.author)}</AvatarFallback>
-        </Avatar>
-        <div className="grid gap-2">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <strong className="text-sm text-foreground">{comment.author}</strong>
-            <span>{formatTimestamp(comment.created_at)}</span>
-            <Badge variant={comment.resolved ? 'secondary' : 'default'}>{comment.resolved ? 'Resolved' : 'Open'}</Badge>
+      <div className="flex items-start justify-between gap-3">
+        <button
+          className="flex flex-1 items-start gap-3 text-left"
+          onClick={() => scrollToComment(comment.id)}
+          type="button"
+        >
+          <div className="grid gap-2">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <strong className="text-sm text-foreground">{comment.author}</strong>
+              <span>{formatTimestamp(comment.created_at)}</span>
+            </div>
+            <p className="text-sm leading-6 text-foreground">{comment.text}</p>
           </div>
-          <p className="text-sm leading-6 text-foreground">{comment.text}</p>
-        </div>
-      </button>
-
-      <div className="flex items-center gap-2">
-        <Button onClick={() => void toggleResolved(comment.id)} size="sm" type="button" variant="outline">
-          {comment.resolved ? 'Unresolve' : 'Resolve'}
-        </Button>
+        </button>
+        {canManage && (
+          <Button
+            aria-label={comment.resolved ? 'Mark annotation as open' : 'Resolve annotation'}
+            className={comment.resolved ? 'opacity-50' : ''}
+            onClick={() => void toggleResolved(comment.id)}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <CheckCircleIcon />
+          </Button>
+        )}
       </div>
-
-      {replies.length > 0 ? (
+      {replies.length > 0 && (
         <div className="ml-4 grid gap-3 border-l border-border pl-4">
           {replies.map((reply) => (
             <button
@@ -59,9 +78,6 @@ function ThreadCard({ activeThreadId, comment, comments }: ThreadCardProps) {
               onClick={() => scrollToComment(reply.id)}
               type="button"
             >
-              <Avatar size="sm">
-                <AvatarFallback>{getInitials(reply.author)}</AvatarFallback>
-              </Avatar>
               <div className="grid gap-1">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <strong className="text-sm text-foreground">{reply.author}</strong>
@@ -72,7 +88,10 @@ function ThreadCard({ activeThreadId, comment, comments }: ThreadCardProps) {
             </button>
           ))}
         </div>
-      ) : null}
+      )}
+      <Badge variant="secondary">
+        {comment.page_path}
+      </Badge>
     </article>
   )
 }
@@ -88,118 +107,142 @@ export function AnnotationPanel() {
     errorMessage,
     isLoading,
     isPanelOpen,
+    setAuthor,
     setPanelOpen,
     setShowResolved,
     showResolved,
     startCommentMode,
   } = useAnnotation()
+  const [showOnlyCurrentPage, setShowOnlyCurrentPage] = useState(() =>
+    readStoredBoolean(ANNOTATION_ONLY_CURRENT_PAGE_KEY, false),
+  )
+  const showAll = !showOnlyCurrentPage
 
   const topLevelComments = getTopLevelComments(comments)
-  const openThreads = topLevelComments.filter((comment) => !comment.resolved)
-  const resolvedThreads = topLevelComments.filter((comment) => comment.resolved)
+  const sortedThreads = [...topLevelComments].sort((left, right) => left.created_at.localeCompare(right.created_at))
+  const pageScopedThreads = showAll ? sortedThreads : sortedThreads.filter((comment) => comment.page_path === currentPath)
+  const visibleThreads = pageScopedThreads.filter((comment) => showResolved || !comment.resolved)
+  const currentPageCount = topLevelComments.filter((comment) => comment.page_path === currentPath).length
+  const hasAuthor = Boolean(author)
 
   return (
     <>
-      {!isPanelOpen ? (
-        <Button
-          className="fixed bottom-6 right-6 z-[2147483602]"
-          onClick={() => setPanelOpen(true)}
-          type="button"
-        >
-          <ChatCircleTextIcon data-icon="inline-start" weight="fill" />
-          Annotation
-          <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-primary-foreground/15 px-1 text-[11px]">
-            {openThreads.length + resolvedThreads.length}
-          </span>
-        </Button>
-      ) : null}
+      <Button
+        className="fixed bottom-6 right-6 z-2147483602"
+        onClick={() => setPanelOpen(true)}
+        type="button"
+      >
+        Annotation
+        <Kbd>C</Kbd>
+      </Button>
+      <Sheet onOpenChange={setPanelOpen} open={isPanelOpen} modal={false}>
+        <SheetContent data-annotation-overlay-root="true" showCloseButton={false} className="flex flex-col gap-0">
+          <SheetHeader className="relative shrink-0">
+            <div className="flex flex-col gap-1">
+              <SheetTitle>Annotations</SheetTitle>
+              <SheetDescription>
+                <Badge variant="secondary">{currentPath}</Badge>
+              </SheetDescription>
+            </div>
+            <div className="absolute right-3 top-3 flex items-center gap-1">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button aria-label="Annotation settings" size="icon-sm" type="button" variant="ghost">
+                    <DotsThreeVerticalIcon />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="end"
+                  className="z-2147483604 w-80"
+                  data-annotation-overlay-root="true"
+                  sideOffset={8}
+                >
+                  <FieldGroup>
+                    <Field>
+                      <FieldLabel htmlFor="annotation-panel-name">Name</FieldLabel>
+                      <Input
+                        id="annotation-panel-name"
+                        maxLength={48}
+                        onChange={(event) => setAuthor(event.target.value)}
+                        placeholder="Jane Doe"
+                        value={author}
+                      />
+                    </Field>
+                    <Field orientation="horizontal">
+                      <FieldLabel htmlFor="annotation-panel-show-resolved">Resolved comments</FieldLabel>
+                      <Switch
+                        checked={showResolved}
+                        id="annotation-panel-show-resolved"
+                        onCheckedChange={setShowResolved}
+                      />
+                    </Field>
+                    <Field orientation="horizontal">
+                      <FieldLabel htmlFor="annotation-panel-show-all">All pages</FieldLabel>
+                      <Switch
+                        checked={showAll}
+                        id="annotation-panel-show-all"
+                        onCheckedChange={(checked) => {
+                          writeStoredBoolean(ANNOTATION_ONLY_CURRENT_PAGE_KEY, !checked)
+                          setShowOnlyCurrentPage(!checked)
+                        }}
+                      />
+                    </Field>
+                  </FieldGroup>
 
-      <Sheet onOpenChange={setPanelOpen} open={isPanelOpen}>
-        <SheetContent data-annotation-overlay-root="true">
-          <SheetHeader>
-            <SheetTitle>Annotations</SheetTitle>
-            <SheetDescription>{currentPath}</SheetDescription>
+                  {errorMessage ? (
+                    <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                      {errorMessage}
+                    </div>
+                  ) : null}
+                </PopoverContent>
+              </Popover>
+            </div>
           </SheetHeader>
 
-          <div className="flex flex-col gap-4 p-4">
-            {!author ? (
-              <AuthorGate />
-            ) : (
-              <>
-                <div className="grid gap-3 rounded-xl border border-border bg-muted/40 p-4">
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      onClick={() => {
-                        if (commentMode) {
-                          cancelCommentMode()
-                        } else {
-                          startCommentMode()
-                        }
-                      }}
-                      type="button"
-                    >
-                      {commentMode ? 'Cancel comment mode' : '+ New annotation (C)'}
-                    </Button>
-                    <Button onClick={() => setShowResolved(!showResolved)} type="button" variant="outline">
-                      {showResolved ? 'Hide resolved' : 'Show resolved'}
-                    </Button>
-                  </div>
-
-                  <p className="text-sm text-muted-foreground">
-                    {commentMode
-                      ? 'Click any element on the page to anchor a new annotation. Press Esc to cancel.'
-                      : 'Click a thread to scroll to its target. Press R to resolve the focused thread.'}
-                  </p>
+          <div className="flex min-h-0 flex-1 p-4">
+              <ScrollArea className="min-h-0 flex-1">
+                <div className="grid gap-2">
+                  {isLoading ? <p className="text-sm text-muted-foreground">Loading annotations…</p> : null}
+                  {!isLoading && visibleThreads.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      {topLevelComments.length === 0
+                        ? 'No annotations yet.'
+                        : !showAll && currentPageCount === 0
+                          ? 'No annotations on this page.'
+                          : 'Resolved annotations are hidden. Turn on "Resolved comments" to see them.'}
+                    </p>
+                  ) : null}
+                  {!isLoading
+                    ? visibleThreads.map((comment) => (
+                      <ThreadCard
+                        activeThreadId={activeThreadId}
+                        canManage={hasAuthor}
+                        comment={comment}
+                        comments={comments}
+                        currentPath={currentPath}
+                        key={comment.id}
+                      />
+                    ))
+                    : null}
                 </div>
-
-                {errorMessage ? (
-                  <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    {errorMessage}
-                  </div>
-                ) : null}
-
-                <Separator />
-
-                <ScrollArea className="grid min-h-0 gap-5 pr-1">
-                  <section className="grid gap-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-foreground">Open</h3>
-                      <Badge variant="outline">{openThreads.length}</Badge>
-                    </div>
-
-                    {isLoading ? <p className="text-sm text-muted-foreground">Loading annotations…</p> : null}
-                    {!isLoading && openThreads.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No open annotations for this page yet.</p>
-                    ) : null}
-                    {!isLoading
-                      ? openThreads.map((comment) => (
-                          <ThreadCard activeThreadId={activeThreadId} comment={comment} comments={comments} key={comment.id} />
-                        ))
-                      : null}
-                  </section>
-
-                  <section className="grid gap-3">
-                    <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-foreground">Resolved</h3>
-                      <Badge variant="secondary">{resolvedThreads.length}</Badge>
-                    </div>
-
-                    {!showResolved ? (
-                      <p className="text-sm text-muted-foreground">Resolved threads are hidden until you toggle them on.</p>
-                    ) : null}
-                    {showResolved && resolvedThreads.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No resolved annotations on this page.</p>
-                    ) : null}
-                    {showResolved
-                      ? resolvedThreads.map((comment) => (
-                          <ThreadCard activeThreadId={activeThreadId} comment={comment} comments={comments} key={comment.id} />
-                        ))
-                      : null}
-                  </section>
-                </ScrollArea>
-              </>
-            )}
+              </ScrollArea>
           </div>
+          <div className="shrink-0 p-4">
+              <Button
+                disabled={!hasAuthor}
+                onClick={() => {
+                  if (commentMode) {
+                    cancelCommentMode()
+                  } else {
+                    startCommentMode()
+                  }
+                }}
+                className="w-full"
+                type="button"
+              >
+                {commentMode ? 'Exit comment mode' : 'New annotation (C)'}
+              </Button>
+            </div>
         </SheetContent>
       </Sheet>
     </>

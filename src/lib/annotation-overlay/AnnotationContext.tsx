@@ -75,14 +75,13 @@ export function AnnotationProvider({
   const commentMap = useMemo(() => getCommentMap(comments), [comments])
 
   const loadComments = useCallback(
-    async (path: string) => {
+    async () => {
       setIsLoading(true)
       setErrorMessage(null)
 
       const { data, error } = await client
         .from('comments')
         .select('*')
-        .eq('page_path', path)
         .order('created_at', { ascending: true })
 
       if (error) {
@@ -116,7 +115,7 @@ export function AnnotationProvider({
   }, [pagePath])
 
   useEffect(() => {
-    void loadComments(currentPath)
+    void loadComments()
   }, [currentPath, loadComments])
 
   useEffect(() => {
@@ -135,17 +134,16 @@ export function AnnotationProvider({
 
   useEffect(() => {
     const channel = client
-      .channel(`annotation-comments:${currentPath}`)
+      .channel('annotation-comments')
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'comments',
-          filter: `page_path=eq.${currentPath}`,
         },
         () => {
-          void loadComments(currentPath)
+          void loadComments()
         },
       )
       .subscribe()
@@ -153,7 +151,7 @@ export function AnnotationProvider({
     return () => {
       void client.removeChannel(channel)
     }
-  }, [client, currentPath, loadComments])
+  }, [client, loadComments])
 
   const setAuthor = useCallback((value: string) => {
     const nextValue = value.trim()
@@ -169,6 +167,7 @@ export function AnnotationProvider({
   const closeComposer = useCallback(() => {
     setComposer(null)
     setCommentMode(false)
+    setActiveThreadId(null)
   }, [])
 
   const ensureAuthor = useCallback(() => {
@@ -193,6 +192,7 @@ export function AnnotationProvider({
   const cancelCommentMode = useCallback(() => {
     setCommentMode(false)
     setComposer(null)
+    setActiveThreadId(null)
   }, [])
 
   const selectElement = useCallback((selector: string, rect: AnnotationRect) => {
@@ -223,6 +223,45 @@ export function AnnotationProvider({
     [ensureAuthor],
   )
 
+  const updateThreadRect = useCallback(
+    async (commentId: string, rect: AnnotationRect) => {
+      const threadId = getThreadRootId(commentId, commentMap)
+      const target = commentMap.get(threadId)
+      if (!target) {
+        return false
+      }
+
+      const previousRect = target.rect
+      setErrorMessage(null)
+
+      startTransition(() => {
+        setComments((previous) =>
+          previous.map((comment) => (comment.id === threadId ? { ...comment, rect } : comment)),
+        )
+      })
+
+      const { error } = await client
+        .from('comments')
+        .update({ rect })
+        .eq('id', threadId)
+
+      if (error) {
+        setErrorMessage(error.message)
+        startTransition(() => {
+          setComments((previous) =>
+            previous.map((comment) =>
+              comment.id === threadId ? { ...comment, rect: previousRect } : comment,
+            ),
+          )
+        })
+        return false
+      }
+
+      return true
+    },
+    [client, commentMap],
+  )
+
   const scrollToComment = useCallback(
     (commentId: string) => {
       const targetComment = commentMap.get(commentId)
@@ -232,29 +271,59 @@ export function AnnotationProvider({
 
       const threadId = getThreadRootId(commentId, commentMap)
       const anchorComment = commentMap.get(threadId) ?? targetComment
-      const targetElement = querySelectorSafely(anchorComment.selector)
 
       setActiveThreadId(threadId)
       setPanelOpen(true)
 
-      if (targetElement) {
-        targetElement.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center',
-          inline: 'center',
-        })
+      const scrollToAnchor = (allowRectFallback: boolean) => {
+        const targetElement = querySelectorSafely(anchorComment.selector)
+
+        if (targetElement) {
+          targetElement.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+            inline: 'center',
+          })
+          return true
+        }
+
+        if (allowRectFallback && anchorComment.rect) {
+          const nextTop = Math.max(anchorComment.rect.pageY - window.innerHeight / 2, 0)
+          window.scrollTo({
+            top: nextTop,
+            behavior: 'smooth',
+          })
+          return true
+        }
+
+        return false
+      }
+
+      if (anchorComment.page_path !== currentPath) {
+        if (window.location.pathname !== anchorComment.page_path) {
+          window.history.pushState({}, '', anchorComment.page_path)
+          window.dispatchEvent(new PopStateEvent('popstate'))
+        }
+
+        let attempts = 0
+
+        const scrollAfterNavigation = () => {
+          attempts += 1
+
+          if (scrollToAnchor(false) || attempts >= 10) {
+            return
+          }
+
+          window.requestAnimationFrame(scrollAfterNavigation)
+        }
+
+        window.requestAnimationFrame(scrollAfterNavigation)
         return
       }
 
-      if (anchorComment.rect) {
-        const nextTop = Math.max(anchorComment.rect.pageY - window.innerHeight / 2, 0)
-        window.scrollTo({
-          top: nextTop,
-          behavior: 'smooth',
-        })
-      }
+      scrollToAnchor(true)
     },
-    [commentMap],
+    [commentMap, currentPath],
   )
 
   const submitComment = useCallback(
@@ -291,12 +360,61 @@ export function AnnotationProvider({
       startTransition(() => {
         setComments((previous) => sortComments([...previous, inserted]))
       })
-      setComposer(null)
+      if (!composer.parentId) {
+        setComposer(null)
+      }
       setCommentMode(false)
-      setActiveThreadId(inserted.parent_id ? getThreadRootId(inserted.parent_id, commentMap) : inserted.id)
+      setActiveThreadId(inserted.parent_id ? getThreadRootId(inserted.parent_id, commentMap) : null)
       return true
     },
     [author, client, commentMap, composer, currentPath],
+  )
+
+  const removeThread = useCallback(
+    async (commentId: string) => {
+      const threadId = getThreadRootId(commentId, commentMap)
+      const target = commentMap.get(threadId)
+      if (!target) {
+        return false
+      }
+
+      setErrorMessage(null)
+
+      const replyIds = comments
+        .filter((comment) => comment.parent_id === threadId)
+        .map((comment) => comment.id)
+
+      if (replyIds.length > 0) {
+        const { error: repliesError } = await client.from('comments').delete().in('id', replyIds)
+
+        if (repliesError) {
+          setErrorMessage(repliesError.message)
+          return false
+        }
+      }
+
+      const { error } = await client.from('comments').delete().eq('id', threadId)
+
+      if (error) {
+        setErrorMessage(error.message)
+        return false
+      }
+
+      startTransition(() => {
+        setComments((previous) =>
+          previous.filter((comment) => comment.id !== threadId && comment.parent_id !== threadId),
+        )
+      })
+
+      if (composer?.parentId === threadId) {
+        closeComposer()
+        return true
+      }
+
+      setActiveThreadId((previous) => (previous === threadId ? null : previous))
+      return true
+    },
+    [client, closeComposer, commentMap, comments, composer],
   )
 
   const toggleResolved = useCallback(
@@ -335,9 +453,14 @@ export function AnnotationProvider({
           ),
         )
       })
+      if (nextResolved && composer?.parentId === threadId) {
+        closeComposer()
+        return
+      }
+
       setActiveThreadId(threadId)
     },
-    [client, commentMap],
+    [client, closeComposer, commentMap, composer],
   )
 
   useEffect(() => {
@@ -394,6 +517,7 @@ export function AnnotationProvider({
       isLoading,
       isPanelOpen,
       openThreadComposer,
+      removeThread,
       scrollToComment,
       selectElement,
       setAuthor,
@@ -403,6 +527,7 @@ export function AnnotationProvider({
       startCommentMode,
       submitComment,
       toggleResolved,
+      updateThreadRect,
     }),
     [
       activeThreadId,
@@ -417,6 +542,7 @@ export function AnnotationProvider({
       isLoading,
       isPanelOpen,
       openThreadComposer,
+      removeThread,
       scrollToComment,
       selectElement,
       setAuthor,
@@ -425,6 +551,7 @@ export function AnnotationProvider({
       startCommentMode,
       submitComment,
       toggleResolved,
+      updateThreadRect,
     ],
   )
 

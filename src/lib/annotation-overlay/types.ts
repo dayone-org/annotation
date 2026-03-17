@@ -11,8 +11,8 @@ export type AnnotationRect = {
   scrollY: number
   pageX: number
   pageY: number
-  offsetX?: number
-  offsetY?: number
+  anchorXPercent?: number
+  anchorYPercent?: number
 }
 
 export type AnnotationComment = {

@@ -1,4 +1,8 @@
 import type { AnnotationComment, AnnotationRect, MarkerPosition } from './types'
+import dayjs from 'dayjs'
+import relativeTime from 'dayjs/plugin/relativeTime'
+
+dayjs.extend(relativeTime)
 
 export function measureRect(target: HTMLElement | DOMRect): AnnotationRect {
   const rect = target instanceof DOMRect ? target : target.getBoundingClientRect()
@@ -25,6 +29,10 @@ export function measurePoint(clientX: number, clientY: number, target?: HTMLElem
   const targetRect = target instanceof DOMRect ? target : target?.getBoundingClientRect()
   const pageX = clientX + window.scrollX
   const pageY = clientY + window.scrollY
+  const anchorXPercent =
+    targetRect && targetRect.width > 0 ? (clientX - targetRect.left) / targetRect.width : undefined
+  const anchorYPercent =
+    targetRect && targetRect.height > 0 ? (clientY - targetRect.top) / targetRect.height : undefined
 
   return {
     x: clientX,
@@ -39,8 +47,8 @@ export function measurePoint(clientX: number, clientY: number, target?: HTMLElem
     scrollY: window.scrollY,
     pageX,
     pageY,
-    offsetX: targetRect ? clientX - targetRect.left : undefined,
-    offsetY: targetRect ? clientY - targetRect.top : undefined,
+    anchorXPercent,
+    anchorYPercent,
   }
 }
 
@@ -127,39 +135,48 @@ export function getInitials(name: string): string {
 }
 
 export function formatTimestamp(value: string): string {
-  const date = new Date(value)
+  const parsed = dayjs(value)
+  if (!parsed.isValid()) {
+    return value
+  }
 
-  return new Intl.DateTimeFormat(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(date)
+  return parsed.fromNow()
 }
 
-export function getMarkerPosition(rect: AnnotationRect | null, target?: HTMLElement | null): MarkerPosition | null {
+export function getMarkerPagePosition(rect: AnnotationRect | null, target?: HTMLElement | null): MarkerPosition | null {
   if (!rect) {
     return null
   }
 
-  if (target && rect.offsetX !== undefined && rect.offsetY !== undefined) {
+  if (target && rect.anchorXPercent !== undefined && rect.anchorYPercent !== undefined) {
     const targetRect = target.getBoundingClientRect()
 
     return {
-      x: targetRect.left + rect.offsetX,
-      y: targetRect.top + rect.offsetY,
+      x: targetRect.left + window.scrollX + targetRect.width * rect.anchorXPercent,
+      y: targetRect.top + window.scrollY + targetRect.height * rect.anchorYPercent,
       width: 1,
       height: 1,
     }
   }
 
-  const projected = rectToViewport(rect)
-
   return {
-    x: projected.left,
-    y: projected.top,
+    x: rect.pageX,
+    y: rect.pageY,
     width: 1,
     height: 1,
+  }
+}
+
+export function getMarkerPosition(rect: AnnotationRect | null, target?: HTMLElement | null): MarkerPosition | null {
+  const pagePosition = getMarkerPagePosition(rect, target)
+  if (!pagePosition) {
+    return null
+  }
+
+  return {
+    ...pagePosition,
+    x: pagePosition.x - window.scrollX,
+    y: pagePosition.y - window.scrollY,
   }
 }
 

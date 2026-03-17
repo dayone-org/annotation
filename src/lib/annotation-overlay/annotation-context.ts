@@ -19,9 +19,11 @@ export type AnnotationContextValue = {
   cancelCommentMode: () => void
   selectElement: (selector: string, rect: AnnotationRect) => void
   openThreadComposer: (threadId: string, rect: AnnotationRect) => void
+  updateThreadRect: (commentId: string, rect: AnnotationRect) => Promise<boolean>
   closeComposer: () => void
   submitComment: (text: string) => Promise<boolean>
   scrollToComment: (commentId: string) => void
+  removeThread: (commentId: string) => Promise<boolean>
   toggleResolved: (commentId: string) => Promise<void>
 }
 
