@@ -1,8 +1,8 @@
+import { PaperPlaneRightIcon } from "@phosphor-icons/react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { PaperPlaneRightIcon } from "@phosphor-icons/react";
 import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
 
 type AnnotationComposerProps = {
   errorMessage?: string | null;

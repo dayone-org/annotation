@@ -104,7 +104,7 @@ function RouteNavigation({
   onNavigate: (path: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2 -ml-2">
+    <div className="-ml-2 flex flex-wrap gap-2">
       <Button
         onClick={() => onNavigate("/")}
         type="button"
@@ -140,12 +140,12 @@ function HomePage() {
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold">Getting started</h2>
         {steps.map((step) => (
-          <div key={step.title} className="rounded-md bg-muted/50 p-4 flex flex-col gap-4">
+          <div key={step.title} className="flex flex-col gap-4 rounded-md bg-muted/50 p-4">
             <div className="flex flex-col ">
               <h3 className="font-semibold">{step.title}</h3>
               <p className="text-sm text-muted-foreground">{step.description}</p>
             </div>
-            <pre className="overflow-x-auto rounded-md border border-border p-4 text-xs font-mono">
+            <pre className="overflow-x-auto rounded-md border border-border p-4 font-mono text-xs">
               {step.code}
             </pre>
           </div>
@@ -237,7 +237,7 @@ function App() {
 
   return (
     <div className="min-h-screen p-8">
-      <div className="mx-auto max-w-3xl flex flex-col gap-32">
+      <div className="mx-auto flex max-w-3xl flex-col gap-32">
         <RouteNavigation currentPath={currentPath} onNavigate={navigateTo} />
         {currentContentPage ? (
           <ContentPage

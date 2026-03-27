@@ -1,3 +1,4 @@
+import { motion } from "motion/react";
 import {
   useCallback,
   useEffect,
@@ -8,11 +9,12 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import type { AnnotationComment, MarkerPosition } from "../types";
 import { querySelectorSafely } from "../selector";
 import { useAnnotation } from "../useAnnotation";
-import type { AnnotationComment, MarkerPosition } from "../types";
 import {
   getMarkerPagePosition,
   getInitials,
@@ -22,8 +24,6 @@ import {
   measurePoint,
   measureRect,
 } from "../utils";
-import { Button } from "@/components/ui/button";
-import { motion } from "motion/react";
 
 const MARKER_OFFSET_X = 10;
 const MARKER_OFFSET_Y = 10;
@@ -463,7 +463,7 @@ export function CommentMarkers() {
             <Button
               key={comment.id}
               className={cn(
-                "pointer-events-auto absolute left-0 top-0 transition-colors inline-flex size-8 rounded-full shadow-lg cursor-grab active:cursor-grabbing select-none touch-none text-xs",
+                "pointer-events-auto absolute top-0 left-0 inline-flex size-8 cursor-grab touch-none rounded-full text-xs shadow-lg transition-colors select-none active:cursor-grabbing",
                 comment.id === activeThreadId
                   ? "bg-primary text-primary-foreground"
                   : "bg-foreground text-background",
@@ -481,7 +481,7 @@ export function CommentMarkers() {
                 threadCount === 1 ? "" : "s"
               }`}
             >
-              <Badge className="absolute right-0 top-0 size-5 translate-x-1/3 -translate-y-1/3 bg-primary text-xs tabular-nums text-primary-foreground pointer-events-none">
+              <Badge className="pointer-events-none absolute top-0 right-0 size-5 translate-x-1/3 -translate-y-1/3 bg-primary text-xs text-primary-foreground tabular-nums">
                 {threadCount}
               </Badge>
               <span>{getInitials(comment.author)}</span>

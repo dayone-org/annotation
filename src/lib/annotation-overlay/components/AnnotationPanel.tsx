@@ -1,22 +1,22 @@
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { CheckCircleIcon, DotsThreeVerticalIcon, XIcon } from "@phosphor-icons/react";
+import { useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
-import { useAnnotation } from "../useAnnotation";
-import type { AnnotationComment } from "../types";
-import { formatTimestamp, getReplies, getTopLevelComments } from "../utils";
-import { Switch } from "@/components/ui/switch";
+import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
+import type { AnnotationComment } from "../types";
 import {
   ANNOTATION_ONLY_CURRENT_PAGE_KEY,
   readStoredBoolean,
   writeStoredBoolean,
 } from "../storage";
-import { Kbd } from "@/components/ui/kbd";
+import { useAnnotation } from "../useAnnotation";
+import { formatTimestamp, getReplies, getTopLevelComments } from "../utils";
 
 type ThreadCardProps = {
   activeThreadId: string | null;
@@ -128,7 +128,7 @@ export function AnnotationPanel() {
   return (
     <>
       <Button
-        className="fixed bottom-6 right-6 z-2147483601"
+        className="fixed right-6 bottom-6 z-2147483601"
         aria-controls="annotation-panel-dock"
         aria-expanded={isPanelOpen}
         data-annotation-overlay-root="true"
@@ -142,13 +142,13 @@ export function AnnotationPanel() {
       {isPanelOpen ? (
         <section
           id="annotation-panel-dock"
-          className="fixed bottom-22 right-6 z-2147483602 flex w-[min(26rem,calc(100vw-1.5rem))] max-h-[min(32rem,calc(100vh-6.5rem))] flex-col overflow-hidden rounded-[1.25rem] border border-border/70 bg-background/95 shadow-[0_24px_80px_rgba(15,23,42,0.22)] backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2 duration-200"
+          className="fixed right-6 bottom-22 z-2147483602 flex max-h-[min(32rem,calc(100vh-6.5rem))] w-[min(26rem,calc(100vw-1.5rem))] animate-in flex-col overflow-hidden rounded-[1.25rem] border border-border/70 bg-background/95 shadow-[0_24px_80px_rgba(15,23,42,0.22)] backdrop-blur-xl duration-200 fade-in slide-in-from-bottom-2"
           data-annotation-overlay-root="true"
         >
           <header className="relative shrink-0 border-b border-border/60 bg-muted/35 px-4 py-4">
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold tracking-[0.18em] uppercase text-foreground">
+                <h2 className="text-sm font-semibold tracking-[0.18em] text-foreground uppercase">
                   Annotation
                 </h2>
                 <Badge variant="secondary">{visibleThreads.length}</Badge>
@@ -157,7 +157,7 @@ export function AnnotationPanel() {
                 {currentPath}
               </Badge>
             </div>
-            <div className="absolute right-3 top-3 flex items-center gap-1">
+            <div className="absolute top-3 right-3 flex items-center gap-1">
               <Popover>
                 <PopoverTrigger asChild>
                   <Button

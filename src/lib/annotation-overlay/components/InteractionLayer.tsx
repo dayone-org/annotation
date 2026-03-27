@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { generateSelector, querySelectorSafely } from "../selector";
 import type { AnnotationRect } from "../types";
+import { generateSelector, querySelectorSafely } from "../selector";
 import { useAnnotation } from "../useAnnotation";
 import { measurePoint, measureRect } from "../utils";
 

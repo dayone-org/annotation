@@ -1,8 +1,7 @@
+import { CheckCircleIcon, DotsThreeVerticalIcon, XIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { CheckCircleIcon, DotsThreeVerticalIcon, XIcon } from "@phosphor-icons/react";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Popover,
   PopoverAnchor,
@@ -11,15 +10,16 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { AnnotationProvider } from "./AnnotationContext";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import type { AnnotationOverlayProps } from "./types";
-import { formatTimestamp, rectToViewport } from "./utils";
-import { AnnotationComposer } from "./components/AnnotationComposer";
-import { InteractionLayer } from "./components/InteractionLayer";
-import { CommentMarkers } from "./components/CommentMarkers";
-import { AnnotationPanel } from "./components/AnnotationPanel";
-import { useAnnotation } from "./useAnnotation";
 import { cn } from "../utils";
+import { AnnotationProvider } from "./AnnotationContext";
+import { AnnotationComposer } from "./components/AnnotationComposer";
+import { AnnotationPanel } from "./components/AnnotationPanel";
+import { CommentMarkers } from "./components/CommentMarkers";
+import { InteractionLayer } from "./components/InteractionLayer";
+import { useAnnotation } from "./useAnnotation";
+import { formatTimestamp, rectToViewport } from "./utils";
 
 type ThreadCommentProps = {
   isRoot?: boolean;
@@ -235,7 +235,7 @@ function AnnotationOverlayScene() {
 
   return createPortal(
     <div
-      className="absolute h-px w-px top-0 left-0 z-2147483600"
+      className="absolute top-0 left-0 z-2147483600 h-px w-px"
       data-annotation-overlay-root="true"
     >
       <CommentModeCursor />

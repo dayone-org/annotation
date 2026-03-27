@@ -1,6 +1,6 @@
-import type { AnnotationComment, AnnotationRect, MarkerPosition } from "./types";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
+import type { AnnotationComment, AnnotationRect, MarkerPosition } from "./types";
 
 dayjs.extend(relativeTime);
 

@@ -1,3 +1,4 @@
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   startTransition,
   useCallback,
@@ -6,7 +7,12 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type {
+  AnnotationComment,
+  AnnotationOverlayProps,
+  AnnotationRect,
+  PendingAnnotation,
+} from "./types";
 import { AnnotationContext, type AnnotationContextValue } from "./annotation-context";
 import { querySelectorSafely } from "./selector";
 import {
@@ -17,12 +23,6 @@ import {
   writeStoredBoolean,
   writeStoredString,
 } from "./storage";
-import type {
-  AnnotationComment,
-  AnnotationOverlayProps,
-  AnnotationRect,
-  PendingAnnotation,
-} from "./types";
 import { getCommentMap, getThreadRootId, normalizeComment, sortComments } from "./utils";
 
 const supabaseClientCache = new Map<string, SupabaseClient>();

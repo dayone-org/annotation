@@ -1,8 +1,8 @@
 import { useState } from "react";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { useAnnotation } from "../useAnnotation";
-import { Field, FieldLabel } from "@/components/ui/field";
 
 export function AuthorGate() {
   const { setAuthor } = useAnnotation();
