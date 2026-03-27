@@ -7,7 +7,7 @@ The overlay UI is built with Tailwind CSS and shadcn-style primitives.
 ## Usage
 
 ```tsx
-import { AnnotationOverlay } from './src'
+import { AnnotationOverlay } from "./src";
 
 function App() {
   return (
@@ -18,7 +18,7 @@ function App() {
         supabaseAnonKey={process.env.ANNOTATION_SUPABASE_ANON_KEY!}
       />
     </>
-  )
+  );
 }
 ```
 

@@ -1,20 +1,20 @@
-import { useEffect, useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { AnnotationOverlay } from '@/lib/annotation-overlay/AnnotationOverlay'
-import logo from '@/logo.svg'
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { AnnotationOverlay } from "@/lib/annotation-overlay/AnnotationOverlay";
+import logo from "@/logo.svg";
 
-const annotationSupabaseUrl = import.meta.env.VITE_ANNOTATION_SUPABASE_URL ?? ''
-const annotationSupabaseAnonKey = import.meta.env.VITE_ANNOTATION_SUPABASE_ANON_KEY ?? ''
+const annotationSupabaseUrl = import.meta.env.VITE_ANNOTATION_SUPABASE_URL ?? "";
+const annotationSupabaseAnonKey = import.meta.env.VITE_ANNOTATION_SUPABASE_ANON_KEY ?? "";
 
 const steps = [
   {
-    title: 'Installation',
-    description: 'Install the overlay package alongside the Supabase client.',
-    code: 'npm install @dayone/annotation @supabase/supabase-js',
+    title: "Installation",
+    description: "Install the overlay package alongside the Supabase client.",
+    code: "npm install @dayone/annotation @supabase/supabase-js",
   },
   {
-    title: 'Database',
-    description: 'Create a comments table in Supabase.',
+    title: "Database",
+    description: "Create a comments table in Supabase.",
     code: `comments(
   id uuid primary key,
   page_path text not null,
@@ -29,83 +29,87 @@ const steps = [
 )`,
   },
   {
-    title: 'Environment',
-    description: 'Set Supabase credentials in your environment.',
+    title: "Environment",
+    description: "Set Supabase credentials in your environment.",
     code: `ANNOTATION_SUPABASE_URL=your-supabase-url
 ANNOTATION_SUPABASE_ANON_KEY=your-supabase-anon-key`,
   },
-]
+];
 
 const contentPages = [
   {
-    path: '/content-1',
-    label: 'Content',
-    title: 'Lorem ipsum',
+    path: "/content-1",
+    label: "Content",
+    title: "Lorem ipsum",
     intro:
-      'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.',
+      "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.",
     sections: [
       {
-        heading: 'Section one',
+        heading: "Section one",
         paragraphs: [
-          'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.',
-          'Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.',
+          "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.",
+          "Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.",
         ],
       },
       {
-        heading: 'Section two',
+        heading: "Section two",
         paragraphs: [
-          'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer nec odio. Praesent libero. Sed cursus ante dapibus diam. Sed nisi. Nulla quis sem at nibh elementum imperdiet.',
-          'Duis sagittis ipsum. Praesent mauris. Fusce nec tellus sed augue semper porta. Mauris massa. Vestibulum lacinia arcu eget nulla. Class aptent taciti sociosqu ad litora torquent per conubia nostra.',
+          "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer nec odio. Praesent libero. Sed cursus ante dapibus diam. Sed nisi. Nulla quis sem at nibh elementum imperdiet.",
+          "Duis sagittis ipsum. Praesent mauris. Fusce nec tellus sed augue semper porta. Mauris massa. Vestibulum lacinia arcu eget nulla. Class aptent taciti sociosqu ad litora torquent per conubia nostra.",
         ],
       },
       {
-        heading: 'Section three',
+        heading: "Section three",
         paragraphs: [
-          'Curabitur sodales ligula in libero. Sed dignissim lacinia nunc. Curabitur tortor. Pellentesque nibh. Aenean quam. In scelerisque sem at dolor. Maecenas mattis.',
-          'Sed convallis tristique sem. Proin ut ligula vel nunc egestas porttitor. Morbi lectus risus, iaculis vel, suscipit quis, luctus non, massa. Fusce ac turpis quis ligula lacinia aliquet.',
+          "Curabitur sodales ligula in libero. Sed dignissim lacinia nunc. Curabitur tortor. Pellentesque nibh. Aenean quam. In scelerisque sem at dolor. Maecenas mattis.",
+          "Sed convallis tristique sem. Proin ut ligula vel nunc egestas porttitor. Morbi lectus risus, iaculis vel, suscipit quis, luctus non, massa. Fusce ac turpis quis ligula lacinia aliquet.",
         ],
       },
       {
-        heading: 'Section four',
+        heading: "Section four",
         paragraphs: [
-          'Mauris ipsum. Nulla metus metus, ullamcorper vel, tincidunt sed, euismod in, nibh. Quisque volutpat condimentum velit. Class aptent taciti sociosqu ad litora torquent per conubia nostra.',
-          'Nam nec ante. Sed lacinia, urna non tincidunt mattis, tortor neque adipiscing diam, a cursus ipsum ante quis turpis. Nulla facilisi. Ut fringilla. Suspendisse potenti.',
+          "Mauris ipsum. Nulla metus metus, ullamcorper vel, tincidunt sed, euismod in, nibh. Quisque volutpat condimentum velit. Class aptent taciti sociosqu ad litora torquent per conubia nostra.",
+          "Nam nec ante. Sed lacinia, urna non tincidunt mattis, tortor neque adipiscing diam, a cursus ipsum ante quis turpis. Nulla facilisi. Ut fringilla. Suspendisse potenti.",
         ],
       },
       {
-        heading: 'Section five',
+        heading: "Section five",
         paragraphs: [
-          'Nunc feugiat mi a tellus consequat imperdiet. Vestibulum sapien. Proin quam. Etiam ultrices. Suspendisse in justo eu magna luctus suscipit. Sed lectus.',
-          'Integer euismod lacus luctus magna. Quisque cursus, metus vitae pharetra auctor, sem massa mattis sem, at interdum magna augue eget diam. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae.',
+          "Nunc feugiat mi a tellus consequat imperdiet. Vestibulum sapien. Proin quam. Etiam ultrices. Suspendisse in justo eu magna luctus suscipit. Sed lectus.",
+          "Integer euismod lacus luctus magna. Quisque cursus, metus vitae pharetra auctor, sem massa mattis sem, at interdum magna augue eget diam. Vestibulum ante ipsum primis in faucibus orci luctus et ultrices posuere cubilia curae.",
         ],
       },
       {
-        heading: 'Section six',
+        heading: "Section six",
         paragraphs: [
-          'Morbi lacinia molestie dui. Praesent blandit dolor. Sed non quam. In vel mi sit amet augue congue elementum. Morbi in ipsum sit amet pede facilisis laoreet.',
-          'Donec lacus nunc, viverra nec, blandit vel, egestas et, augue. Vestibulum tincidunt malesuada tellus. Ut ultrices ultrices enim. Curabitur sit amet mauris. Morbi in dui quis est pulvinar ullamcorper.',
+          "Morbi lacinia molestie dui. Praesent blandit dolor. Sed non quam. In vel mi sit amet augue congue elementum. Morbi in ipsum sit amet pede facilisis laoreet.",
+          "Donec lacus nunc, viverra nec, blandit vel, egestas et, augue. Vestibulum tincidunt malesuada tellus. Ut ultrices ultrices enim. Curabitur sit amet mauris. Morbi in dui quis est pulvinar ullamcorper.",
         ],
       },
     ],
   },
-] as const
+] as const;
 
-const validPaths = ['/', ...contentPages.map((page) => page.path)] as const
+const validPaths = ["/", ...contentPages.map((page) => page.path)] as const;
 
 function getNormalizedPath(pathname: string) {
-  return validPaths.includes(pathname as (typeof validPaths)[number]) ? pathname : '/'
+  return validPaths.includes(pathname as (typeof validPaths)[number]) ? pathname : "/";
 }
 
 function RouteNavigation({
   currentPath,
   onNavigate,
 }: {
-  currentPath: string
-  onNavigate: (path: string) => void
+  currentPath: string;
+  onNavigate: (path: string) => void;
 }) {
   return (
     <div className="flex flex-wrap gap-2 -ml-2">
-      <Button onClick={() => onNavigate('/')} type="button" variant={currentPath === '/' ? 'secondary' : 'ghost'} >
+      <Button
+        onClick={() => onNavigate("/")}
+        type="button"
+        variant={currentPath === "/" ? "secondary" : "ghost"}
+      >
         Home
       </Button>
       {contentPages.map((page) => (
@@ -113,14 +117,13 @@ function RouteNavigation({
           key={page.path}
           onClick={() => onNavigate(page.path)}
           type="button"
-          variant={currentPath === page.path ? 'secondary' : 'ghost'}
-
+          variant={currentPath === page.path ? "secondary" : "ghost"}
         >
           {page.label}
         </Button>
       ))}
     </div>
-  )
+  );
 }
 
 function HomePage() {
@@ -128,30 +131,28 @@ function HomePage() {
     <div className="flex flex-col gap-16">
       <img src={logo} alt="Annotation" className="h-12 w-fit" />
       <header className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-balance">
-          Annotate your interface
-        </h2>
+        <h2 className="text-lg font-semibold text-balance">Annotate your interface</h2>
         <p className="text-muted-foreground">
-          This package mounts an overlay, lets an annotator click real DOM targets, and stores page-scoped threads in
-          Supabase without turning the app itself into a product feature.
+          This package mounts an overlay, lets an annotator click real DOM targets, and stores
+          page-scoped threads in Supabase without turning the app itself into a product feature.
         </p>
       </header>
       <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">
-          Getting started
-        </h2>
+        <h2 className="text-lg font-semibold">Getting started</h2>
         {steps.map((step) => (
           <div key={step.title} className="rounded-md bg-muted/50 p-4 flex flex-col gap-4">
             <div className="flex flex-col ">
               <h3 className="font-semibold">{step.title}</h3>
               <p className="text-sm text-muted-foreground">{step.description}</p>
             </div>
-            <pre className="overflow-x-auto rounded-md border border-border p-4 text-xs font-mono">{step.code}</pre>
+            <pre className="overflow-x-auto rounded-md border border-border p-4 text-xs font-mono">
+              {step.code}
+            </pre>
           </div>
         ))}
       </section>
     </div>
-  )
+  );
 }
 
 function ContentPage({
@@ -159,12 +160,12 @@ function ContentPage({
   intro,
   sections,
 }: {
-  title: string
-  intro: string
+  title: string;
+  intro: string;
   sections: readonly {
-    heading: string
-    paragraphs: readonly string[]
-  }[]
+    heading: string;
+    paragraphs: readonly string[];
+  }[];
 }) {
   return (
     <div className="flex flex-col gap-16">
@@ -187,52 +188,52 @@ function ContentPage({
         ))}
       </div>
     </div>
-  )
+  );
 }
 
 function App() {
   const [currentPath, setCurrentPath] = useState(() =>
-    typeof window === 'undefined' ? '/' : getNormalizedPath(window.location.pathname),
-  )
+    typeof window === "undefined" ? "/" : getNormalizedPath(window.location.pathname),
+  );
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
+    if (typeof window === "undefined") {
+      return;
     }
 
     const syncPath = () => {
-      setCurrentPath(getNormalizedPath(window.location.pathname))
-    }
+      setCurrentPath(getNormalizedPath(window.location.pathname));
+    };
 
-    const normalizedPath = getNormalizedPath(window.location.pathname)
+    const normalizedPath = getNormalizedPath(window.location.pathname);
     if (window.location.pathname !== normalizedPath) {
-      window.history.replaceState({}, '', normalizedPath)
+      window.history.replaceState({}, "", normalizedPath);
     }
 
-    syncPath()
-    window.addEventListener('popstate', syncPath)
+    syncPath();
+    window.addEventListener("popstate", syncPath);
 
     return () => {
-      window.removeEventListener('popstate', syncPath)
-    }
-  }, [])
+      window.removeEventListener("popstate", syncPath);
+    };
+  }, []);
 
   const navigateTo = (path: string) => {
-    if (typeof window === 'undefined') {
-      return
+    if (typeof window === "undefined") {
+      return;
     }
 
     if (window.location.pathname === path) {
-      window.scrollTo({ top: 0, behavior: 'smooth' })
-      return
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
     }
 
-    window.history.pushState({}, '', path)
-    setCurrentPath(path)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+    window.history.pushState({}, "", path);
+    setCurrentPath(path);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
-  const currentContentPage = contentPages.find((page) => page.path === currentPath)
+  const currentContentPage = contentPages.find((page) => page.path === currentPath);
 
   return (
     <div className="min-h-screen p-8">
@@ -254,7 +255,7 @@ function App() {
         />
       </div>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;

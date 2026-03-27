@@ -5,10 +5,10 @@ import {
   useMemo,
   useState,
   type PropsWithChildren,
-} from 'react'
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { AnnotationContext, type AnnotationContextValue } from './annotation-context'
-import { querySelectorSafely } from './selector'
+} from "react";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { AnnotationContext, type AnnotationContextValue } from "./annotation-context";
+import { querySelectorSafely } from "./selector";
 import {
   ANNOTATION_AUTHOR_KEY,
   ANNOTATION_SHOW_RESOLVED_KEY,
@@ -16,22 +16,22 @@ import {
   readStoredString,
   writeStoredBoolean,
   writeStoredString,
-} from './storage'
-import type { AnnotationComment, AnnotationOverlayProps, AnnotationRect, PendingAnnotation } from './types'
-import {
-  getCommentMap,
-  getThreadRootId,
-  normalizeComment,
-  sortComments,
-} from './utils'
+} from "./storage";
+import type {
+  AnnotationComment,
+  AnnotationOverlayProps,
+  AnnotationRect,
+  PendingAnnotation,
+} from "./types";
+import { getCommentMap, getThreadRootId, normalizeComment, sortComments } from "./utils";
 
-const supabaseClientCache = new Map<string, SupabaseClient>()
+const supabaseClientCache = new Map<string, SupabaseClient>();
 
 function getSupabaseClient(url: string, key: string): SupabaseClient {
-  const cacheKey = `${url}::${key}`
-  const cachedClient = supabaseClientCache.get(cacheKey)
+  const cacheKey = `${url}::${key}`;
+  const cachedClient = supabaseClientCache.get(cacheKey);
   if (cachedClient) {
-    return cachedClient
+    return cachedClient;
   }
 
   const client = createClient(url, key, {
@@ -39,18 +39,18 @@ function getSupabaseClient(url: string, key: string): SupabaseClient {
       persistSession: false,
       autoRefreshToken: false,
     },
-  })
+  });
 
-  supabaseClientCache.set(cacheKey, client)
-  return client
+  supabaseClientCache.set(cacheKey, client);
+  return client;
 }
 
 function getActivePath(pathOverride?: string): string {
   if (pathOverride) {
-    return pathOverride
+    return pathOverride;
   }
 
-  return typeof window === 'undefined' ? '/' : window.location.pathname
+  return typeof window === "undefined" ? "/" : window.location.pathname;
 }
 
 export function AnnotationProvider({
@@ -60,284 +60,283 @@ export function AnnotationProvider({
   pagePath,
   initialPanelOpen = false,
 }: PropsWithChildren<AnnotationOverlayProps>) {
-  const client = useMemo(() => getSupabaseClient(supabaseUrl, supabaseAnonKey), [supabaseAnonKey, supabaseUrl])
-  const [author, setAuthorState] = useState(() => readStoredString(ANNOTATION_AUTHOR_KEY))
-  const [showResolved, setShowResolvedState] = useState(() => readStoredBoolean(ANNOTATION_SHOW_RESOLVED_KEY, false))
-  const [currentPath, setCurrentPath] = useState(() => getActivePath(pagePath))
-  const [comments, setComments] = useState<AnnotationComment[]>([])
-  const [composer, setComposer] = useState<PendingAnnotation | null>(null)
-  const [commentMode, setCommentMode] = useState(false)
-  const [isPanelOpen, setPanelOpen] = useState(initialPanelOpen)
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const client = useMemo(
+    () => getSupabaseClient(supabaseUrl, supabaseAnonKey),
+    [supabaseAnonKey, supabaseUrl],
+  );
+  const [author, setAuthorState] = useState(() => readStoredString(ANNOTATION_AUTHOR_KEY));
+  const [showResolved, setShowResolvedState] = useState(() =>
+    readStoredBoolean(ANNOTATION_SHOW_RESOLVED_KEY, false),
+  );
+  const [currentPath, setCurrentPath] = useState(() => getActivePath(pagePath));
+  const [comments, setComments] = useState<AnnotationComment[]>([]);
+  const [composer, setComposer] = useState<PendingAnnotation | null>(null);
+  const [commentMode, setCommentMode] = useState(false);
+  const [isPanelOpen, setPanelOpen] = useState(initialPanelOpen);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const commentMap = useMemo(() => getCommentMap(comments), [comments])
+  const commentMap = useMemo(() => getCommentMap(comments), [comments]);
 
-  const loadComments = useCallback(
-    async () => {
-      setIsLoading(true)
-      setErrorMessage(null)
+  const loadComments = useCallback(async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
 
-      const { data, error } = await client
-        .from('comments')
-        .select('*')
-        .order('created_at', { ascending: true })
+    const { data, error } = await client
+      .from("comments")
+      .select("*")
+      .order("created_at", { ascending: true });
 
-      if (error) {
-        setComments([])
-        setErrorMessage(error.message)
-        setIsLoading(false)
-        return
-      }
+    if (error) {
+      setComments([]);
+      setErrorMessage(error.message);
+      setIsLoading(false);
+      return;
+    }
 
-      startTransition(() => {
-        setComments(
-          sortComments(
-            (data ?? []).map((row) =>
-              normalizeComment(row as Partial<AnnotationComment> & { id: string }),
-            ),
+    startTransition(() => {
+      setComments(
+        sortComments(
+          (data ?? []).map((row) =>
+            normalizeComment(row as Partial<AnnotationComment> & { id: string }),
           ),
-        )
-        setIsLoading(false)
-      })
-    },
-    [client],
-  )
+        ),
+      );
+      setIsLoading(false);
+    });
+  }, [client]);
 
   const syncPath = useCallback(() => {
-    const nextPath = getActivePath(pagePath)
-    setCurrentPath((previous) => (previous === nextPath ? previous : nextPath))
-  }, [pagePath])
+    const nextPath = getActivePath(pagePath);
+    setCurrentPath((previous) => (previous === nextPath ? previous : nextPath));
+  }, [pagePath]);
 
   useEffect(() => {
-    setCurrentPath(getActivePath(pagePath))
-  }, [pagePath])
+    setCurrentPath(getActivePath(pagePath));
+  }, [pagePath]);
 
   useEffect(() => {
-    void loadComments()
-  }, [currentPath, loadComments])
+    void loadComments();
+  }, [currentPath, loadComments]);
 
   useEffect(() => {
     if (pagePath) {
-      return
+      return;
     }
 
-    window.addEventListener('popstate', syncPath)
-    const intervalId = window.setInterval(syncPath, 500)
+    window.addEventListener("popstate", syncPath);
+    const intervalId = window.setInterval(syncPath, 500);
 
     return () => {
-      window.removeEventListener('popstate', syncPath)
-      window.clearInterval(intervalId)
-    }
-  }, [pagePath, syncPath])
+      window.removeEventListener("popstate", syncPath);
+      window.clearInterval(intervalId);
+    };
+  }, [pagePath, syncPath]);
 
   useEffect(() => {
     const channel = client
-      .channel('annotation-comments')
+      .channel("annotation-comments")
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: '*',
-          schema: 'public',
-          table: 'comments',
+          event: "*",
+          schema: "public",
+          table: "comments",
         },
         () => {
-          void loadComments()
+          void loadComments();
         },
       )
-      .subscribe()
+      .subscribe();
 
     return () => {
-      void client.removeChannel(channel)
-    }
-  }, [client, loadComments])
+      void client.removeChannel(channel);
+    };
+  }, [client, loadComments]);
 
   const setAuthor = useCallback((value: string) => {
-    const nextValue = value.trim()
-    writeStoredString(ANNOTATION_AUTHOR_KEY, nextValue)
-    setAuthorState(nextValue)
-  }, [])
+    const nextValue = value.trim();
+    writeStoredString(ANNOTATION_AUTHOR_KEY, nextValue);
+    setAuthorState(nextValue);
+  }, []);
 
   const setShowResolved = useCallback((value: boolean) => {
-    writeStoredBoolean(ANNOTATION_SHOW_RESOLVED_KEY, value)
-    setShowResolvedState(value)
-  }, [])
+    writeStoredBoolean(ANNOTATION_SHOW_RESOLVED_KEY, value);
+    setShowResolvedState(value);
+  }, []);
 
   const closeComposer = useCallback(() => {
-    setComposer(null)
-    setCommentMode(false)
-    setActiveThreadId(null)
-  }, [])
+    setComposer(null);
+    setCommentMode(false);
+    setActiveThreadId(null);
+  }, []);
 
   const ensureAuthor = useCallback(() => {
     if (author) {
-      return true
+      return true;
     }
 
-    setPanelOpen(true)
-    return false
-  }, [author])
+    setPanelOpen(true);
+    return false;
+  }, [author]);
 
   const startCommentMode = useCallback(() => {
     if (!ensureAuthor()) {
-      return
+      return;
     }
 
-    setComposer(null)
-    setCommentMode(true)
-    setPanelOpen(false)
-  }, [ensureAuthor])
+    setComposer(null);
+    setCommentMode(true);
+    setPanelOpen(false);
+  }, [ensureAuthor]);
 
   const cancelCommentMode = useCallback(() => {
-    setCommentMode(false)
-    setComposer(null)
-    setActiveThreadId(null)
-  }, [])
+    setCommentMode(false);
+    setComposer(null);
+    setActiveThreadId(null);
+  }, []);
 
   const selectElement = useCallback((selector: string, rect: AnnotationRect) => {
     setComposer({
       parentId: null,
       selector,
       rect,
-    })
-    setCommentMode(false)
-    setPanelOpen(false)
-  }, [])
+    });
+    setCommentMode(false);
+    setPanelOpen(false);
+  }, []);
 
   const openThreadComposer = useCallback(
     (threadId: string, rect: AnnotationRect) => {
       if (!ensureAuthor()) {
-        return
+        return;
       }
 
       setComposer({
         parentId: threadId,
         selector: null,
         rect,
-      })
-      setActiveThreadId(threadId)
-      setCommentMode(false)
-      setPanelOpen(false)
+      });
+      setActiveThreadId(threadId);
+      setCommentMode(false);
+      setPanelOpen(false);
     },
     [ensureAuthor],
-  )
+  );
 
   const updateThreadRect = useCallback(
     async (commentId: string, rect: AnnotationRect) => {
-      const threadId = getThreadRootId(commentId, commentMap)
-      const target = commentMap.get(threadId)
+      const threadId = getThreadRootId(commentId, commentMap);
+      const target = commentMap.get(threadId);
       if (!target) {
-        return false
+        return false;
       }
 
-      const previousRect = target.rect
-      setErrorMessage(null)
+      const previousRect = target.rect;
+      setErrorMessage(null);
 
       startTransition(() => {
         setComments((previous) =>
           previous.map((comment) => (comment.id === threadId ? { ...comment, rect } : comment)),
-        )
-      })
+        );
+      });
 
-      const { error } = await client
-        .from('comments')
-        .update({ rect })
-        .eq('id', threadId)
+      const { error } = await client.from("comments").update({ rect }).eq("id", threadId);
 
       if (error) {
-        setErrorMessage(error.message)
+        setErrorMessage(error.message);
         startTransition(() => {
           setComments((previous) =>
             previous.map((comment) =>
               comment.id === threadId ? { ...comment, rect: previousRect } : comment,
             ),
-          )
-        })
-        return false
+          );
+        });
+        return false;
       }
 
-      return true
+      return true;
     },
     [client, commentMap],
-  )
+  );
 
   const scrollToComment = useCallback(
     (commentId: string) => {
-      const targetComment = commentMap.get(commentId)
+      const targetComment = commentMap.get(commentId);
       if (!targetComment) {
-        return
+        return;
       }
 
-      const threadId = getThreadRootId(commentId, commentMap)
-      const anchorComment = commentMap.get(threadId) ?? targetComment
+      const threadId = getThreadRootId(commentId, commentMap);
+      const anchorComment = commentMap.get(threadId) ?? targetComment;
 
-      setActiveThreadId(threadId)
-      setPanelOpen(true)
+      setActiveThreadId(threadId);
+      setPanelOpen(true);
 
       const scrollToAnchor = (allowRectFallback: boolean) => {
-        const targetElement = querySelectorSafely(anchorComment.selector)
+        const targetElement = querySelectorSafely(anchorComment.selector);
 
         if (targetElement) {
           targetElement.scrollIntoView({
-            behavior: 'smooth',
-            block: 'center',
-            inline: 'center',
-          })
-          return true
+            behavior: "smooth",
+            block: "center",
+            inline: "center",
+          });
+          return true;
         }
 
         if (allowRectFallback && anchorComment.rect) {
-          const nextTop = Math.max(anchorComment.rect.pageY - window.innerHeight / 2, 0)
+          const nextTop = Math.max(anchorComment.rect.pageY - window.innerHeight / 2, 0);
           window.scrollTo({
             top: nextTop,
-            behavior: 'smooth',
-          })
-          return true
+            behavior: "smooth",
+          });
+          return true;
         }
 
-        return false
-      }
+        return false;
+      };
 
       if (anchorComment.page_path !== currentPath) {
         if (window.location.pathname !== anchorComment.page_path) {
-          window.history.pushState({}, '', anchorComment.page_path)
-          window.dispatchEvent(new PopStateEvent('popstate'))
+          window.history.pushState({}, "", anchorComment.page_path);
+          window.dispatchEvent(new PopStateEvent("popstate"));
         }
 
-        let attempts = 0
+        let attempts = 0;
 
         const scrollAfterNavigation = () => {
-          attempts += 1
+          attempts += 1;
 
           if (scrollToAnchor(false) || attempts >= 10) {
-            return
+            return;
           }
 
-          window.requestAnimationFrame(scrollAfterNavigation)
-        }
+          window.requestAnimationFrame(scrollAfterNavigation);
+        };
 
-        window.requestAnimationFrame(scrollAfterNavigation)
-        return
+        window.requestAnimationFrame(scrollAfterNavigation);
+        return;
       }
 
-      scrollToAnchor(true)
+      scrollToAnchor(true);
     },
     [commentMap, currentPath],
-  )
+  );
 
   const submitComment = useCallback(
     async (text: string) => {
       if (!composer) {
-        return false
+        return false;
       }
 
-      const nextText = text.trim()
+      const nextText = text.trim();
       if (!nextText || !author) {
-        return false
+        return false;
       }
 
-      setErrorMessage(null)
+      setErrorMessage(null);
 
       const payload = {
         page_path: currentPath,
@@ -347,97 +346,99 @@ export function AnnotationProvider({
         author,
         resolved: false,
         parent_id: composer.parentId,
-      }
+      };
 
-      const { data, error } = await client.from('comments').insert(payload).select().single()
+      const { data, error } = await client.from("comments").insert(payload).select().single();
 
       if (error) {
-        setErrorMessage(error.message)
-        return false
+        setErrorMessage(error.message);
+        return false;
       }
 
-      const inserted = normalizeComment(data as Partial<AnnotationComment> & { id: string })
+      const inserted = normalizeComment(data as Partial<AnnotationComment> & { id: string });
       startTransition(() => {
-        setComments((previous) => sortComments([...previous, inserted]))
-      })
+        setComments((previous) => sortComments([...previous, inserted]));
+      });
       if (!composer.parentId) {
-        setComposer(null)
+        setComposer(null);
       }
-      setCommentMode(false)
-      setActiveThreadId(inserted.parent_id ? getThreadRootId(inserted.parent_id, commentMap) : null)
-      return true
+      setCommentMode(false);
+      setActiveThreadId(
+        inserted.parent_id ? getThreadRootId(inserted.parent_id, commentMap) : null,
+      );
+      return true;
     },
     [author, client, commentMap, composer, currentPath],
-  )
+  );
 
   const removeThread = useCallback(
     async (commentId: string) => {
-      const threadId = getThreadRootId(commentId, commentMap)
-      const target = commentMap.get(threadId)
+      const threadId = getThreadRootId(commentId, commentMap);
+      const target = commentMap.get(threadId);
       if (!target) {
-        return false
+        return false;
       }
 
-      setErrorMessage(null)
+      setErrorMessage(null);
 
       const replyIds = comments
         .filter((comment) => comment.parent_id === threadId)
-        .map((comment) => comment.id)
+        .map((comment) => comment.id);
 
       if (replyIds.length > 0) {
-        const { error: repliesError } = await client.from('comments').delete().in('id', replyIds)
+        const { error: repliesError } = await client.from("comments").delete().in("id", replyIds);
 
         if (repliesError) {
-          setErrorMessage(repliesError.message)
-          return false
+          setErrorMessage(repliesError.message);
+          return false;
         }
       }
 
-      const { error } = await client.from('comments').delete().eq('id', threadId)
+      const { error } = await client.from("comments").delete().eq("id", threadId);
 
       if (error) {
-        setErrorMessage(error.message)
-        return false
+        setErrorMessage(error.message);
+        return false;
       }
 
       startTransition(() => {
         setComments((previous) =>
           previous.filter((comment) => comment.id !== threadId && comment.parent_id !== threadId),
-        )
-      })
+        );
+      });
 
       if (composer?.parentId === threadId) {
-        closeComposer()
-        return true
+        closeComposer();
+        return true;
       }
 
-      setActiveThreadId((previous) => (previous === threadId ? null : previous))
-      return true
+      setActiveThreadId((previous) => (previous === threadId ? null : previous));
+      return true;
     },
     [client, closeComposer, commentMap, comments, composer],
-  )
+  );
 
   const toggleResolved = useCallback(
     async (commentId: string) => {
-      const threadId = getThreadRootId(commentId, commentMap)
-      const target = commentMap.get(threadId)
+      const threadId = getThreadRootId(commentId, commentMap);
+      const target = commentMap.get(threadId);
       if (!target) {
-        return
+        return;
       }
 
-      const nextResolved = !target.resolved
-      const resolvedAt = nextResolved ? new Date().toISOString() : null
+      const nextResolved = !target.resolved;
+      const resolvedAt = nextResolved ? new Date().toISOString() : null;
       const { error } = await client
-        .from('comments')
+        .from("comments")
         .update({
           resolved: nextResolved,
           resolved_at: resolvedAt,
         })
-        .eq('id', threadId)
+        .eq("id", threadId);
 
       if (error) {
-        setErrorMessage(error.message)
-        return
+        setErrorMessage(error.message);
+        return;
       }
 
       startTransition(() => {
@@ -451,57 +452,58 @@ export function AnnotationProvider({
                 }
               : comment,
           ),
-        )
-      })
+        );
+      });
       if (nextResolved && composer?.parentId === threadId) {
-        closeComposer()
-        return
+        closeComposer();
+        return;
       }
 
-      setActiveThreadId(threadId)
+      setActiveThreadId(threadId);
     },
     [client, closeComposer, commentMap, composer],
-  )
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
-        return
+        return;
       }
 
-      const target = event.target instanceof HTMLElement ? event.target : null
+      const target = event.target instanceof HTMLElement ? event.target : null;
       const isTyping =
-        Boolean(target?.isContentEditable) || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')
+        Boolean(target?.isContentEditable) ||
+        ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName ?? "");
 
-      if ((event.key === 'c' || event.key === 'C') && !isTyping) {
-        event.preventDefault()
+      if ((event.key === "c" || event.key === "C") && !isTyping) {
+        event.preventDefault();
         if (commentMode) {
-          cancelCommentMode()
+          cancelCommentMode();
         } else {
-          startCommentMode()
+          startCommentMode();
         }
-        return
+        return;
       }
 
-      if (event.key === 'Escape') {
+      if (event.key === "Escape") {
         if (commentMode || composer) {
-          event.preventDefault()
-          cancelCommentMode()
+          event.preventDefault();
+          cancelCommentMode();
         }
-        return
+        return;
       }
 
-      if ((event.key === 'r' || event.key === 'R') && !isTyping && activeThreadId) {
-        event.preventDefault()
-        void toggleResolved(activeThreadId)
+      if ((event.key === "r" || event.key === "R") && !isTyping && activeThreadId) {
+        event.preventDefault();
+        void toggleResolved(activeThreadId);
       }
-    }
+    };
 
-    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener("keydown", onKeyDown);
     return () => {
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [activeThreadId, cancelCommentMode, commentMode, composer, startCommentMode, toggleResolved])
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [activeThreadId, cancelCommentMode, commentMode, composer, startCommentMode, toggleResolved]);
 
   const value = useMemo<AnnotationContextValue>(
     () => ({
@@ -553,7 +555,7 @@ export function AnnotationProvider({
       toggleResolved,
       updateThreadRect,
     ],
-  )
+  );
 
-  return <AnnotationContext.Provider value={value}>{children}</AnnotationContext.Provider>
+  return <AnnotationContext.Provider value={value}>{children}</AnnotationContext.Provider>;
 }

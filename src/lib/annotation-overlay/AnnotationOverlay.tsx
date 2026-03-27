@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
-import { createPortal } from 'react-dom'
-import { CheckCircleIcon, DotsThreeVerticalIcon, XIcon } from '@phosphor-icons/react'
-import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { CheckCircleIcon, DotsThreeVerticalIcon, XIcon } from "@phosphor-icons/react";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Popover,
   PopoverAnchor,
@@ -10,26 +10,26 @@ import {
   PopoverHeader,
   PopoverTitle,
   PopoverTrigger,
-} from '@/components/ui/popover'
-import { AnnotationProvider } from './AnnotationContext'
-import type { AnnotationOverlayProps } from './types'
-import { formatTimestamp, rectToViewport } from './utils'
-import { AnnotationComposer } from './components/AnnotationComposer'
-import { InteractionLayer } from './components/InteractionLayer'
-import { CommentMarkers } from './components/CommentMarkers'
-import { AnnotationPanel } from './components/AnnotationPanel'
-import { useAnnotation } from './useAnnotation'
-import { cn } from '../utils'
+} from "@/components/ui/popover";
+import { AnnotationProvider } from "./AnnotationContext";
+import type { AnnotationOverlayProps } from "./types";
+import { formatTimestamp, rectToViewport } from "./utils";
+import { AnnotationComposer } from "./components/AnnotationComposer";
+import { InteractionLayer } from "./components/InteractionLayer";
+import { CommentMarkers } from "./components/CommentMarkers";
+import { AnnotationPanel } from "./components/AnnotationPanel";
+import { useAnnotation } from "./useAnnotation";
+import { cn } from "../utils";
 
 type ThreadCommentProps = {
-  isRoot?: boolean
-  isResolved?: boolean
-  author: string
-  createdAt: string
-  text: string
-  onToggleResolved?: () => void
-  onRemove?: () => void
-}
+  isRoot?: boolean;
+  isResolved?: boolean;
+  author: string;
+  createdAt: string;
+  text: string;
+  onToggleResolved?: () => void;
+  onRemove?: () => void;
+};
 
 function ThreadComment({
   author,
@@ -40,7 +40,7 @@ function ThreadComment({
   onToggleResolved,
   text,
 }: ThreadCommentProps) {
-  const [isActionsOpen, setIsActionsOpen] = useState(false)
+  const [isActionsOpen, setIsActionsOpen] = useState(false);
 
   return (
     <article className="flex flex-col gap-1 border-b border-border bg-background p-4">
@@ -73,8 +73,8 @@ function ThreadComment({
                     <Button
                       className="w-full justify-start"
                       onClick={() => {
-                        setIsActionsOpen(false)
-                        onRemove()
+                        setIsActionsOpen(false);
+                        onRemove();
                       }}
                       size="sm"
                       type="button"
@@ -87,8 +87,8 @@ function ThreadComment({
               )}
               {onToggleResolved && (
                 <Button
-                  aria-label={isResolved ? 'Mark annotation as open' : 'Resolve annotation'}
-                  className={isResolved ? 'opacity-50' : ''}
+                  aria-label={isResolved ? "Mark annotation as open" : "Resolve annotation"}
+                  className={isResolved ? "opacity-50" : ""}
                   onClick={onToggleResolved}
                   size="icon"
                   type="button"
@@ -103,33 +103,45 @@ function ThreadComment({
         <p className="text-sm leading-6 text-foreground">{text}</p>
       </div>
     </article>
-  )
+  );
 }
 
 function AnnotationComposerPopover() {
-  const { closeComposer, comments, composer, errorMessage, removeThread, submitComment, toggleResolved } = useAnnotation()
+  const {
+    closeComposer,
+    comments,
+    composer,
+    errorMessage,
+    removeThread,
+    submitComment,
+    toggleResolved,
+  } = useAnnotation();
 
   if (!composer || !composer.rect) {
-    return null
+    return null;
   }
 
-  const rect = rectToViewport(composer.rect)
-  const parentComment = composer.parentId ? comments.find((comment) => comment.id === composer.parentId) ?? null : null
+  const rect = rectToViewport(composer.rect);
+  const parentComment = composer.parentId
+    ? (comments.find((comment) => comment.id === composer.parentId) ?? null)
+    : null;
   const threadComments = parentComment
-    ? comments.filter((comment) => comment.id === parentComment.id || comment.parent_id === parentComment.id)
-    : []
+    ? comments.filter(
+        (comment) => comment.id === parentComment.id || comment.parent_id === parentComment.id,
+      )
+    : [];
 
   const handleToggleResolved = () => {
     if (parentComment) {
-      void toggleResolved(parentComment.id)
+      void toggleResolved(parentComment.id);
     }
-  }
+  };
 
   const handleRemoveThread = () => {
     if (parentComment) {
-      void removeThread(parentComment.id)
+      void removeThread(parentComment.id);
     }
-  }
+  };
 
   return (
     <Popover onOpenChange={(open) => !open && closeComposer()} open>
@@ -153,7 +165,9 @@ function AnnotationComposerPopover() {
         sideOffset={12}
       >
         <PopoverHeader>
-          <PopoverTitle className="sr-only">{parentComment ? 'Reply to annotation' : 'New annotation'}</PopoverTitle>
+          <PopoverTitle className="sr-only">
+            {parentComment ? "Reply to annotation" : "New annotation"}
+          </PopoverTitle>
         </PopoverHeader>
         {parentComment ? (
           <div>
@@ -167,7 +181,9 @@ function AnnotationComposerPopover() {
                     isRoot={comment.id === parentComment.id}
                     key={comment.id}
                     onRemove={comment.id === parentComment.id ? handleRemoveThread : undefined}
-                    onToggleResolved={comment.id === parentComment.id ? handleToggleResolved : undefined}
+                    onToggleResolved={
+                      comment.id === parentComment.id ? handleToggleResolved : undefined
+                    }
                     text={comment.text}
                   />
                 ))}
@@ -175,31 +191,31 @@ function AnnotationComposerPopover() {
             </ScrollArea>
           </div>
         ) : null}
-        <div className={cn('p-2', !parentComment && 'bg-background')}>
+        <div className={cn("p-2", !parentComment && "bg-background")}>
           <AnnotationComposer errorMessage={errorMessage} onSubmit={submitComment} />
         </div>
       </PopoverContent>
     </Popover>
-  )
+  );
 }
 
 function CommentModeCursor() {
-  const { commentMode } = useAnnotation()
+  const { commentMode } = useAnnotation();
 
   useEffect(() => {
-    const attributeName = 'data-annotation-comment-mode'
+    const attributeName = "data-annotation-comment-mode";
 
     if (commentMode) {
-      document.documentElement.setAttribute(attributeName, 'true')
+      document.documentElement.setAttribute(attributeName, "true");
       return () => {
-        document.documentElement.removeAttribute(attributeName)
-      }
+        document.documentElement.removeAttribute(attributeName);
+      };
     }
 
-    document.documentElement.removeAttribute(attributeName)
+    document.documentElement.removeAttribute(attributeName);
 
-    return undefined
-  }, [commentMode])
+    return undefined;
+  }, [commentMode]);
 
   return (
     <style>
@@ -211,14 +227,17 @@ function CommentModeCursor() {
         }
       `}
     </style>
-  )
+  );
 }
 
 function AnnotationOverlayScene() {
-  const { cancelCommentMode, commentMode, composer } = useAnnotation()
+  const { cancelCommentMode, commentMode, composer } = useAnnotation();
 
   return createPortal(
-    <div className="absolute h-px w-px top-0 left-0 z-2147483600" data-annotation-overlay-root="true">
+    <div
+      className="absolute h-px w-px top-0 left-0 z-2147483600"
+      data-annotation-overlay-root="true"
+    >
       <CommentModeCursor />
       <InteractionLayer />
       <CommentMarkers />
@@ -226,6 +245,7 @@ function AnnotationOverlayScene() {
         <Button
           aria-label="Exit comment mode"
           className="fixed bottom-6 left-1/2 z-2147483602 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border shadow-lg"
+          data-annotation-overlay-root="true"
           onClick={cancelCommentMode}
           type="button"
           variant="secondary"
@@ -238,17 +258,17 @@ function AnnotationOverlayScene() {
       <AnnotationPanel />
     </div>,
     document.body,
-  )
+  );
 }
 
 export function AnnotationOverlay(props: AnnotationOverlayProps) {
-  if (typeof document === 'undefined') {
-    return null
+  if (typeof document === "undefined") {
+    return null;
   }
 
   return (
     <AnnotationProvider {...props}>
       <AnnotationOverlayScene />
     </AnnotationProvider>
-  )
+  );
 }
