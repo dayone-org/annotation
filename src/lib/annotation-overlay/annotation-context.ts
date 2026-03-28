@@ -10,16 +10,23 @@ export type AnnotationContextValue = {
   currentPath: string;
   errorMessage: string | null;
   isLoading: boolean;
+  isAuthorGateOpen: boolean;
   isPanelOpen: boolean;
+  closeAuthorGate: () => void;
   setPanelOpen: (open: boolean) => void;
   setAuthor: (value: string) => void;
+  submitAuthorGate: (name: string) => void;
   setShowResolved: (value: boolean) => void;
   showResolved: boolean;
   startCommentMode: () => void;
   cancelCommentMode: () => void;
   selectElement: (selector: string, rect: AnnotationRect) => void;
   openThreadComposer: (threadId: string, rect: AnnotationRect) => void;
-  updateThreadRect: (commentId: string, rect: AnnotationRect) => Promise<boolean>;
+  updateThreadRect: (
+    commentId: string,
+    rect: AnnotationRect,
+    selector?: string | null,
+  ) => Promise<boolean>;
   closeComposer: () => void;
   submitComment: (text: string) => Promise<boolean>;
   scrollToComment: (commentId: string) => void;

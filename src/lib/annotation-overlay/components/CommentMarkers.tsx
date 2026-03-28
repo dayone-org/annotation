@@ -12,8 +12,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { AnnotationComment, MarkerPosition } from "../types";
-import { querySelectorSafely } from "../selector";
+import type { AnnotationComment, AnnotationRect, MarkerPosition } from "../types";
+import { generateSelector, querySelectorSafely } from "../selector";
 import { useAnnotation } from "../useAnnotation";
 import {
   getMarkerPagePosition,
@@ -28,9 +28,6 @@ import {
 const MARKER_OFFSET_X = 10;
 const MARKER_OFFSET_Y = 10;
 const DRAG_DISTANCE_THRESHOLD = 4;
-const ZERO_STACK_OFFSET = { x: 0, y: 0 } satisfies MarkerStackOffset;
-
-type MarkerStackOffset = { x: number; y: number };
 
 type DragSession = {
   pointerId: number;
@@ -39,7 +36,6 @@ type DragSession = {
   startClientY: number;
   pointerOffsetX: number;
   pointerOffsetY: number;
-  stackedOffset: MarkerStackOffset;
   target: HTMLElement | null;
   hasMoved: boolean;
 };
@@ -49,10 +45,23 @@ type MarkerStyle = CSSProperties & {
   "--marker-base-y": string;
 };
 
-function getMarkerStyle(position: MarkerPosition, stackedOffset: MarkerStackOffset): MarkerStyle {
+function rectsEqual(left: AnnotationRect | null, right: AnnotationRect): boolean {
+  if (!left) {
+    return false;
+  }
+
+  return (
+    left.left === right.left &&
+    left.top === right.top &&
+    left.width === right.width &&
+    left.height === right.height
+  );
+}
+
+function getMarkerStyle(position: MarkerPosition): MarkerStyle {
   return {
-    "--marker-base-x": `${position.x + MARKER_OFFSET_X + stackedOffset.x}px`,
-    "--marker-base-y": `${position.y + MARKER_OFFSET_Y + stackedOffset.y}px`,
+    "--marker-base-x": `${position.x + MARKER_OFFSET_X}px`,
+    "--marker-base-y": `${position.y + MARKER_OFFSET_Y}px`,
     transform:
       "translate(calc(var(--marker-base-x) + var(--marker-delta-x, 0px)), calc(var(--marker-base-y) + var(--marker-delta-y, 0px)))",
   };
@@ -60,6 +69,28 @@ function getMarkerStyle(position: MarkerPosition, stackedOffset: MarkerStackOffs
 
 function getThreadId(node: HTMLElement): string | null {
   return node.dataset.threadId ?? null;
+}
+
+function getSelectableElementAtPoint(clientX: number, clientY: number): HTMLElement | null {
+  const elements = document.elementsFromPoint(clientX, clientY);
+
+  for (const element of elements) {
+    if (!(element instanceof HTMLElement)) {
+      continue;
+    }
+
+    if (element.closest('[data-annotation-overlay-root="true"]')) {
+      continue;
+    }
+
+    if (element === document.body || element === document.documentElement) {
+      continue;
+    }
+
+    return element;
+  }
+
+  return null;
 }
 
 function setMarkerDelta(node: HTMLElement, deltaX: number, deltaY: number) {
@@ -72,13 +103,9 @@ function clearMarkerDelta(node: HTMLElement) {
   node.style.removeProperty("--marker-delta-y");
 }
 
-function setMarkerBasePosition(
-  node: HTMLElement,
-  position: MarkerPosition,
-  stackedOffset: MarkerStackOffset,
-) {
-  node.style.setProperty("--marker-base-x", `${position.x + MARKER_OFFSET_X + stackedOffset.x}px`);
-  node.style.setProperty("--marker-base-y", `${position.y + MARKER_OFFSET_Y + stackedOffset.y}px`);
+function setMarkerBasePosition(node: HTMLElement, position: MarkerPosition) {
+  node.style.setProperty("--marker-base-x", `${position.x + MARKER_OFFSET_X}px`);
+  node.style.setProperty("--marker-base-y", `${position.y + MARKER_OFFSET_Y}px`);
 }
 
 export function CommentMarkers() {
@@ -91,11 +118,12 @@ export function CommentMarkers() {
     updateThreadRect,
   } = useAnnotation();
   const [positions, setPositions] = useState<Record<string, MarkerPosition>>({});
+  const [dragHighlightElement, setDragHighlightElement] = useState<HTMLElement | null>(null);
+  const [dragHighlightRect, setDragHighlightRect] = useState<AnnotationRect | null>(null);
   const markerElementsRef = useRef(new Map<string, HTMLButtonElement>());
   const positionsRef = useRef<Record<string, MarkerPosition>>({});
   const topLevelCommentsRef = useRef<AnnotationComment[]>([]);
   const topLevelCommentMapRef = useRef(new Map<string, AnnotationComment>());
-  const stackedOffsetsRef = useRef<Record<string, MarkerStackOffset>>({});
   const dragSessionRef = useRef<DragSession | null>(null);
   const ignoreClickThreadIdRef = useRef<string | null>(null);
   const resizeFrameIdRef = useRef(0);
@@ -105,41 +133,6 @@ export function CommentMarkers() {
       (comment) => comment.page_path === currentPath && (showResolved || !comment.resolved),
     );
   }, [comments, currentPath, showResolved]);
-
-  const stackedOffsets = useMemo(() => {
-    const groups = new Map<string, string[]>();
-
-    for (const comment of topLevelComments) {
-      const position = positions[comment.id];
-      if (!position) {
-        continue;
-      }
-
-      const key = `${Math.round(position.x)}:${Math.round(position.y)}`;
-      const group = groups.get(key);
-      if (group) {
-        group.push(comment.id);
-      } else {
-        groups.set(key, [comment.id]);
-      }
-    }
-
-    const nextOffsets: Record<string, MarkerStackOffset> = {};
-
-    for (const ids of groups.values()) {
-      ids.forEach((id, index) => {
-        const column = index % 3;
-        const row = Math.floor(index / 3);
-
-        nextOffsets[id] = {
-          x: column * 10,
-          y: row * 10,
-        };
-      });
-    }
-
-    return nextOffsets;
-  }, [positions, topLevelComments]);
 
   const syncMarkerPositions = useCallback((syncState: boolean) => {
     const previousPositions = positionsRef.current;
@@ -174,11 +167,7 @@ export function CommentMarkers() {
 
       const markerNode = markerElementsRef.current.get(comment.id);
       if (markerNode) {
-        setMarkerBasePosition(
-          markerNode,
-          nextPosition,
-          stackedOffsetsRef.current[comment.id] ?? ZERO_STACK_OFFSET,
-        );
+        setMarkerBasePosition(markerNode, nextPosition);
       }
     }
 
@@ -210,7 +199,7 @@ export function CommentMarkers() {
       return;
     }
 
-    setMarkerBasePosition(node, position, stackedOffsetsRef.current[threadId] ?? ZERO_STACK_OFFSET);
+    setMarkerBasePosition(node, position);
   }, []);
 
   const finishDrag = useCallback(
@@ -228,18 +217,8 @@ export function CommentMarkers() {
 
       const nextPosition: MarkerPosition = {
         ...currentPosition,
-        x:
-          event.clientX +
-          window.scrollX -
-          session.pointerOffsetX -
-          MARKER_OFFSET_X -
-          session.stackedOffset.x,
-        y:
-          event.clientY +
-          window.scrollY -
-          session.pointerOffsetY -
-          MARKER_OFFSET_Y -
-          session.stackedOffset.y,
+        x: event.clientX + window.scrollX - session.pointerOffsetX - MARKER_OFFSET_X,
+        y: event.clientY + window.scrollY - session.pointerOffsetY - MARKER_OFFSET_Y,
       };
 
       if (!markerPositionsEqual(currentPosition, nextPosition)) {
@@ -252,17 +231,20 @@ export function CommentMarkers() {
         setPositions(nextPositions);
       }
 
-      setMarkerBasePosition(event.currentTarget, nextPosition, session.stackedOffset);
+      setMarkerBasePosition(event.currentTarget, nextPosition);
       clearMarkerDelta(event.currentTarget);
+      setDragHighlightElement(null);
+      setDragHighlightRect(null);
+
+      const dropTarget =
+        getSelectableElementAtPoint(event.clientX, event.clientY) ?? session.target ?? undefined;
+      const nextSelector = dropTarget ? generateSelector(dropTarget) : undefined;
 
       ignoreClickThreadIdRef.current = session.threadId;
       await updateThreadRect(
         session.threadId,
-        measurePoint(
-          nextPosition.x - window.scrollX,
-          nextPosition.y - window.scrollY,
-          session.target ?? undefined,
-        ),
+        measurePoint(nextPosition.x - window.scrollX, nextPosition.y - window.scrollY, dropTarget),
+        nextSelector,
       );
     },
     [updateThreadRect],
@@ -305,6 +287,8 @@ export function CommentMarkers() {
 
       dragSessionRef.current = null;
       clearMarkerDelta(event.currentTarget);
+      setDragHighlightElement(null);
+      setDragHighlightRect(null);
       syncMarkerPositions(false);
     },
     [syncMarkerPositions],
@@ -330,7 +314,6 @@ export function CommentMarkers() {
       startClientY: event.clientY,
       pointerOffsetX: event.clientX - markerRect.left,
       pointerOffsetY: event.clientY - markerRect.top,
-      stackedOffset: stackedOffsetsRef.current[threadId] ?? ZERO_STACK_OFFSET,
       target: querySelectorSafely(comment?.selector ?? null),
       hasMoved: false,
     };
@@ -356,6 +339,14 @@ export function CommentMarkers() {
     );
 
     if (pointerDistance >= DRAG_DISTANCE_THRESHOLD) {
+      const nextTarget = getSelectableElementAtPoint(event.clientX, event.clientY);
+
+      if (nextTarget) {
+        session.target = nextTarget;
+      }
+
+      setDragHighlightElement(nextTarget);
+      setDragHighlightRect(null);
       session.hasMoved = true;
     }
 
@@ -389,10 +380,39 @@ export function CommentMarkers() {
       }
 
       dragSessionRef.current = null;
+      if (!session.hasMoved) {
+        setDragHighlightElement(null);
+        setDragHighlightRect(null);
+      }
       void finishDrag(event, session);
     },
     [finishDrag],
   );
+
+  useEffect(() => {
+    if (!dragHighlightElement) {
+      return;
+    }
+
+    let frameId = 0;
+
+    const syncHighlight = () => {
+      if (!dragHighlightElement.isConnected) {
+        setDragHighlightRect(null);
+        return;
+      }
+
+      const nextRect = measureRect(dragHighlightElement);
+      setDragHighlightRect((previous) => (rectsEqual(previous, nextRect) ? previous : nextRect));
+      frameId = window.requestAnimationFrame(syncHighlight);
+    };
+
+    syncHighlight();
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [dragHighlightElement]);
 
   useEffect(() => {
     topLevelCommentsRef.current = topLevelComments;
@@ -408,19 +428,6 @@ export function CommentMarkers() {
       window.cancelAnimationFrame(frameId);
     };
   }, [syncMarkerPositions, topLevelComments]);
-
-  useEffect(() => {
-    stackedOffsetsRef.current = stackedOffsets;
-
-    for (const [threadId, node] of markerElementsRef.current) {
-      const position = positionsRef.current[threadId];
-      if (!position) {
-        continue;
-      }
-
-      setMarkerBasePosition(node, position, stackedOffsets[threadId] ?? ZERO_STACK_OFFSET);
-    }
-  }, [stackedOffsets]);
 
   useEffect(() => {
     const scheduleResizeSync = () => {
@@ -449,6 +456,19 @@ export function CommentMarkers() {
       className="pointer-events-none absolute inset-0 z-2147483602"
       data-annotation-overlay-root="true"
     >
+      {dragHighlightRect ? (
+        <div
+          aria-hidden="true"
+          className="fixed rounded-md border-2 border-primary/80 bg-primary/12 shadow-lg"
+          data-annotation-overlay-root="true"
+          style={{
+            height: dragHighlightRect.height,
+            left: dragHighlightRect.left,
+            top: dragHighlightRect.top,
+            width: dragHighlightRect.width,
+          }}
+        />
+      ) : null}
       {topLevelComments.map((comment) => {
         const position = positions[comment.id];
         if (!position) {
@@ -456,37 +476,43 @@ export function CommentMarkers() {
         }
 
         const threadCount = getThreadCount(comments, comment.id);
-        const stackedOffset = stackedOffsets[comment.id] ?? ZERO_STACK_OFFSET;
 
         return (
-          <motion.div>
-            <Button
-              key={comment.id}
+          <Button
+            key={comment.id}
+            className={cn(
+              "pointer-events-auto absolute top-0 left-0 inline-flex size-8 cursor-grab touch-none rounded-full bg-transparent transition-none select-none active:cursor-grabbing",
+            )}
+            data-thread-id={comment.id}
+            onClick={handleMarkerClick}
+            onPointerCancel={handlePointerCancel}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            ref={(node) => setMarkerElement(comment.id, node)}
+            style={getMarkerStyle(position)}
+            title={`${comment.author} · ${comment.resolved ? "Resolved" : "Open"} · ${threadCount} message${
+              threadCount === 1 ? "" : "s"
+            }`}
+          >
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              transition={{ type: "spring", stiffness: 500, damping: 50 }}
               className={cn(
-                "pointer-events-auto absolute top-0 left-0 inline-flex size-8 cursor-grab touch-none rounded-full text-xs shadow-lg transition-colors select-none active:cursor-grabbing",
+                "absolute inset-0 flex items-center justify-center rounded-full text-xs shadow-lg transition-colors",
                 comment.id === activeThreadId
                   ? "bg-primary text-primary-foreground"
                   : "bg-foreground text-background",
                 comment.resolved && "opacity-35",
               )}
-              data-thread-id={comment.id}
-              onClick={handleMarkerClick}
-              onPointerCancel={handlePointerCancel}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              ref={(node) => setMarkerElement(comment.id, node)}
-              style={getMarkerStyle(position, stackedOffset)}
-              title={`${comment.author} · ${comment.resolved ? "Resolved" : "Open"} · ${threadCount} message${
-                threadCount === 1 ? "" : "s"
-              }`}
             >
               <Badge className="pointer-events-none absolute top-0 right-0 size-5 translate-x-1/3 -translate-y-1/3 bg-primary text-xs text-primary-foreground tabular-nums">
                 {threadCount}
               </Badge>
               <span>{getInitials(comment.author)}</span>
-            </Button>
-          </motion.div>
+            </motion.div>
+          </Button>
         );
       })}
     </div>

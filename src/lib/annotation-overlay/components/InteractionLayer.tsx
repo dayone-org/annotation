@@ -36,8 +36,7 @@ export function InteractionLayer() {
   const [hoveredElement, setHoveredElement] = useState<HTMLElement | null>(null);
   const [highlightRect, setHighlightRect] = useState<AnnotationRect | null>(null);
 
-  const selectedElement =
-    composer?.parentId || !composer?.selector ? null : querySelectorSafely(composer.selector);
+  const selectedElement = composer?.selector ? querySelectorSafely(composer.selector) : null;
   const highlightedElement = selectedElement ?? (commentMode ? hoveredElement : null);
 
   useEffect(() => {
@@ -104,7 +103,7 @@ export function InteractionLayer() {
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none fixed rounded-md border-2 border-primary/80 bg-primary/12 shadow-lg transition-[left,top,width,height] duration-75 ease-out"
+      className="pointer-events-none fixed rounded-md border-2 border-primary bg-primary/10"
       data-annotation-overlay-root="true"
       style={{
         height: highlightRect.height,

@@ -1,4 +1,4 @@
-import { CheckCircleIcon, DotsThreeVerticalIcon, XIcon } from "@phosphor-icons/react";
+import { CheckCircleIcon, DotsThreeVerticalIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import type { AnnotationOverlayProps } from "./types";
 import { cn } from "../utils";
 import { AnnotationProvider } from "./AnnotationContext";
 import { AnnotationComposer } from "./components/AnnotationComposer";
-import { AnnotationPanel } from "./components/AnnotationPanel";
+import { AnnotationDock } from "./components/AnnotationDock";
 import { CommentMarkers } from "./components/CommentMarkers";
 import { InteractionLayer } from "./components/InteractionLayer";
 import { useAnnotation } from "./useAnnotation";
@@ -106,7 +106,7 @@ function ThreadComment({
   );
 }
 
-function AnnotationComposerPopover() {
+function ComposerPopover() {
   const {
     closeComposer,
     comments,
@@ -225,14 +225,16 @@ function CommentModeCursor() {
         html[data-annotation-comment-mode="true"] body * {
           cursor: crosshair !important;
         }
+        html[data-annotation-comment-mode="true"] [data-annotation-overlay-root="true"],
+        html[data-annotation-comment-mode="true"] [data-annotation-overlay-root="true"] * {
+          cursor: revert !important;
+        }
       `}
     </style>
   );
 }
 
 function AnnotationOverlayScene() {
-  const { cancelCommentMode, commentMode, composer } = useAnnotation();
-
   return createPortal(
     <div
       className="absolute top-0 left-0 z-2147483600 h-px w-px"
@@ -241,21 +243,8 @@ function AnnotationOverlayScene() {
       <CommentModeCursor />
       <InteractionLayer />
       <CommentMarkers />
-      {commentMode && !composer ? (
-        <Button
-          aria-label="Exit comment mode"
-          className="fixed bottom-6 left-1/2 z-2147483602 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border shadow-lg"
-          data-annotation-overlay-root="true"
-          onClick={cancelCommentMode}
-          type="button"
-          variant="secondary"
-        >
-          Comment mode active
-          <XIcon weight="bold" />
-        </Button>
-      ) : null}
-      <AnnotationComposerPopover />
-      <AnnotationPanel />
+      <ComposerPopover />
+      <AnnotationDock />
     </div>,
     document.body,
   );

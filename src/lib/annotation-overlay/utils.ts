@@ -1,5 +1,6 @@
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
+import { querySelectorSafely } from "./selector";
 import type { AnnotationComment, AnnotationRect, MarkerPosition } from "./types";
 
 dayjs.extend(relativeTime);
@@ -102,6 +103,109 @@ export function getTopLevelComments(comments: AnnotationComment[]): AnnotationCo
 
 export function getReplies(comments: AnnotationComment[], parentId: string): AnnotationComment[] {
   return comments.filter((comment) => comment.parent_id === parentId);
+}
+
+function normalizeWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function truncateText(value: string, maxLength = 160): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
+function getElementText(target: HTMLElement): string | null {
+  const value =
+    target.innerText ||
+    target.textContent ||
+    target.getAttribute("aria-label") ||
+    target.getAttribute("title") ||
+    target.getAttribute("alt") ||
+    "";
+  const normalized = normalizeWhitespace(value);
+
+  return normalized ? truncateText(normalized) : null;
+}
+
+function getThreadComments(root: AnnotationComment, comments: AnnotationComment[]): AnnotationComment[] {
+  return [root, ...getReplies(comments, root.id)].sort((left, right) =>
+    left.created_at.localeCompare(right.created_at),
+  );
+}
+
+function formatThreadMessages(root: AnnotationComment, comments: AnnotationComment[]): string[] {
+  const threadComments = getThreadComments(root, comments);
+  const lines = ["Messages:"];
+
+  threadComments.forEach((comment, index) => {
+    lines.push(`${index + 1}. ${comment.author}: ${normalizeWhitespace(comment.text) || "(empty comment)"}`);
+  });
+
+  lines.push("");
+
+  return lines;
+}
+
+function formatElementSummary(comment: AnnotationComment, currentPath: string): string[] {
+  const target = comment.page_path === currentPath ? querySelectorSafely(comment.selector) : null;
+  const selectorLabel = comment.selector ? `\`${comment.selector}\`` : "Unavailable";
+  const tagLabel = target ? `\`${target.tagName.toLowerCase()}\`` : "Unavailable";
+  const lines = [`Element: ${selectorLabel}`, "", `Tag: ${tagLabel}`];
+
+  const text = target ? getElementText(target) : null;
+  if (text) {
+    lines.push("", `Text: \`${text}\``);
+  }
+
+  lines.push("");
+
+  return lines;
+}
+
+function formatThreadSection(
+  root: AnnotationComment,
+  comments: AnnotationComment[],
+  currentPath: string,
+  heading: string,
+): string[] {
+  return [heading, "", ...formatElementSummary(root, currentPath), ...formatThreadMessages(root, comments)];
+}
+
+export function formatAnnotationThreadMarkdown(
+  root: AnnotationComment,
+  comments: AnnotationComment[],
+  currentPath: string,
+): string {
+  return [
+    "# Annotations",
+    "",
+    `- Route: \`${root.page_path}\``,
+    "",
+    ...formatThreadSection(root, comments, currentPath, "## Annotation"),
+  ].join("\n").trim();
+}
+
+export function formatAnnotationCollectionMarkdown(
+  roots: AnnotationComment[],
+  comments: AnnotationComment[],
+  currentPath: string,
+): string {
+  const sortedRoots = [...roots].sort((left, right) => left.created_at.localeCompare(right.created_at));
+  const lines = [
+    "# Annotations",
+    "",
+    `- Route: \`${currentPath}\``,
+    "",
+  ];
+
+  sortedRoots.forEach((root, index) => {
+    lines.push(...formatThreadSection(root, comments, currentPath, `## Annotation ${index + 1}`));
+  });
+
+  return lines.join("\n").trim();
 }
 
 export function getCommentMap(comments: AnnotationComment[]): Map<string, AnnotationComment> {
