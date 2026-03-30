@@ -15,7 +15,15 @@ import {
   useTransform,
   type Variants,
 } from "motion/react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import useMeasure from "react-use-measure";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,11 +39,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import logo from "@/logo.svg";
 import type { AnnotationComment } from "../types";
-import {
-  ANNOTATION_ONLY_CURRENT_PAGE_KEY,
-  readStoredBoolean,
-  writeStoredBoolean,
-} from "../storage";
+import { getStorageKey, readStoredBoolean, writeStoredBoolean } from "../storage";
 import { useAnnotation } from "../useAnnotation";
 import {
   formatAnnotationCollectionMarkdown,
@@ -47,6 +51,20 @@ import {
 } from "../utils";
 
 type CopyState = "idle" | "copied" | "error";
+
+type ResolveSliderIconState = "idle" | "loading";
+
+type ResolveAllSliderProps = {
+  onResolveAll: () => Promise<boolean>;
+};
+
+type ThreadCardProps = {
+  activeThreadId: string | null;
+  canManage: boolean;
+  comment: AnnotationComment;
+  comments: AnnotationComment[];
+  currentPath: string;
+};
 
 const RESOLVE_ALL_COMPLETE_THRESHOLD = 0.96;
 
@@ -95,22 +113,33 @@ function getCopyActionIcon(state: CopyState) {
   return <CopySimpleIcon />;
 }
 
-type AnimatedIconTransitionProps<T extends string> = {
-  renderIcon: (state: T) => ReactNode;
-  state: T;
-};
+function getResolveSliderIcon(state: ResolveSliderIconState) {
+  if (state === "loading") {
+    return <Spinner className="size-4" />;
+  }
+
+  return <ArrowRightIcon className="size-4" />;
+}
+
+function stopItemClick(event: MouseEvent<HTMLButtonElement>): void {
+  event.preventDefault();
+  event.stopPropagation();
+}
 
 function AnimatedIconTransition<T extends string>({
   renderIcon,
   state,
-}: AnimatedIconTransitionProps<T>) {
+}: {
+  renderIcon: (state: T) => ReactNode;
+  state: T;
+}) {
   return (
-    <AnimatePresence mode="popLayout" initial={false}>
+    <AnimatePresence initial={false} mode="popLayout">
       <motion.div
-        key={state}
-        initial={{ opacity: 0, filter: "blur(5px)", scale: 0.5 }}
         animate={{ opacity: 1, filter: "blur(0px)", scale: 1 }}
         exit={{ opacity: 0, filter: "blur(5px)", scale: 0.5 }}
+        initial={{ opacity: 0, filter: "blur(5px)", scale: 0.5 }}
+        key={state}
       >
         {renderIcon(state)}
       </motion.div>
@@ -122,24 +151,6 @@ function AnimatedCopyStateIcon({ state }: { state: CopyState }) {
   return <AnimatedIconTransition renderIcon={getCopyActionIcon} state={state} />;
 }
 
-type ResolveSliderIconState = "idle" | "loading";
-
-function getResolveSliderIcon(state: ResolveSliderIconState) {
-  if (state === "loading") {
-    return <Spinner className="size-4" />;
-  }
-
-  return <ArrowRightIcon className="size-4" />;
-}
-
-type ThreadCardProps = {
-  activeThreadId: string | null;
-  canManage: boolean;
-  comment: AnnotationComment;
-  comments: AnnotationComment[];
-  currentPath: string;
-};
-
 function ThreadCard({
   activeThreadId,
   canManage,
@@ -149,50 +160,62 @@ function ThreadCard({
 }: ThreadCardProps) {
   const { openThreadComposer, scrollToComment, toggleResolved } = useAnnotation();
   const [copyState, setCopyState] = useCopyState();
-
   const replies = getReplies(comments, comment.id);
   const isActive = activeThreadId === comment.id;
 
-  const goToThreadAndOpenComposer = (scrollTargetId: string) => {
-    scrollToComment(scrollTargetId);
+  const goToThreadAndOpenComposer = useCallback(
+    (scrollTargetId: string) => {
+      scrollToComment(scrollTargetId);
 
-    const markerNode = document.querySelector<HTMLElement>(`[data-thread-id="${comment.id}"]`);
-    const anchorRect = markerNode ? measureRect(markerNode) : comment.rect;
+      const markerNode = document.querySelector<HTMLElement>(`[data-thread-id="${comment.id}"]`);
+      const anchorRect = markerNode ? measureRect(markerNode) : comment.rect;
+      if (!anchorRect) {
+        return;
+      }
 
-    if (!anchorRect) {
-      return;
-    }
+      openThreadComposer(comment.id, anchorRect);
+    },
+    [comment.id, comment.rect, openThreadComposer, scrollToComment],
+  );
 
-    openThreadComposer(comment.id, anchorRect);
-  };
-
-  const handleCopy = async () => {
+  const handleCopy = useCallback(async () => {
     const markdown = formatAnnotationThreadMarkdown(comment, comments, currentPath);
     const didCopy = await copyToClipboard(markdown);
     setCopyState(didCopy ? "copied" : "error");
-  };
+  }, [comment, comments, currentPath, setCopyState]);
 
   return (
     <Item
-      size="xs"
-      variant="outline"
       className={cn(
         "group bg-background transition-all",
         isActive && "border border-primary",
         comment.resolved && "opacity-50",
       )}
       onClick={() => goToThreadAndOpenComposer(comment.id)}
+      size="xs"
+      variant="outline"
     >
       <ItemHeader className="flex items-center justify-between gap-2">
         <Badge variant="secondary">{comment.page_path}</Badge>
         <div className="flex items-center gap-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-          <Button onClick={() => void handleCopy()} size="icon" type="button" variant="ghost">
+          <Button
+            onClick={(event) => {
+              stopItemClick(event);
+              void handleCopy();
+            }}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
             <AnimatedCopyStateIcon state={copyState} />
           </Button>
           {canManage ? (
             <Button
               aria-label={comment.resolved ? "Mark annotation as open" : "Resolve annotation"}
-              onClick={() => void toggleResolved(comment.id)}
+              onClick={(event) => {
+                stopItemClick(event);
+                void toggleResolved(comment.id);
+              }}
               size="icon"
               type="button"
               variant="ghost"
@@ -218,10 +241,6 @@ function ThreadCard({
     </Item>
   );
 }
-
-type ResolveAllSliderProps = {
-  onResolveAll: () => Promise<boolean>;
-};
 
 function ResolveAllSlider({ onResolveAll }: ResolveAllSliderProps) {
   const [isResolving, setIsResolving] = useState(false);
@@ -321,8 +340,8 @@ function ResolveAllSlider({ onResolveAll }: ResolveAllSliderProps) {
 
   return (
     <div
-      ref={setTrackRef}
       className="relative box-content h-6 overflow-hidden rounded-full border bg-muted"
+      ref={setTrackRef}
     >
       <motion.div
         aria-hidden
@@ -333,7 +352,6 @@ function ResolveAllSlider({ onResolveAll }: ResolveAllSliderProps) {
       />
       <motion.button
         aria-label="Resolve all"
-        ref={setThumbRef}
         className={cn(
           "relative z-10 flex size-6 items-center justify-center rounded-full bg-background shadow-sm ring-1 ring-border transition-colors",
           !isResolving && "cursor-grab active:cursor-grabbing",
@@ -344,6 +362,7 @@ function ResolveAllSlider({ onResolveAll }: ResolveAllSliderProps) {
         dragElastic={0}
         dragMomentum={false}
         onDragEnd={handleDragEnd}
+        ref={setThumbRef}
         style={{ x }}
         type="button"
         whileTap={isResolving ? undefined : { scale: 0.98 }}
@@ -372,16 +391,22 @@ export function AnnotationDock() {
     setShowResolved,
     showResolved,
     startAnnotationMode,
+    storageKeyPrefix,
     submitAuthorGate,
   } = useAnnotation();
+  const onlyCurrentPageKey = useMemo(
+    () => getStorageKey(storageKeyPrefix, "only_current_page"),
+    [storageKeyPrefix],
+  );
   const [showOnlyCurrentPage, setShowOnlyCurrentPage] = useState(() =>
-    readStoredBoolean(ANNOTATION_ONLY_CURRENT_PAGE_KEY, false),
+    readStoredBoolean(onlyCurrentPageKey, false),
   );
   const [isPanelOpen, setPanelOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [authorGateInput, setAuthorGateInput] = useState("");
+  const [bulkCopyState, setBulkCopyState] = useCopyState();
 
-  const [refContainer, { width, height }] = useMeasure();
+  const [refContainer, { height, width }] = useMeasure();
 
   const topLevelComments = getTopLevelComments(comments);
   const sortedThreads = [...topLevelComments].sort((left, right) =>
@@ -397,7 +422,6 @@ export function AnnotationDock() {
   );
   const unresolvedThreadCount = topLevelComments.filter((comment) => !comment.resolved).length;
   const hasAuthor = Boolean(author);
-  const [bulkCopyState, setBulkCopyState] = useCopyState();
 
   const variantsButton = {
     initial: { opacity: 0, filter: "blur(10px)", transform: "scale(0.75)" },
@@ -416,47 +440,6 @@ export function AnnotationDock() {
       transition: { duration: 0.4, ease: [0.17, 0.84, 0.44, 1] },
     },
   } satisfies Variants;
-
-  const toggleAnnotationsPanel = () => {
-    setIsSettingsOpen(false);
-    closeAuthorGate();
-    setPanelOpen(!isPanelOpen);
-  };
-
-  const closeAnnotationDock = () => {
-    setIsSettingsOpen(false);
-    closeAuthorGate();
-    cancelAnnotationMode();
-  };
-
-  useEffect(() => {
-    if (!annotationMode) {
-      setIsSettingsOpen(false);
-      setPanelOpen(false);
-    }
-  }, [annotationMode]);
-
-  useEffect(() => {
-    if (isAuthorGateOpen) {
-      setAuthorGateInput("");
-    }
-  }, [isAuthorGateOpen]);
-
-  useEffect(() => {
-    if (composer && !composer.parentId) {
-      setPanelOpen(false);
-    }
-  }, [composer]);
-
-  const handleBulkCopy = async () => {
-    const markdown = formatAnnotationCollectionMarkdown(
-      currentRouteOpenThreads,
-      comments,
-      currentPath,
-    );
-    const didCopy = await copyToClipboard(markdown);
-    setBulkCopyState(didCopy ? "copied" : "error");
-  };
 
   const variantsCard = {
     initial: {
@@ -481,18 +464,63 @@ export function AnnotationDock() {
     },
   } satisfies Variants;
 
+  useEffect(() => {
+    setShowOnlyCurrentPage(readStoredBoolean(onlyCurrentPageKey, false));
+  }, [onlyCurrentPageKey]);
+
+  useEffect(() => {
+    if (!annotationMode) {
+      setIsSettingsOpen(false);
+      setPanelOpen(false);
+    }
+  }, [annotationMode]);
+
+  useEffect(() => {
+    if (isAuthorGateOpen) {
+      setAuthorGateInput("");
+    }
+  }, [isAuthorGateOpen]);
+
+  useEffect(() => {
+    if (composer && !composer.parentId) {
+      setPanelOpen(false);
+    }
+  }, [composer]);
+
+  const toggleAnnotationsPanel = useCallback(() => {
+    setIsSettingsOpen(false);
+    closeAuthorGate();
+    setPanelOpen((open) => !open);
+  }, [closeAuthorGate]);
+
+  const closeAnnotationDock = useCallback(() => {
+    setIsSettingsOpen(false);
+    closeAuthorGate();
+    cancelAnnotationMode();
+  }, [cancelAnnotationMode, closeAuthorGate]);
+
+  const handleBulkCopy = useCallback(async () => {
+    const markdown = formatAnnotationCollectionMarkdown(
+      currentRouteOpenThreads,
+      comments,
+      currentPath,
+    );
+    const didCopy = await copyToClipboard(markdown);
+    setBulkCopyState(didCopy ? "copied" : "error");
+  }, [comments, currentPath, currentRouteOpenThreads, setBulkCopyState]);
+
   const renderDock = () => {
     if (!annotationMode && !isAuthorGateOpen) {
       return (
         <motion.div
+          animate="animate"
+          className="flex items-center"
+          exit="exit"
+          initial="initial"
           key="floating-button"
           variants={variantsButton}
-          initial="initial"
-          animate="animate"
-          exit="exit"
-          className="flex items-center"
         >
-          <Button onClick={() => startAnnotationMode()} size="sm" className="pr-1">
+          <Button className="pr-1" onClick={() => startAnnotationMode()} size="sm">
             Annotation
             <Kbd className="bg-primary-foreground/15 text-primary-foreground">C</Kbd>
           </Button>
@@ -503,16 +531,16 @@ export function AnnotationDock() {
     if (isAuthorGateOpen) {
       return (
         <motion.form
-          key="floating-button-author-gate"
-          variants={variantsButton}
-          initial="initial"
           animate="animate"
-          exit="exit"
           className="flex items-center gap-2 p-1"
+          exit="exit"
+          initial="initial"
+          key="floating-button-author-gate"
           onSubmit={(event) => {
             event.preventDefault();
             submitAuthorGate(authorGateInput);
           }}
+          variants={variantsButton}
         >
           <Input
             autoFocus
@@ -526,7 +554,7 @@ export function AnnotationDock() {
           <Button disabled={!authorGateInput.trim()} size="icon-sm" type="submit">
             <CheckIcon />
           </Button>
-          <Separator orientation="vertical" className="bg-primary-foreground/25" />
+          <Separator className="bg-primary-foreground/25" orientation="vertical" />
           <Button onClick={closeAuthorGate} size="icon-sm" type="button">
             <XIcon />
           </Button>
@@ -536,12 +564,12 @@ export function AnnotationDock() {
 
     return (
       <motion.div
+        animate="animate"
+        className="flex origin-bottom-right items-center gap-2 p-1"
+        exit="exit"
+        initial="initial"
         key="floating-button-active"
         variants={variantsButton}
-        initial="initial"
-        animate="animate"
-        exit="exit"
-        className="flex origin-bottom-right items-center gap-2 p-1"
       >
         <Button
           disabled={currentRouteOpenThreads.length === 0}
@@ -551,16 +579,16 @@ export function AnnotationDock() {
           <AnimatedCopyStateIcon state={bulkCopyState} />
         </Button>
         <Button
-          aria-label="Annotations panel"
           aria-expanded={isPanelOpen}
+          aria-label="Annotations panel"
           onClick={toggleAnnotationsPanel}
           size="icon-sm"
         >
           <ChatsIcon />
         </Button>
         <Button
-          aria-label="Annotation settings"
           aria-expanded={isSettingsOpen}
+          aria-label="Annotation settings"
           onClick={() => {
             setIsSettingsOpen((open) => {
               const next = !open;
@@ -575,7 +603,7 @@ export function AnnotationDock() {
         >
           <GearSixIcon />
         </Button>
-        <Separator orientation="vertical" className="bg-primary-foreground/25" />
+        <Separator className="bg-primary-foreground/25" orientation="vertical" />
         <Button onClick={closeAnnotationDock} size="icon-sm">
           <XIcon />
         </Button>
@@ -588,14 +616,14 @@ export function AnnotationDock() {
       className="fixed right-6 bottom-6 z-2147483602 flex flex-col items-end gap-4"
       data-annotation-overlay-root="true"
     >
-      <AnimatePresence mode="popLayout" anchorY="bottom" anchorX="right">
-        {isPanelOpen && (
+      <AnimatePresence anchorX="right" anchorY="bottom" mode="popLayout">
+        {isPanelOpen ? (
           <motion.div
-            variants={variantsCard}
-            initial="initial"
             animate="animate"
             exit="exit"
+            initial="initial"
             key="annotations"
+            variants={variantsCard}
           >
             <Card className="w-64 pb-0">
               <CardHeader>
@@ -616,7 +644,7 @@ export function AnnotationDock() {
                       checked={showAllPages}
                       id="annotation-panel-show-all"
                       onCheckedChange={(checked) => {
-                        writeStoredBoolean(ANNOTATION_ONLY_CURRENT_PAGE_KEY, !checked);
+                        writeStoredBoolean(onlyCurrentPageKey, !checked);
                         setShowOnlyCurrentPage(!checked);
                       }}
                     />
@@ -662,20 +690,20 @@ export function AnnotationDock() {
               </CardContent>
             </Card>
           </motion.div>
-        )}
+        ) : null}
 
-        {isSettingsOpen && (
+        {isSettingsOpen ? (
           <motion.div
-            variants={variantsCard}
-            initial="initial"
             animate="animate"
             exit="exit"
-            key="container"
+            initial="initial"
+            key="settings"
+            variants={variantsCard}
           >
             <Card className="w-64">
               <CardHeader>
                 <CardTitle className="flex items-baseline justify-between gap-2">
-                  <img src={logo} alt="Annotation" className="h-3 w-fit" />
+                  <img alt="Annotation" className="h-3 w-fit" src={logo} />
                   <span className="text-xs text-muted-foreground">v0.1</span>
                 </CardTitle>
               </CardHeader>
@@ -712,15 +740,15 @@ export function AnnotationDock() {
               </CardContent>
             </Card>
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
 
       <motion.div
-        animate={{ width, height }}
+        animate={{ height, width }}
         className="overflow-hidden rounded-md bg-primary"
         transition={{ duration: 0.25, ease: [0.17, 0.84, 0.44, 1] }}
       >
-        <div ref={refContainer} className="relative h-fit w-fit overflow-hidden">
+        <div className="relative h-fit w-fit overflow-hidden" ref={refContainer}>
           <AnimatePresence mode="popLayout">{renderDock()}</AnimatePresence>
         </div>
       </motion.div>

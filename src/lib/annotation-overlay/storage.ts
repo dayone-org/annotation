@@ -1,6 +1,8 @@
-export const ANNOTATION_AUTHOR_KEY = "annotation_author";
-export const ANNOTATION_SHOW_RESOLVED_KEY = "annotation_show_resolved";
-export const ANNOTATION_ONLY_CURRENT_PAGE_KEY = "annotation_only_current_page";
+export const DEFAULT_STORAGE_KEY_PREFIX = "annotation";
+
+export function getStorageKey(prefix: string, key: string): string {
+  return `${prefix}_${key}`;
+}
 
 export function readStoredString(key: string): string {
   if (typeof window === "undefined") {

@@ -45,4 +45,8 @@ export type AnnotationOverlayProps = {
   supabaseUrl: string;
   supabaseAnonKey: string;
   pagePath?: string;
+  storageKeyPrefix?: string;
+  tableName?: string;
 };
+
+export type AnnotationProps = AnnotationOverlayProps;

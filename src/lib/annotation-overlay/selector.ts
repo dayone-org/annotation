@@ -62,3 +62,25 @@ export function querySelectorSafely(selector: string | null): HTMLElement | null
     return null;
   }
 }
+
+export function getSelectableElementAtPoint(clientX: number, clientY: number): HTMLElement | null {
+  const elements = document.elementsFromPoint(clientX, clientY);
+
+  for (const element of elements) {
+    if (!(element instanceof HTMLElement)) {
+      continue;
+    }
+
+    if (element.closest('[data-annotation-overlay-root="true"]')) {
+      continue;
+    }
+
+    if (element === document.body || element === document.documentElement) {
+      continue;
+    }
+
+    return element;
+  }
+
+  return null;
+}

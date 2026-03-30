@@ -9,8 +9,8 @@ const annotationSupabaseAnonKey = import.meta.env.VITE_ANNOTATION_SUPABASE_ANON_
 const steps = [
   {
     title: "Installation",
-    description: "Install the overlay package alongside the Supabase client.",
-    code: "npm install @dayone/annotation @supabase/supabase-js",
+    description: "Install the package and mount the client component once.",
+    code: `npm install @dayone/annotation`,
   },
   {
     title: "Database",
@@ -31,8 +31,18 @@ const steps = [
   {
     title: "Environment",
     description: "Set Supabase credentials in your environment.",
-    code: `ANNOTATION_SUPABASE_URL=your-supabase-url
-ANNOTATION_SUPABASE_ANON_KEY=your-supabase-anon-key`,
+    code: `NEXT_PUBLIC_ANNOTATION_SUPABASE_URL=your-supabase-url
+NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=your-supabase-anon-key`,
+  },
+  {
+    title: "Usage",
+    description: "Render the annotation widget from your app layout.",
+    code: `import { Annotation } from "@dayone/annotation";
+
+<Annotation
+  supabaseUrl={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_URL!}
+  supabaseAnonKey={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY!}
+/>`,
   },
 ];
 

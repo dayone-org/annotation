@@ -18,8 +18,8 @@ import type {
 import { AnnotationContext, type AnnotationContextValue } from "./annotation-context";
 import { querySelectorSafely } from "./selector";
 import {
-  ANNOTATION_AUTHOR_KEY,
-  ANNOTATION_SHOW_RESOLVED_KEY,
+  DEFAULT_STORAGE_KEY_PREFIX,
+  getStorageKey,
   readStoredBoolean,
   readStoredString,
   writeStoredBoolean,
@@ -28,6 +28,7 @@ import {
 import { getCommentMap, getThreadRootId, normalizeComment, sortComments } from "./utils";
 
 const supabaseClientCache = new Map<string, SupabaseClient>();
+const DEFAULT_TABLE_NAME = "comments";
 
 function getSupabaseClient(url: string, key: string): SupabaseClient {
   const cacheKey = `${url}::${key}`;
@@ -55,19 +56,33 @@ function getActivePath(pathOverride?: string): string {
   return typeof window === "undefined" ? "/" : window.location.pathname;
 }
 
+function getRealtimeChannelName(tableName: string): string {
+  return `annotation-comments:${tableName}`;
+}
+
 export function AnnotationProvider({
   children,
+  pagePath,
+  storageKeyPrefix = DEFAULT_STORAGE_KEY_PREFIX,
   supabaseAnonKey,
   supabaseUrl,
-  pagePath,
+  tableName = DEFAULT_TABLE_NAME,
 }: PropsWithChildren<AnnotationOverlayProps>) {
   const client = useMemo(
     () => getSupabaseClient(supabaseUrl, supabaseAnonKey),
     [supabaseAnonKey, supabaseUrl],
   );
-  const [author, setAuthorState] = useState(() => readStoredString(ANNOTATION_AUTHOR_KEY));
+  const authorStorageKey = useMemo(
+    () => getStorageKey(storageKeyPrefix, "author"),
+    [storageKeyPrefix],
+  );
+  const showResolvedStorageKey = useMemo(
+    () => getStorageKey(storageKeyPrefix, "show_resolved"),
+    [storageKeyPrefix],
+  );
+  const [author, setAuthorState] = useState(() => readStoredString(authorStorageKey));
   const [showResolved, setShowResolvedState] = useState(() =>
-    readStoredBoolean(ANNOTATION_SHOW_RESOLVED_KEY, false),
+    readStoredBoolean(showResolvedStorageKey, false),
   );
   const [currentPath, setCurrentPath] = useState(() => getActivePath(pagePath));
   const [comments, setComments] = useState<AnnotationComment[]>([]);
@@ -87,7 +102,7 @@ export function AnnotationProvider({
     setErrorMessage(null);
 
     const { data, error } = await client
-      .from("comments")
+      .from(tableName)
       .select("*")
       .order("created_at", { ascending: true });
 
@@ -108,12 +123,20 @@ export function AnnotationProvider({
       );
       setIsLoading(false);
     });
-  }, [client]);
+  }, [client, tableName]);
 
   const syncPath = useCallback(() => {
     const nextPath = getActivePath(pagePath);
     setCurrentPath((previous) => (previous === nextPath ? previous : nextPath));
   }, [pagePath]);
+
+  useEffect(() => {
+    setAuthorState(readStoredString(authorStorageKey));
+  }, [authorStorageKey]);
+
+  useEffect(() => {
+    setShowResolvedState(readStoredBoolean(showResolvedStorageKey, false));
+  }, [showResolvedStorageKey]);
 
   useEffect(() => {
     setCurrentPath(getActivePath(pagePath));
@@ -145,13 +168,13 @@ export function AnnotationProvider({
 
   useEffect(() => {
     const channel = client
-      .channel("annotation-comments")
+      .channel(getRealtimeChannelName(tableName))
       .on(
         "postgres_changes",
         {
           event: "*",
           schema: "public",
-          table: "comments",
+          table: tableName,
         },
         () => {
           void loadComments();
@@ -162,13 +185,16 @@ export function AnnotationProvider({
     return () => {
       void client.removeChannel(channel);
     };
-  }, [client, loadComments]);
+  }, [client, loadComments, tableName]);
 
-  const setAuthor = useCallback((value: string) => {
-    const nextValue = value.trim();
-    writeStoredString(ANNOTATION_AUTHOR_KEY, nextValue);
-    setAuthorState(nextValue);
-  }, []);
+  const setAuthor = useCallback(
+    (value: string) => {
+      const nextValue = value.trim();
+      writeStoredString(authorStorageKey, nextValue);
+      setAuthorState(nextValue);
+    },
+    [authorStorageKey],
+  );
 
   const closeAuthorGate = useCallback(() => {
     afterAuthorGateRef.current = null;
@@ -181,8 +207,9 @@ export function AnnotationProvider({
       if (!next) {
         return;
       }
+
       flushSync(() => {
-        setAuthor(name);
+        setAuthor(next);
       });
       setAuthorGateOpen(false);
       const resume = afterAuthorGateRef.current;
@@ -192,10 +219,13 @@ export function AnnotationProvider({
     [setAuthor],
   );
 
-  const setShowResolved = useCallback((value: boolean) => {
-    writeStoredBoolean(ANNOTATION_SHOW_RESOLVED_KEY, value);
-    setShowResolvedState(value);
-  }, []);
+  const setShowResolved = useCallback(
+    (value: boolean) => {
+      writeStoredBoolean(showResolvedStorageKey, value);
+      setShowResolvedState(value);
+    },
+    [showResolvedStorageKey],
+  );
 
   const closeComposer = useCallback(() => {
     setComposer(null);
@@ -207,12 +237,14 @@ export function AnnotationProvider({
   const startAnnotationMode = useCallback(() => {
     if (author) {
       setComposer(null);
+      setActiveThreadId(null);
       setAnnotationMode(true);
       return;
     }
 
     afterAuthorGateRef.current = () => {
       setComposer(null);
+      setActiveThreadId(null);
       setAnnotationMode(true);
     };
     setAuthorGateOpen(true);
@@ -232,6 +264,7 @@ export function AnnotationProvider({
       selector,
       rect,
     });
+    setActiveThreadId(null);
   }, []);
 
   const openThreadComposer = useCallback(
@@ -280,7 +313,7 @@ export function AnnotationProvider({
       });
 
       const { error } = await client
-        .from("comments")
+        .from(tableName)
         .update({ rect, selector: nextSelector })
         .eq("id", threadId);
 
@@ -300,7 +333,7 @@ export function AnnotationProvider({
 
       return true;
     },
-    [client, commentMap],
+    [client, commentMap, tableName],
   );
 
   const scrollToComment = useCallback(
@@ -389,7 +422,7 @@ export function AnnotationProvider({
         parent_id: composer.parentId,
       };
 
-      const { data, error } = await client.from("comments").insert(payload).select().single();
+      const { data, error } = await client.from(tableName).insert(payload).select().single();
 
       if (error) {
         setErrorMessage(error.message);
@@ -408,7 +441,7 @@ export function AnnotationProvider({
       );
       return true;
     },
-    [author, client, commentMap, composer, currentPath],
+    [author, client, commentMap, composer, currentPath, tableName],
   );
 
   const removeThread = useCallback(
@@ -426,7 +459,7 @@ export function AnnotationProvider({
         .map((comment) => comment.id);
 
       if (replyIds.length > 0) {
-        const { error: repliesError } = await client.from("comments").delete().in("id", replyIds);
+        const { error: repliesError } = await client.from(tableName).delete().in("id", replyIds);
 
         if (repliesError) {
           setErrorMessage(repliesError.message);
@@ -434,7 +467,7 @@ export function AnnotationProvider({
         }
       }
 
-      const { error } = await client.from("comments").delete().eq("id", threadId);
+      const { error } = await client.from(tableName).delete().eq("id", threadId);
 
       if (error) {
         setErrorMessage(error.message);
@@ -455,7 +488,7 @@ export function AnnotationProvider({
       setActiveThreadId((previous) => (previous === threadId ? null : previous));
       return true;
     },
-    [client, closeComposer, commentMap, comments, composer],
+    [client, closeComposer, commentMap, comments, composer, tableName],
   );
 
   const resolveAllComments = useCallback(async () => {
@@ -471,7 +504,7 @@ export function AnnotationProvider({
 
     const resolvedAt = new Date().toISOString();
     const { error } = await client
-      .from("comments")
+      .from(tableName)
       .update({
         resolved: true,
         resolved_at: resolvedAt,
@@ -508,7 +541,7 @@ export function AnnotationProvider({
       previous && resolvedThreadIds.has(previous) ? null : previous,
     );
     return true;
-  }, [client, closeComposer, comments, composer]);
+  }, [client, closeComposer, comments, composer, tableName]);
 
   const toggleResolved = useCallback(
     async (commentId: string) => {
@@ -521,7 +554,7 @@ export function AnnotationProvider({
       const nextResolved = !target.resolved;
       const resolvedAt = nextResolved ? new Date().toISOString() : null;
       const { error } = await client
-        .from("comments")
+        .from(tableName)
         .update({
           resolved: nextResolved,
           resolved_at: resolvedAt,
@@ -553,7 +586,7 @@ export function AnnotationProvider({
 
       setActiveThreadId(threadId);
     },
-    [client, closeComposer, commentMap, composer],
+    [client, closeComposer, commentMap, composer, tableName],
   );
 
   useEffect(() => {
@@ -625,6 +658,7 @@ export function AnnotationProvider({
       isAuthorGateOpen,
       isLoading,
       isMarkerHovered,
+      storageKeyPrefix,
       closeAuthorGate,
       openThreadComposer,
       removeThread,
@@ -655,6 +689,7 @@ export function AnnotationProvider({
       isAuthorGateOpen,
       isLoading,
       isMarkerHovered,
+      storageKeyPrefix,
       openThreadComposer,
       removeThread,
       resolveAllComments,

@@ -16,6 +16,9 @@ export default defineConfig({
     },
     rollupOptions: {
       external: ["react", "react-dom"],
+      output: {
+        banner: '"use client";',
+      },
     },
   },
   resolve: {

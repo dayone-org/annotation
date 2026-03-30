@@ -1,5 +1,5 @@
 import { CheckCircleIcon, DotsThreeVerticalIcon } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,7 +13,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { AnnotationOverlayProps } from "./types";
 import { cn } from "../utils";
-import { AnnotationProvider } from "./AnnotationContext";
+import { AnnotationProvider } from "./AnnotationProvider";
 import { AnnotationComposer } from "./components/AnnotationComposer";
 import { AnnotationDock } from "./components/AnnotationDock";
 import { CommentMarkers } from "./components/CommentMarkers";
@@ -68,6 +68,7 @@ function ThreadComment({
                     align="end"
                     className="z-2147483604 w-32 p-1"
                     data-annotation-overlay-root="true"
+                    data-annotation-overlay-scene="true"
                     sideOffset={4}
                   >
                     <Button
@@ -160,6 +161,7 @@ function ComposerPopover() {
         className="z-2147483603 w-[min(22rem,calc(100vw-2rem))] overflow-hidden bg-muted p-0"
         collisionPadding={16}
         data-annotation-overlay-root="true"
+        data-annotation-overlay-scene="true"
         onInteractOutside={(event) => {
           const target = event.target;
           if (
@@ -211,6 +213,7 @@ function AnnotationOverlayScene() {
     <div
       className="absolute top-0 left-0 z-2147483600 h-px w-px"
       data-annotation-overlay-root="true"
+      data-annotation-overlay-scene="true"
     >
       <InteractionLayer />
       <CommentMarkers />
@@ -222,7 +225,13 @@ function AnnotationOverlayScene() {
 }
 
 export function AnnotationOverlay(props: AnnotationOverlayProps) {
-  if (typeof document === "undefined") {
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  if (!isMounted) {
     return null;
   }
 

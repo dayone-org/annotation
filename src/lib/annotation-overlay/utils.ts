@@ -1,7 +1,7 @@
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
-import { querySelectorSafely } from "./selector";
 import type { AnnotationComment, AnnotationRect, MarkerPosition } from "./types";
+import { querySelectorSafely } from "./selector";
 
 dayjs.extend(relativeTime);
 
@@ -130,7 +130,10 @@ function getElementText(target: HTMLElement): string | null {
   return normalized ? truncateText(normalized) : null;
 }
 
-function getThreadComments(root: AnnotationComment, comments: AnnotationComment[]): AnnotationComment[] {
+function getThreadComments(
+  root: AnnotationComment,
+  comments: AnnotationComment[],
+): AnnotationComment[] {
   return [root, ...getReplies(comments, root.id)].sort((left, right) =>
     left.created_at.localeCompare(right.created_at),
   );
@@ -141,7 +144,9 @@ function formatThreadMessages(root: AnnotationComment, comments: AnnotationComme
   const lines = ["**Feedback Thread**:"];
 
   threadComments.forEach((comment, index) => {
-    lines.push(`${index + 1}. ${comment.author}: ${normalizeWhitespace(comment.text) || "(empty comment)"}`);
+    lines.push(
+      `${index + 1}. ${comment.author}: ${normalizeWhitespace(comment.text) || "(empty comment)"}`,
+    );
   });
 
   lines.push("");
@@ -179,7 +184,12 @@ function formatThreadSection(
   currentPath: string,
   heading: string,
 ): string[] {
-  return [heading, "", ...formatElementSummary(root, currentPath), ...formatThreadMessages(root, comments)];
+  return [
+    heading,
+    "",
+    ...formatElementSummary(root, currentPath),
+    ...formatThreadMessages(root, comments),
+  ];
 }
 
 export function formatAnnotationThreadMarkdown(
@@ -191,7 +201,9 @@ export function formatAnnotationThreadMarkdown(
     "# Annotations Page Feedback",
     "",
     ...formatThreadSection(root, comments, currentPath, "## Annotation 1"),
-  ].join("\n").trim();
+  ]
+    .join("\n")
+    .trim();
 }
 
 export function formatAnnotationCollectionMarkdown(
@@ -199,7 +211,9 @@ export function formatAnnotationCollectionMarkdown(
   comments: AnnotationComment[],
   currentPath: string,
 ): string {
-  const sortedRoots = [...roots].sort((left, right) => left.created_at.localeCompare(right.created_at));
+  const sortedRoots = [...roots].sort((left, right) =>
+    left.created_at.localeCompare(right.created_at),
+  );
   const lines = ["# Annotations Page Feedback", ""];
 
   sortedRoots.forEach((root, index) => {
@@ -279,22 +293,6 @@ export function getMarkerPagePosition(
     y: rect.pageY,
     width: 1,
     height: 1,
-  };
-}
-
-export function getMarkerPosition(
-  rect: AnnotationRect | null,
-  target?: HTMLElement | null,
-): MarkerPosition | null {
-  const pagePosition = getMarkerPagePosition(rect, target);
-  if (!pagePosition) {
-    return null;
-  }
-
-  return {
-    ...pagePosition,
-    x: pagePosition.x - window.scrollX,
-    y: pagePosition.y - window.scrollY,
   };
 }
 

@@ -7,35 +7,10 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import type { AnnotationRect } from "../types";
-import { generateSelector, querySelectorSafely } from "../selector";
+import { generateSelector, getSelectableElementAtPoint, querySelectorSafely } from "../selector";
 import { useAnnotation } from "../useAnnotation";
 import { measurePoint, measureRect } from "../utils";
-import {
-  AnnotationHighlight,
-  getAnnotationHighlightStyle,
-} from "./AnnotationHighlight";
-
-function getSelectableElementAtPoint(clientX: number, clientY: number): HTMLElement | null {
-  const elements = document.elementsFromPoint(clientX, clientY);
-
-  for (const element of elements) {
-    if (!(element instanceof HTMLElement)) {
-      continue;
-    }
-
-    if (element.closest('[data-annotation-overlay-root="true"]')) {
-      continue;
-    }
-
-    if (element === document.body || element === document.documentElement) {
-      continue;
-    }
-
-    return element;
-  }
-
-  return null;
-}
+import { AnnotationHighlight, getAnnotationHighlightStyle } from "./AnnotationHighlight";
 
 function rectsEqual(left: AnnotationRect | null, right: AnnotationRect): boolean {
   if (!left) {
@@ -60,7 +35,7 @@ export function InteractionLayer() {
   const selectedElement = composer?.selector ? querySelectorSafely(composer.selector) : null;
   const highlightedElement = isMarkerHovered
     ? null
-    : selectedElement ?? (annotationMode ? hoveredElement : null);
+    : (selectedElement ?? (annotationMode ? hoveredElement : null));
 
   const applyHighlightRect = useCallback((node: HTMLDivElement, rect: AnnotationRect) => {
     node.style.width = `${rect.width}px`;

@@ -1,42 +1,38 @@
 # Annotation Overlay
 
-Lightweight React overlay for attaching annotations to live DOM elements.
+Drop-in React annotation overlay backed by Supabase.
 
-The overlay UI is built with Tailwind CSS and shadcn-style primitives.
+## Installation
+
+```bash
+npm install @dayone/annotation
+```
 
 ## Usage
 
 ```tsx
-import { AnnotationOverlay } from "./src";
+import { Annotation } from "@dayone/annotation";
 
-function App() {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <>
-      <YourApp />
-      <AnnotationOverlay
-        supabaseUrl={process.env.ANNOTATION_SUPABASE_URL!}
-        supabaseAnonKey={process.env.ANNOTATION_SUPABASE_ANON_KEY!}
-      />
-    </>
+    <html lang="en">
+      <body>
+        {children}
+        <Annotation
+          supabaseUrl={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_URL!}
+          supabaseAnonKey={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY!}
+        />
+      </body>
+    </html>
   );
 }
 ```
 
-## Required env
-
-```bash
-ANNOTATION_SUPABASE_URL=
-ANNOTATION_SUPABASE_ANON_KEY=
-```
-
-For the local Vite app in this repo, mirror them as:
-
-```bash
-VITE_ANNOTATION_SUPABASE_URL=
-VITE_ANNOTATION_SUPABASE_ANON_KEY=
-```
-
-## Supabase schema
+## Database
 
 ```sql
 create table comments (
@@ -53,19 +49,20 @@ create table comments (
 );
 ```
 
-## Included behavior
-
-- Current-page comment loading and realtime sync via Supabase
-- `C`, `Esc`, and `R` keyboard shortcuts
-- Element selection with relative position offsets
-- Marker repositioning on scroll and resize
-- Local annotator name and resolved-thread visibility preferences
-
-## Local playground
+## Environment Variables
 
 ```bash
-npm install
-npm run dev
+NEXT_PUBLIC_ANNOTATION_SUPABASE_URL=
+NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=
 ```
 
-The root app renders [src/App.tsx](/Users/Bean.Duong/Desktop/dev/annotation/src/App.tsx), which mounts `AnnotationOverlay` directly and is the intended local sandbox for the component.
+## Features
+
+- Realtime comment loading and sync via Supabase
+- Keyboard shortcuts for create, close, and resolve flows
+- Element selection anchored to live DOM targets
+- Marker repositioning on scroll and resize
+- Threaded comments with resolve, remove, and bulk copy actions
+- Cross-page thread browsing from the dock
+- Local annotator name and resolved-thread visibility preferences
+- Optional `tableName`, `storageKeyPrefix`, and `pagePath` props for advanced integration

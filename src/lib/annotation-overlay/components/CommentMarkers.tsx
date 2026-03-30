@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { AnnotationComment, AnnotationRect, MarkerPosition } from "../types";
-import { generateSelector, querySelectorSafely } from "../selector";
+import { generateSelector, getSelectableElementAtPoint, querySelectorSafely } from "../selector";
 import { useAnnotation } from "../useAnnotation";
 import {
   getMarkerPagePosition,
@@ -73,28 +73,6 @@ function getThreadId(node: HTMLElement): string | null {
   return node.dataset.threadId ?? null;
 }
 
-function getSelectableElementAtPoint(clientX: number, clientY: number): HTMLElement | null {
-  const elements = document.elementsFromPoint(clientX, clientY);
-
-  for (const element of elements) {
-    if (!(element instanceof HTMLElement)) {
-      continue;
-    }
-
-    if (element.closest('[data-annotation-overlay-root="true"]')) {
-      continue;
-    }
-
-    if (element === document.body || element === document.documentElement) {
-      continue;
-    }
-
-    return element;
-  }
-
-  return null;
-}
-
 function setMarkerDelta(node: HTMLElement, deltaX: number, deltaY: number) {
   node.style.setProperty("--marker-delta-x", `${deltaX}px`);
   node.style.setProperty("--marker-delta-y", `${deltaY}px`);
@@ -112,7 +90,6 @@ function setMarkerBasePosition(node: HTMLElement, position: MarkerPosition) {
 
 export function CommentMarkers() {
   const {
-    activeThreadId,
     annotationMode,
     comments,
     currentPath,
@@ -532,9 +509,7 @@ export function CommentMarkers() {
                   transition={{ type: "spring", stiffness: 500, damping: 50 }}
                   className={cn(
                     "absolute inset-0 flex items-center justify-center rounded-full text-xs shadow-lg transition-colors",
-                    comment.id === activeThreadId
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-primary text-primary-foreground",
+                    "bg-primary text-primary-foreground",
                     comment.resolved && "opacity-35",
                   )}
                 >

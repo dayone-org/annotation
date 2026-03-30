@@ -12,6 +12,7 @@ export type AnnotationContextValue = {
   isLoading: boolean;
   isAuthorGateOpen: boolean;
   isMarkerHovered: boolean;
+  storageKeyPrefix: string;
   closeAuthorGate: () => void;
   setMarkerHovered: (hovered: boolean) => void;
   setAuthor: (value: string) => void;
