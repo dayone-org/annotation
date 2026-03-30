@@ -138,7 +138,7 @@ function getThreadComments(root: AnnotationComment, comments: AnnotationComment[
 
 function formatThreadMessages(root: AnnotationComment, comments: AnnotationComment[]): string[] {
   const threadComments = getThreadComments(root, comments);
-  const lines = ["Messages:"];
+  const lines = ["**Feedback Thread**:"];
 
   threadComments.forEach((comment, index) => {
     lines.push(`${index + 1}. ${comment.author}: ${normalizeWhitespace(comment.text) || "(empty comment)"}`);
@@ -153,11 +153,19 @@ function formatElementSummary(comment: AnnotationComment, currentPath: string): 
   const target = comment.page_path === currentPath ? querySelectorSafely(comment.selector) : null;
   const selectorLabel = comment.selector ? `\`${comment.selector}\`` : "Unavailable";
   const tagLabel = target ? `\`${target.tagName.toLowerCase()}\`` : "Unavailable";
-  const lines = [`Element: ${selectorLabel}`, "", `Tag: ${tagLabel}`];
+  const lines = [
+    `**Route**: \`${comment.page_path}\``,
+    "",
+    `**Status**: \`${comment.resolved ? "resolved" : "open"}\``,
+    "",
+    `**Element**: ${selectorLabel}`,
+    "",
+    `**Tag**: ${tagLabel}`,
+  ];
 
   const text = target ? getElementText(target) : null;
   if (text) {
-    lines.push("", `Text: \`${text}\``);
+    lines.push("", `**Text**: \`${text}\``);
   }
 
   lines.push("");
@@ -180,11 +188,9 @@ export function formatAnnotationThreadMarkdown(
   currentPath: string,
 ): string {
   return [
-    "# Annotations",
+    "# Annotations Page Feedback",
     "",
-    `- Route: \`${root.page_path}\``,
-    "",
-    ...formatThreadSection(root, comments, currentPath, "## Annotation"),
+    ...formatThreadSection(root, comments, currentPath, "## Annotation 1"),
   ].join("\n").trim();
 }
 
@@ -194,12 +200,7 @@ export function formatAnnotationCollectionMarkdown(
   currentPath: string,
 ): string {
   const sortedRoots = [...roots].sort((left, right) => left.created_at.localeCompare(right.created_at));
-  const lines = [
-    "# Annotations",
-    "",
-    `- Route: \`${currentPath}\``,
-    "",
-  ];
+  const lines = ["# Annotations Page Feedback", ""];
 
   sortedRoots.forEach((root, index) => {
     lines.push(...formatThreadSection(root, comments, currentPath, `## Annotation ${index + 1}`));

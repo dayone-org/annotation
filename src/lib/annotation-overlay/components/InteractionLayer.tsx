@@ -1,21 +1,40 @@
-import { useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import type { AnnotationRect } from "../types";
 import { generateSelector, querySelectorSafely } from "../selector";
 import { useAnnotation } from "../useAnnotation";
 import { measurePoint, measureRect } from "../utils";
+import {
+  AnnotationHighlight,
+  getAnnotationHighlightStyle,
+} from "./AnnotationHighlight";
 
-function getSelectableElement(target: EventTarget | null): HTMLElement | null {
-  const node =
-    target instanceof HTMLElement ? target : target instanceof Node ? target.parentElement : null;
-  if (!node || node.closest('[data-annotation-overlay-root="true"]')) {
-    return null;
+function getSelectableElementAtPoint(clientX: number, clientY: number): HTMLElement | null {
+  const elements = document.elementsFromPoint(clientX, clientY);
+
+  for (const element of elements) {
+    if (!(element instanceof HTMLElement)) {
+      continue;
+    }
+
+    if (element.closest('[data-annotation-overlay-root="true"]')) {
+      continue;
+    }
+
+    if (element === document.body || element === document.documentElement) {
+      continue;
+    }
+
+    return element;
   }
 
-  if (node === document.body || node === document.documentElement) {
-    return null;
-  }
-
-  return node;
+  return null;
 }
 
 function rectsEqual(left: AnnotationRect | null, right: AnnotationRect): boolean {
@@ -24,55 +43,82 @@ function rectsEqual(left: AnnotationRect | null, right: AnnotationRect): boolean
   }
 
   return (
-    left.left === right.left &&
-    left.top === right.top &&
+    left.pageX === right.pageX &&
+    left.pageY === right.pageY &&
     left.width === right.width &&
     left.height === right.height
   );
 }
 
 export function InteractionLayer() {
-  const { commentMode, composer, selectElement } = useAnnotation();
+  const { annotationMode, composer, isMarkerHovered, selectElement } = useAnnotation();
   const [hoveredElement, setHoveredElement] = useState<HTMLElement | null>(null);
-  const [highlightRect, setHighlightRect] = useState<AnnotationRect | null>(null);
+  const isInteractionActive = annotationMode && !composer;
+  const highlightNodeRef = useRef<HTMLDivElement | null>(null);
+  const highlightRectRef = useRef<AnnotationRect | null>(null);
 
   const selectedElement = composer?.selector ? querySelectorSafely(composer.selector) : null;
-  const highlightedElement = selectedElement ?? (commentMode ? hoveredElement : null);
+  const highlightedElement = isMarkerHovered
+    ? null
+    : selectedElement ?? (annotationMode ? hoveredElement : null);
 
-  useEffect(() => {
-    if (!commentMode) {
-      return;
-    }
+  const applyHighlightRect = useCallback((node: HTMLDivElement, rect: AnnotationRect) => {
+    node.style.width = `${rect.width}px`;
+    node.style.height = `${rect.height}px`;
+    node.style.transform = `${getAnnotationHighlightStyle(rect).transform}`;
+  }, []);
 
-    const handlePointerMove = (event: PointerEvent) => {
-      const target = getSelectableElement(event.target);
-      setHoveredElement((previous) => (previous === target ? previous : target));
-    };
+  const setHighlightNode = useCallback(
+    (node: HTMLDivElement | null) => {
+      highlightNodeRef.current = node;
 
-    const handleClick = (event: MouseEvent) => {
-      const target = getSelectableElement(event.target);
+      if (!node || !highlightRectRef.current) {
+        return;
+      }
+
+      applyHighlightRect(node, highlightRectRef.current);
+    },
+    [applyHighlightRect],
+  );
+
+  const updateHoveredElement = useCallback((clientX: number, clientY: number) => {
+    const target = getSelectableElementAtPoint(clientX, clientY);
+    setHoveredElement((previous) => (previous === target ? previous : target));
+    return target;
+  }, []);
+
+  const handlePointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      updateHoveredElement(event.clientX, event.clientY);
+    },
+    [updateHoveredElement],
+  );
+
+  const handleClick = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      const target = updateHoveredElement(event.clientX, event.clientY);
       if (!target) {
         return;
       }
 
       event.preventDefault();
       event.stopPropagation();
-
-      setHoveredElement(target);
       selectElement(generateSelector(target), measurePoint(event.clientX, event.clientY, target));
-    };
+    },
+    [selectElement, updateHoveredElement],
+  );
 
-    document.addEventListener("pointermove", handlePointerMove, true);
-    document.addEventListener("click", handleClick, true);
+  useEffect(() => {
+    if (isInteractionActive) {
+      return;
+    }
 
-    return () => {
-      document.removeEventListener("pointermove", handlePointerMove, true);
-      document.removeEventListener("click", handleClick, true);
-    };
-  }, [commentMode, selectElement]);
+    setHoveredElement(null);
+  }, [isInteractionActive]);
 
   useEffect(() => {
     if (!highlightedElement) {
+      highlightRectRef.current = null;
       return;
     }
 
@@ -80,12 +126,19 @@ export function InteractionLayer() {
 
     const syncHighlight = () => {
       if (!highlightedElement.isConnected) {
-        setHighlightRect(null);
+        highlightRectRef.current = null;
         return;
       }
 
       const nextRect = measureRect(highlightedElement);
-      setHighlightRect((previous) => (rectsEqual(previous, nextRect) ? previous : nextRect));
+      if (!rectsEqual(highlightRectRef.current, nextRect)) {
+        highlightRectRef.current = nextRect;
+
+        if (highlightNodeRef.current) {
+          applyHighlightRect(highlightNodeRef.current, nextRect);
+        }
+      }
+
       frameId = window.requestAnimationFrame(syncHighlight);
     };
 
@@ -94,23 +147,27 @@ export function InteractionLayer() {
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [highlightedElement]);
+  }, [applyHighlightRect, highlightedElement]);
 
-  if (!highlightedElement || !highlightRect) {
+  if (!isInteractionActive && !highlightedElement) {
     return null;
   }
 
   return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none fixed rounded-md border-2 border-primary bg-primary/10"
-      data-annotation-overlay-root="true"
-      style={{
-        height: highlightRect.height,
-        left: highlightRect.left,
-        top: highlightRect.top,
-        width: highlightRect.width,
-      }}
-    />
+    <>
+      {isInteractionActive ? (
+        <div
+          aria-hidden="true"
+          className="fixed inset-0 z-2147483601 cursor-crosshair"
+          data-annotation-overlay-root="true"
+          onClick={handleClick}
+          onPointerMove={handlePointerMove}
+        />
+      ) : null}
+
+      {highlightedElement ? (
+        <AnnotationHighlight className="z-2147483601" ref={setHighlightNode} />
+      ) : null}
+    </>
   );
 }

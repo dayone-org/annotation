@@ -3,23 +3,23 @@ import type { AnnotationComment, AnnotationRect, PendingAnnotation } from "./typ
 
 export type AnnotationContextValue = {
   activeThreadId: string | null;
+  annotationMode: boolean;
   author: string;
-  commentMode: boolean;
   comments: AnnotationComment[];
   composer: PendingAnnotation | null;
   currentPath: string;
   errorMessage: string | null;
   isLoading: boolean;
   isAuthorGateOpen: boolean;
-  isPanelOpen: boolean;
+  isMarkerHovered: boolean;
   closeAuthorGate: () => void;
-  setPanelOpen: (open: boolean) => void;
+  setMarkerHovered: (hovered: boolean) => void;
   setAuthor: (value: string) => void;
   submitAuthorGate: (name: string) => void;
   setShowResolved: (value: boolean) => void;
   showResolved: boolean;
-  startCommentMode: () => void;
-  cancelCommentMode: () => void;
+  startAnnotationMode: () => void;
+  cancelAnnotationMode: () => void;
   selectElement: (selector: string, rect: AnnotationRect) => void;
   openThreadComposer: (threadId: string, rect: AnnotationRect) => void;
   updateThreadRect: (
@@ -31,6 +31,7 @@ export type AnnotationContextValue = {
   submitComment: (text: string) => Promise<boolean>;
   scrollToComment: (commentId: string) => void;
   removeThread: (commentId: string) => Promise<boolean>;
+  resolveAllComments: () => Promise<boolean>;
   toggleResolved: (commentId: string) => Promise<void>;
 };
 

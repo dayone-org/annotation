@@ -1,5 +1,5 @@
 import { CheckCircleIcon, DotsThreeVerticalIcon } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,7 +19,7 @@ import { AnnotationDock } from "./components/AnnotationDock";
 import { CommentMarkers } from "./components/CommentMarkers";
 import { InteractionLayer } from "./components/InteractionLayer";
 import { useAnnotation } from "./useAnnotation";
-import { formatTimestamp, rectToViewport } from "./utils";
+import { formatTimestamp } from "./utils";
 
 type ThreadCommentProps = {
   isRoot?: boolean;
@@ -121,7 +121,6 @@ function ComposerPopover() {
     return null;
   }
 
-  const rect = rectToViewport(composer.rect);
   const parentComment = composer.parentId
     ? (comments.find((comment) => comment.id === composer.parentId) ?? null)
     : null;
@@ -147,13 +146,12 @@ function ComposerPopover() {
     <Popover onOpenChange={(open) => !open && closeComposer()} open>
       <PopoverAnchor asChild>
         <div
-          className="fixed"
+          className="absolute top-0 left-0"
           data-annotation-overlay-root="true"
           style={{
-            height: rect.height,
-            left: rect.left,
-            top: rect.top,
-            width: rect.width,
+            height: composer.rect.height,
+            transform: `translate3d(${composer.rect.pageX}px, ${composer.rect.pageY}px, 0)`,
+            width: composer.rect.width,
           }}
         />
       </PopoverAnchor>
@@ -162,6 +160,15 @@ function ComposerPopover() {
         className="z-2147483603 w-[min(22rem,calc(100vw-2rem))] overflow-hidden bg-muted p-0"
         collisionPadding={16}
         data-annotation-overlay-root="true"
+        onInteractOutside={(event) => {
+          const target = event.target;
+          if (
+            target instanceof Element &&
+            target.closest('[data-annotation-overlay-root="true"]')
+          ) {
+            event.preventDefault();
+          }
+        }}
         sideOffset={12}
       >
         <PopoverHeader>
@@ -199,48 +206,12 @@ function ComposerPopover() {
   );
 }
 
-function CommentModeCursor() {
-  const { commentMode } = useAnnotation();
-
-  useEffect(() => {
-    const attributeName = "data-annotation-comment-mode";
-
-    if (commentMode) {
-      document.documentElement.setAttribute(attributeName, "true");
-      return () => {
-        document.documentElement.removeAttribute(attributeName);
-      };
-    }
-
-    document.documentElement.removeAttribute(attributeName);
-
-    return undefined;
-  }, [commentMode]);
-
-  return (
-    <style>
-      {`
-        html[data-annotation-comment-mode="true"],
-        html[data-annotation-comment-mode="true"] body,
-        html[data-annotation-comment-mode="true"] body * {
-          cursor: crosshair !important;
-        }
-        html[data-annotation-comment-mode="true"] [data-annotation-overlay-root="true"],
-        html[data-annotation-comment-mode="true"] [data-annotation-overlay-root="true"] * {
-          cursor: revert !important;
-        }
-      `}
-    </style>
-  );
-}
-
 function AnnotationOverlayScene() {
   return createPortal(
     <div
       className="absolute top-0 left-0 z-2147483600 h-px w-px"
       data-annotation-overlay-root="true"
     >
-      <CommentModeCursor />
       <InteractionLayer />
       <CommentMarkers />
       <ComposerPopover />

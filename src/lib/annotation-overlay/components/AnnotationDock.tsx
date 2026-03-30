@@ -1,23 +1,35 @@
 import {
+  ArrowRightIcon,
   ChatsIcon,
   CheckCircleIcon,
+  CheckIcon,
   CopySimpleIcon,
   GearSixIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState } from "react";
+import {
+  AnimatePresence,
+  animate,
+  motion,
+  useMotionValue,
+  useTransform,
+  type Variants,
+} from "motion/react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import useMeasure from "react-use-measure";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Item, ItemContent, ItemHeader } from "@/components/ui/item";
 import { Kbd } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
+import logo from "@/logo.svg";
 import type { AnnotationComment } from "../types";
 import {
   ANNOTATION_ONLY_CURRENT_PAGE_KEY,
@@ -31,9 +43,12 @@ import {
   formatTimestamp,
   getReplies,
   getTopLevelComments,
+  measureRect,
 } from "../utils";
 
 type CopyState = "idle" | "copied" | "error";
+
+const RESOLVE_ALL_COMPLETE_THRESHOLD = 0.96;
 
 function useCopyState() {
   const [state, setState] = useState<CopyState>("idle");
@@ -68,23 +83,9 @@ async function copyToClipboard(value: string): Promise<boolean> {
   }
 }
 
-function getCopyActionLabel(scope: "annotation" | "annotations", state: CopyState): string {
-  if (state === "copied") {
-    return scope === "annotation" ? "Annotation copied" : "Annotations copied";
-  }
-
-  if (state === "error") {
-    return scope === "annotation" ? "Copy annotation failed" : "Copy annotations failed";
-  }
-
-  return scope === "annotation"
-    ? "Copy annotation as markdown"
-    : "Copy open annotations on this route as markdown";
-}
-
 function getCopyActionIcon(state: CopyState) {
   if (state === "copied") {
-    return <CheckCircleIcon />;
+    return <CheckIcon />;
   }
 
   if (state === "error") {
@@ -92,6 +93,43 @@ function getCopyActionIcon(state: CopyState) {
   }
 
   return <CopySimpleIcon />;
+}
+
+type AnimatedIconTransitionProps<T extends string> = {
+  renderIcon: (state: T) => ReactNode;
+  state: T;
+};
+
+function AnimatedIconTransition<T extends string>({
+  renderIcon,
+  state,
+}: AnimatedIconTransitionProps<T>) {
+  return (
+    <AnimatePresence mode="popLayout" initial={false}>
+      <motion.div
+        key={state}
+        initial={{ opacity: 0, filter: "blur(5px)", scale: 0.5 }}
+        animate={{ opacity: 1, filter: "blur(0px)", scale: 1 }}
+        exit={{ opacity: 0, filter: "blur(5px)", scale: 0.5 }}
+      >
+        {renderIcon(state)}
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+function AnimatedCopyStateIcon({ state }: { state: CopyState }) {
+  return <AnimatedIconTransition renderIcon={getCopyActionIcon} state={state} />;
+}
+
+type ResolveSliderIconState = "idle" | "loading";
+
+function getResolveSliderIcon(state: ResolveSliderIconState) {
+  if (state === "loading") {
+    return <Spinner className="size-4" />;
+  }
+
+  return <ArrowRightIcon className="size-4" />;
 }
 
 type ThreadCardProps = {
@@ -109,11 +147,24 @@ function ThreadCard({
   comments,
   currentPath,
 }: ThreadCardProps) {
-  const { scrollToComment, toggleResolved } = useAnnotation();
+  const { openThreadComposer, scrollToComment, toggleResolved } = useAnnotation();
   const [copyState, setCopyState] = useCopyState();
 
   const replies = getReplies(comments, comment.id);
   const isActive = activeThreadId === comment.id;
+
+  const goToThreadAndOpenComposer = (scrollTargetId: string) => {
+    scrollToComment(scrollTargetId);
+
+    const markerNode = document.querySelector<HTMLElement>(`[data-thread-id="${comment.id}"]`);
+    const anchorRect = markerNode ? measureRect(markerNode) : comment.rect;
+
+    if (!anchorRect) {
+      return;
+    }
+
+    openThreadComposer(comment.id, anchorRect);
+  };
 
   const handleCopy = async () => {
     const markdown = formatAnnotationThreadMarkdown(comment, comments, currentPath);
@@ -122,102 +173,211 @@ function ThreadCard({
   };
 
   return (
-    <article
+    <Item
+      size="xs"
+      variant="outline"
       className={cn(
-        "grid gap-3 rounded-2xl border p-3 transition",
-        isActive ? "border-primary/45 bg-primary/6" : "border-border/70 bg-background",
+        "group bg-background transition-all",
+        isActive && "border border-primary",
+        comment.resolved && "opacity-50",
       )}
+      onClick={() => goToThreadAndOpenComposer(comment.id)}
     >
-      <div className="flex items-start justify-between gap-3">
-        <button
-          className="flex flex-1 items-start gap-3 text-left"
-          onClick={() => scrollToComment(comment.id)}
-          type="button"
-        >
-          <div className="grid gap-2">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <strong className="text-sm text-foreground">{comment.author}</strong>
-              <span>{formatTimestamp(comment.created_at)}</span>
-            </div>
-            <p className="text-sm leading-6 text-foreground">{comment.text}</p>
-          </div>
-        </button>
-        <div className="flex items-center gap-2">
-          <Badge variant={comment.resolved ? "secondary" : "outline"}>
-            {comment.resolved ? "Resolved" : "Open"}
-          </Badge>
-          <Button
-            aria-label={getCopyActionLabel("annotation", copyState)}
-            onClick={() => void handleCopy()}
-            size="icon"
-            title={getCopyActionLabel("annotation", copyState)}
-            type="button"
-            variant="ghost"
-          >
-            {getCopyActionIcon(copyState)}
+      <ItemHeader className="flex items-center justify-between gap-2">
+        <Badge variant="secondary">{comment.page_path}</Badge>
+        <div className="flex items-center gap-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          <Button onClick={() => void handleCopy()} size="icon" type="button" variant="ghost">
+            <AnimatedCopyStateIcon state={copyState} />
           </Button>
           {canManage ? (
             <Button
               aria-label={comment.resolved ? "Mark annotation as open" : "Resolve annotation"}
-              className={comment.resolved ? "opacity-50" : ""}
               onClick={() => void toggleResolved(comment.id)}
               size="icon"
               type="button"
               variant="ghost"
             >
-              <CheckCircleIcon />
+              {comment.resolved ? <CheckCircleIcon weight="fill" /> : <CheckCircleIcon />}
             </Button>
           ) : null}
         </div>
-      </div>
-      {replies.length > 0 ? (
-        <div className="ml-4 grid gap-3 border-l border-border pl-4">
-          {replies.map((reply) => (
-            <button
-              key={reply.id}
-              className="grid grid-cols-[auto_1fr] gap-3 text-left"
-              onClick={() => scrollToComment(reply.id)}
-              type="button"
-            >
-              <div className="grid gap-1">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <strong className="text-sm text-foreground">{reply.author}</strong>
-                  <span>{formatTimestamp(reply.created_at)}</span>
-                </div>
-                <p className="text-sm leading-6 text-foreground">{reply.text}</p>
-              </div>
-            </button>
-          ))}
+      </ItemHeader>
+      <ItemContent className="flex flex-col gap-2 text-sm">
+        <div className="flex flex-col">
+          <p className="font-medium">{comment.author}</p>
+          <p className="whitespace-pre-wrap text-muted-foreground">{comment.text}</p>
         </div>
-      ) : null}
-      <Badge variant="secondary">{comment.page_path}</Badge>
-    </article>
+        <div className="flex justify-between gap-2 text-xs text-muted-foreground">
+          <span>
+            {replies.length > 0 &&
+              `${replies.length} ${replies.length === 1 ? "reply" : "replies"}`}
+          </span>
+          <span>{formatTimestamp(comment.created_at)}</span>
+        </div>
+      </ItemContent>
+    </Item>
+  );
+}
+
+type ResolveAllSliderProps = {
+  onResolveAll: () => Promise<boolean>;
+};
+
+function ResolveAllSlider({ onResolveAll }: ResolveAllSliderProps) {
+  const [isResolving, setIsResolving] = useState(false);
+  const trackNodeRef = useRef<HTMLDivElement | null>(null);
+  const thumbNodeRef = useRef<HTMLButtonElement | null>(null);
+  const [measureTrackRef, { width: measuredTrackWidth }] = useMeasure({ offsetSize: true });
+  const [measureThumbRef, { width: measuredThumbWidth }] = useMeasure({ offsetSize: true });
+  const x = useMotionValue(0);
+  const setTrackRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      trackNodeRef.current = node;
+      measureTrackRef(node);
+    },
+    [measureTrackRef],
+  );
+  const setThumbRef = useCallback(
+    (node: HTMLButtonElement | null) => {
+      thumbNodeRef.current = node;
+      measureThumbRef(node);
+    },
+    [measureThumbRef],
+  );
+  const trackWidth = trackNodeRef.current?.clientWidth ?? measuredTrackWidth;
+  const thumbWidth = thumbNodeRef.current?.offsetWidth ?? measuredThumbWidth;
+  const maxDrag = Math.max(trackWidth - thumbWidth, 0);
+  const progressWidth = useTransform(x, (latest) =>
+    Math.min(Math.max(latest + thumbWidth / 2, 0), trackWidth),
+  );
+
+  const moveThumbToEnd = useCallback(() => {
+    void animate(x, maxDrag, {
+      type: "spring",
+      stiffness: 560,
+      damping: 42,
+      mass: 0.4,
+    });
+  }, [maxDrag, x]);
+
+  const resetThumb = useCallback(() => {
+    void animate(x, 0, {
+      type: "spring",
+      stiffness: 560,
+      damping: 42,
+      mass: 0.4,
+    });
+  }, [x]);
+
+  const runResolveAll = useCallback(async () => {
+    const startedAt = performance.now();
+
+    setIsResolving(true);
+    moveThumbToEnd();
+
+    try {
+      await onResolveAll();
+
+      const elapsed = performance.now() - startedAt;
+      const remaining = Math.max(0, 2000 - elapsed);
+
+      if (remaining > 0) {
+        await new Promise<void>((resolve) => {
+          window.setTimeout(resolve, remaining);
+        });
+      }
+    } finally {
+      setIsResolving(false);
+      resetThumb();
+    }
+  }, [moveThumbToEnd, onResolveAll, resetThumb]);
+
+  useEffect(() => {
+    if (isResolving) {
+      x.set(maxDrag);
+      return;
+    }
+
+    if (x.get() > maxDrag) {
+      x.set(maxDrag);
+    }
+  }, [isResolving, maxDrag, x]);
+
+  const handleDragEnd = useCallback(() => {
+    const completion = maxDrag <= 0 ? 0 : x.get() / maxDrag;
+
+    if (isResolving) {
+      return;
+    }
+
+    if (completion < RESOLVE_ALL_COMPLETE_THRESHOLD) {
+      resetThumb();
+      return;
+    }
+
+    void runResolveAll();
+  }, [isResolving, maxDrag, resetThumb, runResolveAll, x]);
+  const resolveSliderIconState: ResolveSliderIconState = isResolving ? "loading" : "idle";
+
+  return (
+    <div
+      ref={setTrackRef}
+      className="relative box-content h-6 overflow-hidden rounded-full border bg-muted"
+    >
+      <motion.div
+        aria-hidden
+        className="absolute inset-y-0 left-0 rounded-full bg-primary"
+        style={{
+          width: progressWidth,
+        }}
+      />
+      <motion.button
+        aria-label="Resolve all"
+        ref={setThumbRef}
+        className={cn(
+          "relative z-10 flex size-6 items-center justify-center rounded-full bg-background shadow-sm ring-1 ring-border transition-colors",
+          !isResolving && "cursor-grab active:cursor-grabbing",
+        )}
+        disabled={isResolving}
+        drag={isResolving ? false : "x"}
+        dragConstraints={{ left: 0, right: maxDrag }}
+        dragElastic={0}
+        dragMomentum={false}
+        onDragEnd={handleDragEnd}
+        style={{ x }}
+        type="button"
+        whileTap={isResolving ? undefined : { scale: 0.98 }}
+      >
+        <AnimatedIconTransition renderIcon={getResolveSliderIcon} state={resolveSliderIconState} />
+      </motion.button>
+    </div>
   );
 }
 
 export function AnnotationDock() {
   const {
     activeThreadId,
+    annotationMode,
     author,
-    cancelCommentMode,
+    cancelAnnotationMode,
     closeAuthorGate,
-    commentMode,
     comments,
+    composer,
     currentPath,
     errorMessage,
     isAuthorGateOpen,
     isLoading,
-    isPanelOpen,
+    resolveAllComments,
     setAuthor,
-    setPanelOpen,
     setShowResolved,
     showResolved,
-    startCommentMode,
+    startAnnotationMode,
     submitAuthorGate,
   } = useAnnotation();
   const [showOnlyCurrentPage, setShowOnlyCurrentPage] = useState(() =>
     readStoredBoolean(ANNOTATION_ONLY_CURRENT_PAGE_KEY, false),
   );
+  const [isPanelOpen, setPanelOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [authorGateInput, setAuthorGateInput] = useState("");
 
@@ -225,28 +385,37 @@ export function AnnotationDock() {
 
   const topLevelComments = getTopLevelComments(comments);
   const sortedThreads = [...topLevelComments].sort((left, right) =>
-    left.created_at.localeCompare(right.created_at),
+    right.created_at.localeCompare(left.created_at),
   );
   const showAllPages = !showOnlyCurrentPage;
   const pageScopedThreads = showAllPages
     ? sortedThreads
     : sortedThreads.filter((comment) => comment.page_path === currentPath);
   const visibleThreads = pageScopedThreads.filter((comment) => showResolved || !comment.resolved);
-  const pageCount = new Set(topLevelComments.map((comment) => comment.page_path)).size;
-  const currentPageCount = topLevelComments.filter(
-    (comment) => comment.page_path === currentPath,
-  ).length;
   const currentRouteOpenThreads = sortedThreads.filter(
     (comment) => comment.page_path === currentPath && !comment.resolved,
   );
+  const unresolvedThreadCount = topLevelComments.filter((comment) => !comment.resolved).length;
   const hasAuthor = Boolean(author);
   const [bulkCopyState, setBulkCopyState] = useCopyState();
 
   const variantsButton = {
-    initial: { opacity: 0, filter: "blur(10px)", transform: "scale(0.8)" },
-    animate: { opacity: 1, filter: "blur(0px)", transform: "scale(1)" },
-    exit: { opacity: 0, filter: "blur(10px)", transform: "scale(0.8)" },
-  };
+    initial: { opacity: 0, filter: "blur(10px)", transform: "scale(0.75)" },
+    animate: {
+      opacity: 1,
+      filter: "blur(0px)",
+      transform: "scale(1)",
+      transformOrigin: "center left",
+      transition: { duration: 0.4, ease: [0.17, 0.84, 0.44, 1] },
+    },
+    exit: {
+      opacity: 0,
+      filter: "blur(10px)",
+      transform: "scale(0.75)",
+      transformOrigin: "center left",
+      transition: { duration: 0.4, ease: [0.17, 0.84, 0.44, 1] },
+    },
+  } satisfies Variants;
 
   const toggleAnnotationsPanel = () => {
     setIsSettingsOpen(false);
@@ -254,23 +423,30 @@ export function AnnotationDock() {
     setPanelOpen(!isPanelOpen);
   };
 
-  const closeCommentDock = () => {
+  const closeAnnotationDock = () => {
     setIsSettingsOpen(false);
     closeAuthorGate();
-    cancelCommentMode();
+    cancelAnnotationMode();
   };
 
   useEffect(() => {
-    if (!commentMode) {
+    if (!annotationMode) {
       setIsSettingsOpen(false);
+      setPanelOpen(false);
     }
-  }, [commentMode]);
+  }, [annotationMode]);
 
   useEffect(() => {
     if (isAuthorGateOpen) {
       setAuthorGateInput("");
     }
   }, [isAuthorGateOpen]);
+
+  useEffect(() => {
+    if (composer && !composer.parentId) {
+      setPanelOpen(false);
+    }
+  }, [composer]);
 
   const handleBulkCopy = async () => {
     const markdown = formatAnnotationCollectionMarkdown(
@@ -282,242 +458,270 @@ export function AnnotationDock() {
     setBulkCopyState(didCopy ? "copied" : "error");
   };
 
+  const variantsCard = {
+    initial: {
+      opacity: 0,
+      transform: "translateY(10px)",
+    },
+    animate: {
+      opacity: 1,
+      transform: "translateY(0)",
+      transition: {
+        duration: 0.25,
+        ease: [0.17, 0.84, 0.44, 1],
+      },
+    },
+    exit: {
+      opacity: 0,
+      transform: "translateY(0px)",
+      transition: {
+        duration: 0.15,
+        ease: [0.17, 0.84, 0.44, 1],
+      },
+    },
+  } satisfies Variants;
+
+  const renderDock = () => {
+    if (!annotationMode && !isAuthorGateOpen) {
+      return (
+        <motion.div
+          key="floating-button"
+          variants={variantsButton}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="flex items-center"
+        >
+          <Button onClick={() => startAnnotationMode()} size="sm" className="pr-1">
+            Annotation
+            <Kbd className="bg-primary-foreground/15 text-primary-foreground">C</Kbd>
+          </Button>
+        </motion.div>
+      );
+    }
+
+    if (isAuthorGateOpen) {
+      return (
+        <motion.form
+          key="floating-button-author-gate"
+          variants={variantsButton}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          className="flex items-center gap-2 p-1"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitAuthorGate(authorGateInput);
+          }}
+        >
+          <Input
+            autoFocus
+            className="w-48 border-none bg-primary-foreground/10 text-primary-foreground placeholder:text-primary-foreground/50"
+            id="annotation-author-gate-name"
+            maxLength={48}
+            onChange={(event) => setAuthorGateInput(event.target.value)}
+            placeholder="What's your name?"
+            value={authorGateInput}
+          />
+          <Button disabled={!authorGateInput.trim()} size="icon-sm" type="submit">
+            <CheckIcon />
+          </Button>
+          <Separator orientation="vertical" className="bg-primary-foreground/25" />
+          <Button onClick={closeAuthorGate} size="icon-sm" type="button">
+            <XIcon />
+          </Button>
+        </motion.form>
+      );
+    }
+
+    return (
+      <motion.div
+        key="floating-button-active"
+        variants={variantsButton}
+        initial="initial"
+        animate="animate"
+        exit="exit"
+        className="flex origin-bottom-right items-center gap-2 p-1"
+      >
+        <Button
+          disabled={currentRouteOpenThreads.length === 0}
+          onClick={() => void handleBulkCopy()}
+          size="icon-sm"
+        >
+          <AnimatedCopyStateIcon state={bulkCopyState} />
+        </Button>
+        <Button
+          aria-label="Annotations panel"
+          aria-expanded={isPanelOpen}
+          onClick={toggleAnnotationsPanel}
+          size="icon-sm"
+        >
+          <ChatsIcon />
+        </Button>
+        <Button
+          aria-label="Annotation settings"
+          aria-expanded={isSettingsOpen}
+          onClick={() => {
+            setIsSettingsOpen((open) => {
+              const next = !open;
+              if (next) {
+                setPanelOpen(false);
+                closeAuthorGate();
+              }
+              return next;
+            });
+          }}
+          size="icon-sm"
+        >
+          <GearSixIcon />
+        </Button>
+        <Separator orientation="vertical" className="bg-primary-foreground/25" />
+        <Button onClick={closeAnnotationDock} size="icon-sm">
+          <XIcon />
+        </Button>
+      </motion.div>
+    );
+  };
+
   return (
     <div
       className="fixed right-6 bottom-6 z-2147483602 flex flex-col items-end gap-4"
       data-annotation-overlay-root="true"
     >
-      {isPanelOpen && (
-        <Card className="w-64">
-          <CardContent>
-            <section id="annotation-panel-surface">
-              <div className="border-b border-border/60 px-4 py-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="grid gap-1">
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-sm font-semibold tracking-[0.18em] text-foreground uppercase">
-                        Annotations
-                      </h2>
-                      <Badge variant="secondary">{sortedThreads.length}</Badge>
+      <AnimatePresence mode="popLayout" anchorY="bottom" anchorX="right">
+        {isPanelOpen && (
+          <motion.div
+            variants={variantsCard}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            key="annotations"
+          >
+            <Card className="w-64 pb-0">
+              <CardHeader>
+                <FieldGroup>
+                  <Field orientation="horizontal">
+                    <FieldLabel htmlFor="annotation-panel-show-resolved">
+                      Resolved comments
+                    </FieldLabel>
+                    <Switch
+                      checked={showResolved}
+                      id="annotation-panel-show-resolved"
+                      onCheckedChange={setShowResolved}
+                    />
+                  </Field>
+                  <Field orientation="horizontal">
+                    <FieldLabel htmlFor="annotation-panel-show-all">All pages</FieldLabel>
+                    <Switch
+                      checked={showAllPages}
+                      id="annotation-panel-show-all"
+                      onCheckedChange={(checked) => {
+                        writeStoredBoolean(ANNOTATION_ONLY_CURRENT_PAGE_KEY, !checked);
+                        setShowOnlyCurrentPage(!checked);
+                      }}
+                    />
+                  </Field>
+                </FieldGroup>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-0 border-t p-0">
+                <div className="grid h-[min(24rem,calc(100vh-8rem))] gap-0 bg-muted">
+                  <ScrollArea className="h-full max-h-[min(24rem,calc(100vh-8rem))]" type="scroll">
+                    <div className="flex flex-col gap-2 p-2">
+                      {isLoading ? (
+                        <p className="p-2 text-center text-sm text-muted-foreground">
+                          Loading annotations…
+                        </p>
+                      ) : null}
+                      {!isLoading && visibleThreads.length === 0 ? (
+                        <p className="p-2 text-center text-sm text-muted-foreground">
+                          No annotations
+                        </p>
+                      ) : null}
+                      {!isLoading
+                        ? visibleThreads.map((comment) => (
+                            <ThreadCard
+                              activeThreadId={activeThreadId}
+                              canManage={hasAuthor}
+                              comment={comment}
+                              comments={comments}
+                              currentPath={currentPath}
+                              key={comment.id}
+                            />
+                          ))
+                        : null}
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      {`${visibleThreads.length} annotations across ${showAllPages ? pageCount || 0 : 1} ${showAllPages ? "pages" : "page"}. ${currentPageCount} on this page.`}
-                    </p>
-                  </div>
+                  </ScrollArea>
+                  {errorMessage ? (
+                    <div className="border-t border-border/60 px-4 py-3">
+                      <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                        {errorMessage}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
-              </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
 
-              <div className="grid max-h-[min(32rem,calc(100vh-7.5rem))] gap-0">
-                <ScrollArea className="max-h-[min(28rem,calc(100vh-11rem))] px-3 py-3">
-                  <div className="grid gap-2">
-                    {isLoading ? (
-                      <p className="px-1 text-sm text-muted-foreground">Loading annotations…</p>
-                    ) : null}
-                    {!isLoading && visibleThreads.length === 0 ? (
-                      <p className="px-1 text-sm text-muted-foreground">
-                        {topLevelComments.length === 0
-                          ? "No annotations yet."
-                          : !showAllPages && currentPageCount === 0
-                            ? "No annotations on this page."
-                            : 'Resolved annotations are hidden. Turn on "Resolved comments" to see them.'}
-                      </p>
-                    ) : null}
-                    {!isLoading
-                      ? visibleThreads.map((comment) => (
-                          <ThreadCard
-                            activeThreadId={activeThreadId}
-                            canManage={hasAuthor}
-                            comment={comment}
-                            comments={comments}
-                            currentPath={currentPath}
-                            key={comment.id}
-                          />
-                        ))
-                      : null}
-                  </div>
-                </ScrollArea>
-                {errorMessage ? (
-                  <div className="border-t border-border/60 px-4 py-3">
-                    <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                      {errorMessage}
+        {isSettingsOpen && (
+          <motion.div
+            variants={variantsCard}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            key="container"
+          >
+            <Card className="w-64">
+              <CardHeader>
+                <CardTitle className="flex items-baseline justify-between gap-2">
+                  <img src={logo} alt="Annotation" className="h-3 w-fit" />
+                  <span className="text-xs text-muted-foreground">v0.1</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="annotation-panel-name">Name</FieldLabel>
+                    <Input
+                      id="annotation-panel-name"
+                      maxLength={48}
+                      onBlur={(event) => {
+                        if (!event.currentTarget.value.trim()) {
+                          cancelAnnotationMode();
+                        }
+                      }}
+                      onChange={(event) => setAuthor(event.target.value)}
+                      placeholder="Annotator"
+                      value={author}
+                    />
+                  </Field>
+                  <Field>
+                    <div className="flex items-center justify-between gap-2">
+                      <FieldLabel>Resolve all</FieldLabel>
+                      <Badge variant="secondary">{unresolvedThreadCount}</Badge>
                     </div>
+                    <ResolveAllSlider onResolveAll={resolveAllComments} />
+                  </Field>
+                </FieldGroup>
+                {errorMessage ? (
+                  <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    {errorMessage}
                   </div>
                 ) : null}
-              </div>
-            </section>
-          </CardContent>
-        </Card>
-      )}
-
-      {isAuthorGateOpen && (
-        <Card className="w-64">
-          <CardContent>
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                submitAuthorGate(authorGateInput);
-              }}
-            >
-              <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="annotation-author-gate-name">
-                    What&apos;s your name?
-                  </FieldLabel>
-                  <Input
-                    autoFocus
-                    id="annotation-author-gate-name"
-                    maxLength={48}
-                    onChange={(event) => setAuthorGateInput(event.target.value)}
-                    placeholder="Annotator"
-                    value={authorGateInput}
-                  />
-                </Field>
-                <Button disabled={!authorGateInput.trim()} type="submit">
-                  Continue
-                </Button>
-              </FieldGroup>
-            </form>
-            {errorMessage ? (
-              <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {errorMessage}
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-      )}
-
-      {commentMode && isSettingsOpen && (
-        <Card className="w-64">
-          <CardContent>
-            <FieldGroup>
-              <Field>
-                <FieldLabel htmlFor="annotation-panel-name">Name</FieldLabel>
-                <Input
-                  id="annotation-panel-name"
-                  maxLength={48}
-                  onChange={(event) => setAuthor(event.target.value)}
-                  placeholder="Annotator"
-                  value={author}
-                />
-              </Field>
-              <Field orientation="horizontal">
-                <FieldLabel htmlFor="annotation-panel-show-resolved">Resolved comments</FieldLabel>
-                <Switch
-                  checked={showResolved}
-                  id="annotation-panel-show-resolved"
-                  onCheckedChange={setShowResolved}
-                />
-              </Field>
-              <Field orientation="horizontal">
-                <FieldLabel htmlFor="annotation-panel-show-all">All pages</FieldLabel>
-                <Switch
-                  checked={showAllPages}
-                  id="annotation-panel-show-all"
-                  onCheckedChange={(checked) => {
-                    writeStoredBoolean(ANNOTATION_ONLY_CURRENT_PAGE_KEY, !checked);
-                    setShowOnlyCurrentPage(!checked);
-                  }}
-                />
-              </Field>
-            </FieldGroup>
-
-            {errorMessage ? (
-              <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                {errorMessage}
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
-      )}
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <motion.div
-        layout
         animate={{ width, height }}
         className="overflow-hidden rounded-md bg-primary"
-        transition={{ duration: 0.15, ease: [0.17, 0.84, 0.44, 1] }}
+        transition={{ duration: 0.25, ease: [0.17, 0.84, 0.44, 1] }}
       >
-        <div ref={refContainer} className="h-fit w-fit">
-          <AnimatePresence mode="popLayout">
-            {!commentMode ? (
-              <motion.div
-                key="floating-button"
-                variants={variantsButton}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                transition={{ duration: 0.3, ease: [0.17, 0.84, 0.44, 1] }}
-                className="flex items-center"
-              >
-                <Button
-                  onClick={() => startCommentMode()}
-                  size="sm"
-                  variant="ghost"
-                  className="pr-1 hover:bg-primary-foreground/10"
-                >
-                  Annotation
-                  <Kbd className="bg-primary-foreground/15 text-primary-foreground">C</Kbd>
-                </Button>
-              </motion.div>
-            ) : (
-              <motion.div
-                key="floating-button-active"
-                variants={variantsButton}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                transition={{ duration: 0.3, ease: [0.17, 0.84, 0.44, 1] }}
-                className="flex origin-bottom-right items-center gap-2 p-1"
-              >
-                <Button
-                  aria-label={getCopyActionLabel("annotations", bulkCopyState)}
-                  className="hover:bg-primary-foreground/10"
-                  disabled={currentRouteOpenThreads.length === 0}
-                  onClick={() => void handleBulkCopy()}
-                  size="icon-sm"
-                  title={getCopyActionLabel("annotations", bulkCopyState)}
-                  variant="ghost"
-                >
-                  {getCopyActionIcon(bulkCopyState)}
-                </Button>
-                <Button
-                  onClick={toggleAnnotationsPanel}
-                  variant="ghost"
-                  size="icon-sm"
-                  className="hover:bg-primary-foreground/10"
-                >
-                  <ChatsIcon />
-                </Button>
-                <Button
-                  aria-expanded={isSettingsOpen}
-                  aria-label="Annotation settings"
-                  onClick={() => {
-                    setIsSettingsOpen((open) => {
-                      const next = !open;
-                      if (next) {
-                        setPanelOpen(false);
-                        closeAuthorGate();
-                      }
-                      return next;
-                    });
-                  }}
-                  size="icon-sm"
-                  variant="ghost"
-                  className="hover:bg-primary-foreground/10"
-                >
-                  <GearSixIcon />
-                </Button>
-                <Separator orientation="vertical" className="bg-primary-foreground/25" />
-                <Button
-                  onClick={closeCommentDock}
-                  size="icon-sm"
-                  variant="ghost"
-                  className="hover:bg-primary-foreground/10"
-                >
-                  <XIcon />
-                </Button>
-              </motion.div>
-            )}
-          </AnimatePresence>
+        <div ref={refContainer} className="relative h-fit w-fit overflow-hidden">
+          <AnimatePresence mode="popLayout">{renderDock()}</AnimatePresence>
         </div>
       </motion.div>
     </div>

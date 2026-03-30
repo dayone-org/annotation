@@ -1,5 +1,4 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { flushSync } from "react-dom";
 import {
   startTransition,
   useCallback,
@@ -9,6 +8,7 @@ import {
   useState,
   type PropsWithChildren,
 } from "react";
+import { flushSync } from "react-dom";
 import type {
   AnnotationComment,
   AnnotationOverlayProps,
@@ -60,7 +60,6 @@ export function AnnotationProvider({
   supabaseAnonKey,
   supabaseUrl,
   pagePath,
-  initialPanelOpen = false,
 }: PropsWithChildren<AnnotationOverlayProps>) {
   const client = useMemo(
     () => getSupabaseClient(supabaseUrl, supabaseAnonKey),
@@ -73,9 +72,9 @@ export function AnnotationProvider({
   const [currentPath, setCurrentPath] = useState(() => getActivePath(pagePath));
   const [comments, setComments] = useState<AnnotationComment[]>([]);
   const [composer, setComposer] = useState<PendingAnnotation | null>(null);
-  const [commentMode, setCommentMode] = useState(false);
+  const [annotationMode, setAnnotationMode] = useState(false);
   const [isAuthorGateOpen, setAuthorGateOpen] = useState(false);
-  const [isPanelOpen, setPanelOpen] = useState(initialPanelOpen);
+  const [isMarkerHovered, setMarkerHovered] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const afterAuthorGateRef = useRef<(() => void) | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -119,6 +118,12 @@ export function AnnotationProvider({
   useEffect(() => {
     setCurrentPath(getActivePath(pagePath));
   }, [pagePath]);
+
+  useEffect(() => {
+    if (!annotationMode) {
+      setMarkerHovered(false);
+    }
+  }, [annotationMode]);
 
   useEffect(() => {
     void loadComments();
@@ -194,35 +199,30 @@ export function AnnotationProvider({
 
   const closeComposer = useCallback(() => {
     setComposer(null);
-    setCommentMode(false);
-    setPanelOpen(false);
     setAuthorGateOpen(false);
     afterAuthorGateRef.current = null;
     setActiveThreadId(null);
   }, []);
 
-  const startCommentMode = useCallback(() => {
+  const startAnnotationMode = useCallback(() => {
     if (author) {
       setComposer(null);
-      setCommentMode(true);
-      setPanelOpen(false);
+      setAnnotationMode(true);
       return;
     }
 
     afterAuthorGateRef.current = () => {
       setComposer(null);
-      setCommentMode(true);
-      setPanelOpen(false);
+      setAnnotationMode(true);
     };
     setAuthorGateOpen(true);
   }, [author]);
 
-  const cancelCommentMode = useCallback(() => {
+  const cancelAnnotationMode = useCallback(() => {
     afterAuthorGateRef.current = null;
     setAuthorGateOpen(false);
-    setCommentMode(false);
+    setAnnotationMode(false);
     setComposer(null);
-    setPanelOpen(false);
     setActiveThreadId(null);
   }, []);
 
@@ -232,8 +232,6 @@ export function AnnotationProvider({
       selector,
       rect,
     });
-    setCommentMode(false);
-    setPanelOpen(false);
   }, []);
 
   const openThreadComposer = useCallback(
@@ -247,8 +245,6 @@ export function AnnotationProvider({
           rect,
         });
         setActiveThreadId(threadId);
-        setCommentMode(false);
-        setPanelOpen(false);
       };
 
       if (!author) {
@@ -318,7 +314,6 @@ export function AnnotationProvider({
       const anchorComment = commentMap.get(threadId) ?? targetComment;
 
       setActiveThreadId(threadId);
-      setPanelOpen(true);
 
       const scrollToAnchor = (allowRectFallback: boolean) => {
         const targetElement = querySelectorSafely(anchorComment.selector);
@@ -408,7 +403,6 @@ export function AnnotationProvider({
       if (!composer.parentId) {
         setComposer(null);
       }
-      setCommentMode(false);
       setActiveThreadId(
         inserted.parent_id ? getThreadRootId(inserted.parent_id, commentMap) : null,
       );
@@ -463,6 +457,58 @@ export function AnnotationProvider({
     },
     [client, closeComposer, commentMap, comments, composer],
   );
+
+  const resolveAllComments = useCallback(async () => {
+    const openThreadIds = comments
+      .filter((comment) => comment.parent_id === null && !comment.resolved)
+      .map((comment) => comment.id);
+
+    if (openThreadIds.length === 0) {
+      return false;
+    }
+
+    setErrorMessage(null);
+
+    const resolvedAt = new Date().toISOString();
+    const { error } = await client
+      .from("comments")
+      .update({
+        resolved: true,
+        resolved_at: resolvedAt,
+      })
+      .in("id", openThreadIds);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return false;
+    }
+
+    const resolvedThreadIds = new Set(openThreadIds);
+
+    startTransition(() => {
+      setComments((previous) =>
+        previous.map((comment) =>
+          resolvedThreadIds.has(comment.id)
+            ? {
+                ...comment,
+                resolved: true,
+                resolved_at: resolvedAt,
+              }
+            : comment,
+        ),
+      );
+    });
+
+    if (composer?.parentId && resolvedThreadIds.has(composer.parentId)) {
+      closeComposer();
+      return true;
+    }
+
+    setActiveThreadId((previous) =>
+      previous && resolvedThreadIds.has(previous) ? null : previous,
+    );
+    return true;
+  }, [client, closeComposer, comments, composer]);
 
   const toggleResolved = useCallback(
     async (commentId: string) => {
@@ -523,10 +569,10 @@ export function AnnotationProvider({
 
       if ((event.key === "c" || event.key === "C") && !isTyping) {
         event.preventDefault();
-        if (commentMode) {
-          cancelCommentMode();
+        if (annotationMode) {
+          cancelAnnotationMode();
         } else {
-          startCommentMode();
+          startAnnotationMode();
         }
         return;
       }
@@ -537,9 +583,9 @@ export function AnnotationProvider({
           closeAuthorGate();
           return;
         }
-        if (commentMode || composer) {
+        if (annotationMode || composer) {
           event.preventDefault();
-          cancelCommentMode();
+          cancelAnnotationMode();
         }
         return;
       }
@@ -556,21 +602,21 @@ export function AnnotationProvider({
     };
   }, [
     activeThreadId,
-    cancelCommentMode,
+    annotationMode,
+    cancelAnnotationMode,
     closeAuthorGate,
-    commentMode,
     composer,
     isAuthorGateOpen,
-    startCommentMode,
+    startAnnotationMode,
     toggleResolved,
   ]);
 
   const value = useMemo<AnnotationContextValue>(
     () => ({
       activeThreadId,
+      annotationMode,
       author,
-      cancelCommentMode,
-      commentMode,
+      cancelAnnotationMode,
       comments,
       closeComposer,
       composer,
@@ -578,17 +624,18 @@ export function AnnotationProvider({
       errorMessage,
       isAuthorGateOpen,
       isLoading,
-      isPanelOpen,
+      isMarkerHovered,
       closeAuthorGate,
       openThreadComposer,
       removeThread,
+      resolveAllComments,
       scrollToComment,
       selectElement,
       setAuthor,
-      setPanelOpen,
+      setMarkerHovered,
       setShowResolved,
       showResolved,
-      startCommentMode,
+      startAnnotationMode,
       submitAuthorGate,
       submitComment,
       toggleResolved,
@@ -596,10 +643,10 @@ export function AnnotationProvider({
     }),
     [
       activeThreadId,
+      annotationMode,
       author,
-      cancelCommentMode,
+      cancelAnnotationMode,
       closeAuthorGate,
-      commentMode,
       comments,
       closeComposer,
       composer,
@@ -607,15 +654,17 @@ export function AnnotationProvider({
       errorMessage,
       isAuthorGateOpen,
       isLoading,
-      isPanelOpen,
+      isMarkerHovered,
       openThreadComposer,
       removeThread,
+      resolveAllComments,
       scrollToComment,
       selectElement,
       setAuthor,
+      setMarkerHovered,
       setShowResolved,
       showResolved,
-      startCommentMode,
+      startAnnotationMode,
       submitAuthorGate,
       submitComment,
       toggleResolved,

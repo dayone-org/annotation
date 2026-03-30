@@ -45,5 +45,4 @@ export type AnnotationOverlayProps = {
   supabaseUrl: string;
   supabaseAnonKey: string;
   pagePath?: string;
-  initialPanelOpen?: boolean;
 };

@@ -1,4 +1,4 @@
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import {
   useCallback,
   useEffect,
@@ -24,9 +24,11 @@ import {
   measurePoint,
   measureRect,
 } from "../utils";
+import { AnnotationHighlight } from "./AnnotationHighlight";
 
-const MARKER_OFFSET_X = 10;
-const MARKER_OFFSET_Y = 10;
+const MARKER_SIZE = 32;
+const MARKER_OFFSET_X = -(MARKER_SIZE / 2);
+const MARKER_OFFSET_Y = -(MARKER_SIZE / 2);
 const DRAG_DISTANCE_THRESHOLD = 4;
 
 type DragSession = {
@@ -111,9 +113,11 @@ function setMarkerBasePosition(node: HTMLElement, position: MarkerPosition) {
 export function CommentMarkers() {
   const {
     activeThreadId,
+    annotationMode,
     comments,
     currentPath,
     openThreadComposer,
+    setMarkerHovered,
     showResolved,
     updateThreadRect,
   } = useAnnotation();
@@ -129,10 +133,14 @@ export function CommentMarkers() {
   const resizeFrameIdRef = useRef(0);
 
   const topLevelComments = useMemo(() => {
+    if (!annotationMode) {
+      return [];
+    }
+
     return getTopLevelComments(comments).filter(
       (comment) => comment.page_path === currentPath && (showResolved || !comment.resolved),
     );
-  }, [comments, currentPath, showResolved]);
+  }, [annotationMode, comments, currentPath, showResolved]);
 
   const syncMarkerPositions = useCallback((syncState: boolean) => {
     const previousPositions = positionsRef.current;
@@ -289,9 +297,10 @@ export function CommentMarkers() {
       clearMarkerDelta(event.currentTarget);
       setDragHighlightElement(null);
       setDragHighlightRect(null);
+      setMarkerHovered(false);
       syncMarkerPositions(false);
     },
-    [syncMarkerPositions],
+    [setMarkerHovered, syncMarkerPositions],
   );
 
   const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -384,9 +393,10 @@ export function CommentMarkers() {
         setDragHighlightElement(null);
         setDragHighlightRect(null);
       }
+      setMarkerHovered(false);
       void finishDrag(event, session);
     },
-    [finishDrag],
+    [finishDrag, setMarkerHovered],
   );
 
   useEffect(() => {
@@ -430,6 +440,16 @@ export function CommentMarkers() {
   }, [syncMarkerPositions, topLevelComments]);
 
   useEffect(() => {
+    if (annotationMode) {
+      return;
+    }
+
+    dragSessionRef.current = null;
+    setDragHighlightElement(null);
+    setDragHighlightRect(null);
+  }, [annotationMode]);
+
+  useEffect(() => {
     const scheduleResizeSync = () => {
       if (resizeFrameIdRef.current !== 0) {
         return;
@@ -456,65 +476,77 @@ export function CommentMarkers() {
       className="pointer-events-none absolute inset-0 z-2147483602"
       data-annotation-overlay-root="true"
     >
-      {dragHighlightRect ? (
-        <div
-          aria-hidden="true"
-          className="fixed rounded-md border-2 border-primary/80 bg-primary/12 shadow-lg"
-          data-annotation-overlay-root="true"
-          style={{
-            height: dragHighlightRect.height,
-            left: dragHighlightRect.left,
-            top: dragHighlightRect.top,
-            width: dragHighlightRect.width,
-          }}
-        />
-      ) : null}
-      {topLevelComments.map((comment) => {
-        const position = positions[comment.id];
-        if (!position) {
-          return null;
-        }
+      {dragHighlightRect ? <AnnotationHighlight rect={dragHighlightRect} /> : null}
+      <AnimatePresence mode="popLayout" initial={false}>
+        {annotationMode &&
+          topLevelComments.map((comment) => {
+            const position = positions[comment.id];
+            if (!position) {
+              return null;
+            }
 
-        const threadCount = getThreadCount(comments, comment.id);
+            const threadCount = getThreadCount(comments, comment.id);
 
-        return (
-          <Button
-            key={comment.id}
-            className={cn(
-              "pointer-events-auto absolute top-0 left-0 inline-flex size-8 cursor-grab touch-none rounded-full bg-transparent transition-none select-none active:cursor-grabbing",
-            )}
-            data-thread-id={comment.id}
-            onClick={handleMarkerClick}
-            onPointerCancel={handlePointerCancel}
-            onPointerDown={handlePointerDown}
-            onPointerMove={handlePointerMove}
-            onPointerUp={handlePointerUp}
-            ref={(node) => setMarkerElement(comment.id, node)}
-            style={getMarkerStyle(position)}
-            title={`${comment.author} · ${comment.resolved ? "Resolved" : "Open"} · ${threadCount} message${
-              threadCount === 1 ? "" : "s"
-            }`}
-          >
-            <motion.div
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              transition={{ type: "spring", stiffness: 500, damping: 50 }}
-              className={cn(
-                "absolute inset-0 flex items-center justify-center rounded-full text-xs shadow-lg transition-colors",
-                comment.id === activeThreadId
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-foreground text-background",
-                comment.resolved && "opacity-35",
-              )}
-            >
-              <Badge className="pointer-events-none absolute top-0 right-0 size-5 translate-x-1/3 -translate-y-1/3 bg-primary text-xs text-primary-foreground tabular-nums">
-                {threadCount}
-              </Badge>
-              <span>{getInitials(comment.author)}</span>
-            </motion.div>
-          </Button>
-        );
-      })}
+            return (
+              <Button
+                key={comment.id}
+                className={cn(
+                  "pointer-events-auto absolute top-0 left-0 inline-flex cursor-grab touch-none rounded-full bg-transparent transition-none select-none active:cursor-grabbing",
+                  comment.resolved && "opacity-35",
+                )}
+                data-thread-id={comment.id}
+                onClick={handleMarkerClick}
+                onPointerCancel={handlePointerCancel}
+                onPointerDown={handlePointerDown}
+                onPointerEnter={() => setMarkerHovered(true)}
+                onPointerLeave={() => setMarkerHovered(false)}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                ref={(node) => setMarkerElement(comment.id, node)}
+                size="icon"
+                style={getMarkerStyle(position)}
+                title={`${comment.author} · ${comment.resolved ? "Resolved" : "Open"} · ${threadCount} message${
+                  threadCount === 1 ? "" : "s"
+                }`}
+              >
+                <motion.div
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{
+                    scale: 1,
+                    opacity: 1,
+                    transition: {
+                      duration: 0.15,
+                      ease: "easeOut",
+                    },
+                  }}
+                  exit={{
+                    scale: 0.8,
+                    opacity: 0,
+                    transition: {
+                      duration: 0.15,
+                      ease: "easeIn",
+                    },
+                  }}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 50 }}
+                  className={cn(
+                    "absolute inset-0 flex items-center justify-center rounded-full text-xs shadow-lg transition-colors",
+                    comment.id === activeThreadId
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-primary text-primary-foreground",
+                    comment.resolved && "opacity-35",
+                  )}
+                >
+                  <Badge className="pointer-events-none absolute top-0 right-0 size-5 translate-x-1/3 -translate-y-1/3 bg-foreground text-xs text-background">
+                    {threadCount}
+                  </Badge>
+                  <span>{getInitials(comment.author)}</span>
+                </motion.div>
+              </Button>
+            );
+          })}
+      </AnimatePresence>
     </div>
   );
 }
