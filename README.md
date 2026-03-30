@@ -5,13 +5,13 @@ Drop-in React annotation overlay backed by Supabase.
 ## Installation
 
 ```bash
-npm install @dayone/annotation
+npm install github:dayone-org/annotation#main
 ```
 
 ## Usage
 
 ```tsx
-import { Annotation } from "@dayone/annotation";
+import { Annotation } from "annotation";
 
 export default function RootLayout({
   children,

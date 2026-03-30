@@ -10,7 +10,7 @@ const steps = [
   {
     title: "Installation",
     description: "Install the package and mount the client component once.",
-    code: `npm install @dayone/annotation`,
+    code: `npm install github:dayone-org/annotation#main`,
   },
   {
     title: "Database",
@@ -37,7 +37,7 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=your-supabase-anon-key`,
   {
     title: "Usage",
     description: "Render the annotation widget from your app layout.",
-    code: `import { Annotation } from "@dayone/annotation";
+    code: `import { Annotation } from "annotation";
 
 <Annotation
   supabaseUrl={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_URL!}
