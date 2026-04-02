@@ -16,6 +16,7 @@ import { cn } from "../utils";
 import { AnnotationProvider } from "./AnnotationProvider";
 import { AnnotationComposer } from "./components/AnnotationComposer";
 import { AnnotationDock } from "./components/AnnotationDock";
+import { ensureAnnotationStyles } from "./install-styles";
 import { CommentMarkers } from "./components/CommentMarkers";
 import { InteractionLayer } from "./components/InteractionLayer";
 import { useAnnotation } from "./useAnnotation";
@@ -26,6 +27,7 @@ type ThreadCommentProps = {
   isResolved?: boolean;
   author: string;
   createdAt: string;
+  portalContainer: Element | DocumentFragment | null;
   text: string;
   onToggleResolved?: () => void;
   onRemove?: () => void;
@@ -36,6 +38,7 @@ function ThreadComment({
   createdAt,
   isResolved = false,
   isRoot = false,
+  portalContainer,
   onRemove,
   onToggleResolved,
   text,
@@ -69,6 +72,7 @@ function ThreadComment({
                     className="z-2147483604 w-32 p-1"
                     data-annotation-overlay-root="true"
                     data-annotation-overlay-scene="true"
+                    portalContainer={portalContainer}
                     sideOffset={4}
                   >
                     <Button
@@ -107,7 +111,11 @@ function ThreadComment({
   );
 }
 
-function ComposerPopover() {
+function ComposerPopover({
+  portalContainer,
+}: {
+  portalContainer: Element | DocumentFragment | null;
+}) {
   const {
     closeComposer,
     comments,
@@ -171,6 +179,7 @@ function ComposerPopover() {
             event.preventDefault();
           }
         }}
+        portalContainer={portalContainer}
         sideOffset={12}
       >
         <PopoverHeader>
@@ -189,6 +198,7 @@ function ComposerPopover() {
                     isResolved={comment.resolved}
                     isRoot={comment.id === parentComment.id}
                     key={comment.id}
+                    portalContainer={portalContainer}
                     onRemove={comment.id === parentComment.id ? handleRemoveThread : undefined}
                     onToggleResolved={
                       comment.id === parentComment.id ? handleToggleResolved : undefined
@@ -208,8 +218,14 @@ function ComposerPopover() {
   );
 }
 
-function AnnotationOverlayScene({ position }: { position?: AnnotationPosition }) {
-  return createPortal(
+function AnnotationOverlayScene({
+  portalContainer,
+  position,
+}: {
+  portalContainer: Element | DocumentFragment | null;
+  position?: AnnotationPosition;
+}) {
+  return (
     <div
       className="absolute top-0 left-0 z-2147483600 h-px w-px"
       data-annotation-overlay-root="true"
@@ -217,27 +233,42 @@ function AnnotationOverlayScene({ position }: { position?: AnnotationPosition })
     >
       <InteractionLayer />
       <CommentMarkers />
-      <ComposerPopover />
+      <ComposerPopover portalContainer={portalContainer} />
       <AnnotationDock defaultPosition={position} />
-    </div>,
-    document.body,
+    </div>
   );
 }
 
 export function AnnotationOverlay(props: AnnotationOverlayProps) {
-  const [isMounted, setIsMounted] = useState(false);
+  const [portalContainer, setPortalContainer] = useState<ShadowRoot | null>(null);
 
   useEffect(() => {
-    setIsMounted(true);
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const host = document.createElement("div");
+    host.setAttribute("data-dayone-annotation-host", "true");
+
+    const shadowRoot = host.attachShadow({ mode: "open" });
+    document.body.appendChild(host);
+    ensureAnnotationStyles(shadowRoot);
+    setPortalContainer(shadowRoot);
+
+    return () => {
+      setPortalContainer((current) => (current === shadowRoot ? null : current));
+      host.remove();
+    };
   }, []);
 
-  if (!isMounted) {
+  if (!portalContainer) {
     return null;
   }
 
-  return (
+  return createPortal(
     <AnnotationProvider {...props}>
-      <AnnotationOverlayScene position={props.position} />
-    </AnnotationProvider>
+      <AnnotationOverlayScene portalContainer={portalContainer} position={props.position} />
+    </AnnotationProvider>,
+    portalContainer,
   );
 }
