@@ -2,70 +2,51 @@
 
 import { Popover as PopoverPrimitive } from "radix-ui";
 import * as React from "react";
-import { cn } from "@/lib/utils";
+import { annotationScopeClass, cx, styled } from "@/lib/annotation-overlay/stitches";
 
-function Popover({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
-  return <PopoverPrimitive.Root data-slot="popover" {...props} />;
-}
+export const Popover = PopoverPrimitive.Root;
+export const PopoverTrigger = PopoverPrimitive.Trigger;
+export const PopoverAnchor = PopoverPrimitive.Anchor;
 
-function PopoverTrigger({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
-  return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
-}
+const StyledPopoverContent = styled(PopoverPrimitive.Content, {
+  backgroundColor: "var(--annotation-popover)",
+  border: "1px solid var(--annotation-border)",
+  borderRadius: "calc(var(--annotation-radius) * 1.8)",
+  boxShadow: "0 18px 40px color-mix(in oklab, var(--annotation-foreground) 12%, transparent)",
+  color: "var(--annotation-popover-foreground)",
+  outline: "none",
+  zIndex: 2147483603,
+});
 
-function PopoverContent({
-  className,
+export function PopoverContent({
   align = "center",
+  children,
+  className,
   sideOffset = 8,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content>) {
   return (
     <PopoverPrimitive.Portal>
-      <PopoverPrimitive.Content
+      <StyledPopoverContent
         align={align}
-        className={cn(
-          "z-50 w-72 origin-(--radix-popover-content-transform-origin) rounded-2xl border bg-popover p-4 text-popover-foreground shadow-lg outline-hidden data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
-          className,
-        )}
-        data-slot="popover-content"
+        className={cx(annotationScopeClass(), className)}
         sideOffset={sideOffset}
         {...props}
-      />
+      >
+        {children}
+      </StyledPopoverContent>
     </PopoverPrimitive.Portal>
   );
 }
 
-function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
-  return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />;
-}
+export const PopoverHeader = styled("div", {
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.375rem",
+});
 
-function PopoverHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div className={cn("flex flex-col gap-1.5", className)} data-slot="popover-header" {...props} />
-  );
-}
-
-function PopoverTitle({ className, ...props }: React.ComponentProps<"h2">) {
-  return (
-    <h2 className={cn("text-sm font-semibold", className)} data-slot="popover-title" {...props} />
-  );
-}
-
-function PopoverDescription({ className, ...props }: React.ComponentProps<"p">) {
-  return (
-    <p
-      className={cn("text-sm text-muted-foreground", className)}
-      data-slot="popover-description"
-      {...props}
-    />
-  );
-}
-
-export {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-  PopoverDescription,
-  PopoverHeader,
-  PopoverTitle,
-  PopoverTrigger,
-};
+export const PopoverTitle = styled("h2", {
+  fontSize: "0.875rem",
+  fontWeight: 600,
+  margin: 0,
+});

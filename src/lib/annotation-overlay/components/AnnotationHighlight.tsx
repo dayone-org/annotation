@@ -1,15 +1,23 @@
 import { forwardRef, type CSSProperties } from "react";
-import { cn } from "@/lib/utils";
+import { css, cx } from "../stitches";
 import type { AnnotationRect } from "../types";
 
-const annotationHighlightClassName =
-  "pointer-events-none absolute top-0 left-0 rounded-md border-2 border-primary bg-primary/10 will-change-transform";
+const annotationHighlightClass = css({
+  backgroundColor: "color-mix(in oklab, var(--annotation-primary) 10%, transparent)",
+  border: "2px solid var(--annotation-primary)",
+  borderRadius: "calc(var(--annotation-radius) * 1.2)",
+  left: 0,
+  pointerEvents: "none",
+  position: "absolute",
+  top: 0,
+  willChange: "transform",
+});
 
 function getAnnotationHighlightStyle(rect: AnnotationRect): CSSProperties {
   return {
-    width: rect.width,
     height: rect.height,
     transform: `translate3d(${rect.pageX}px, ${rect.pageY}px, 0)`,
+    width: rect.width,
   };
 }
 
@@ -23,7 +31,7 @@ export const AnnotationHighlight = forwardRef<HTMLDivElement, AnnotationHighligh
     return (
       <div
         aria-hidden="true"
-        className={cn(annotationHighlightClassName, className)}
+        className={cx(annotationHighlightClass(), className)}
         data-annotation-overlay-root="true"
         ref={ref}
         style={rect ? getAnnotationHighlightStyle(rect) : undefined}

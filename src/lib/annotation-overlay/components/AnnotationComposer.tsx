@@ -1,13 +1,39 @@
 import { PaperPlaneRightIcon } from "@phosphor-icons/react";
-import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
+import { errorMessageClass } from "@/components/ui/styles";
+import { useState } from "react";
+import { css } from "../stitches";
 
 type AnnotationComposerProps = {
   errorMessage?: string | null;
   onSubmit: (text: string) => Promise<boolean>;
 };
+
+const formClass = css({
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.75rem",
+});
+
+const textareaClass = css({
+  backgroundColor: "transparent",
+  border: 0,
+  minHeight: 0,
+  padding: 0,
+  resize: "none",
+  "&:focus": {
+    borderColor: "transparent",
+    boxShadow: "none",
+  },
+});
+
+const actionsClass = css({
+  display: "flex",
+  gap: "0.5rem",
+  justifyContent: "flex-end",
+});
 
 export function AnnotationComposer({ errorMessage = null, onSubmit }: AnnotationComposerProps) {
   const [value, setValue] = useState("");
@@ -15,7 +41,7 @@ export function AnnotationComposer({ errorMessage = null, onSubmit }: Annotation
 
   return (
     <form
-      className="flex flex-col"
+      className={formClass()}
       onSubmit={async (event) => {
         event.preventDefault();
         if (!value.trim()) {
@@ -32,6 +58,7 @@ export function AnnotationComposer({ errorMessage = null, onSubmit }: Annotation
     >
       <Textarea
         autoFocus
+        className={textareaClass()}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={(event) => {
           if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {
@@ -44,17 +71,12 @@ export function AnnotationComposer({ errorMessage = null, onSubmit }: Annotation
         placeholder="Annotate..."
         rows={1}
         value={value}
-        className="resize-none border-0 bg-transparent"
       />
 
-      {errorMessage ? (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {errorMessage}
-        </div>
-      ) : null}
+      {errorMessage ? <div className={errorMessageClass()}>{errorMessage}</div> : null}
 
-      <div className="flex items-center justify-end gap-2">
-        <Button disabled={isSubmitting || !value.trim()} type="submit" size="icon">
+      <div className={actionsClass()}>
+        <Button disabled={isSubmitting || !value.trim()} size="icon" type="submit">
           {isSubmitting ? <Spinner /> : <PaperPlaneRightIcon />}
         </Button>
       </div>

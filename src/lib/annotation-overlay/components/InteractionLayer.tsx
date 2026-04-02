@@ -6,11 +6,23 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { css } from "../stitches";
 import type { AnnotationRect } from "../types";
 import { generateSelector, getSelectableElementAtPoint, querySelectorSafely } from "../selector";
 import { useAnnotation } from "../useAnnotation";
 import { measurePoint, measureRect } from "../utils";
 import { AnnotationHighlight, getAnnotationHighlightStyle } from "./AnnotationHighlight";
+
+const interactionLayerClass = css({
+  cursor: "crosshair",
+  inset: 0,
+  position: "fixed",
+  zIndex: 2147483601,
+});
+
+const highlightOverlayClass = css({
+  zIndex: 2147483601,
+});
 
 function rectsEqual(left: AnnotationRect | null, right: AnnotationRect): boolean {
   if (!left) {
@@ -38,9 +50,9 @@ export function InteractionLayer() {
     : (selectedElement ?? (annotationMode ? hoveredElement : null));
 
   const applyHighlightRect = useCallback((node: HTMLDivElement, rect: AnnotationRect) => {
-    node.style.width = `${rect.width}px`;
     node.style.height = `${rect.height}px`;
     node.style.transform = `${getAnnotationHighlightStyle(rect).transform}`;
+    node.style.width = `${rect.width}px`;
   }, []);
 
   const setHighlightNode = useCallback(
@@ -133,7 +145,7 @@ export function InteractionLayer() {
       {isInteractionActive ? (
         <div
           aria-hidden="true"
-          className="fixed inset-0 z-2147483601 cursor-crosshair"
+          className={interactionLayerClass()}
           data-annotation-overlay-root="true"
           onClick={handleClick}
           onPointerMove={handlePointerMove}
@@ -141,7 +153,7 @@ export function InteractionLayer() {
       ) : null}
 
       {highlightedElement ? (
-        <AnnotationHighlight className="z-2147483601" ref={setHighlightNode} />
+        <AnnotationHighlight className={highlightOverlayClass()} ref={setHighlightNode} />
       ) : null}
     </>
   );

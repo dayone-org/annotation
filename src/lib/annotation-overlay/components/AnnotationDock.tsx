@@ -7,6 +7,18 @@ import {
   GearSixIcon,
   XIcon,
 } from "@phosphor-icons/react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Item, ItemContent, ItemHeader } from "@/components/ui/item";
+import { Kbd } from "@/components/ui/kbd";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
+import { errorMessageClass } from "@/components/ui/styles";
+import { Switch } from "@/components/ui/switch";
 import {
   AnimatePresence,
   animate,
@@ -21,24 +33,12 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent,
   type ReactNode,
 } from "react";
 import useMeasure from "react-use-measure";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Item, ItemContent, ItemHeader } from "@/components/ui/item";
-import { Kbd } from "@/components/ui/kbd";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
-import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "@/components/ui/switch";
-import { cn } from "@/lib/utils";
 import logo from "@/logo.svg";
-import type { AnnotationComment, AnnotationPosition } from "../types";
 import {
   getStorageKey,
   readStoredBoolean,
@@ -46,7 +46,8 @@ import {
   writeStoredBoolean,
   writeStoredString,
 } from "../storage";
-import { useAnnotation } from "../useAnnotation";
+import { css, cx } from "../stitches";
+import type { AnnotationComment, AnnotationPosition } from "../types";
 import {
   formatAnnotationCollectionMarkdown,
   formatAnnotationThreadMarkdown,
@@ -55,6 +56,7 @@ import {
   getTopLevelComments,
   measureRect,
 } from "../utils";
+import { useAnnotation } from "../useAnnotation";
 
 type CopyState = "idle" | "copied" | "error";
 
@@ -81,6 +83,249 @@ const POSITION_OPTIONS: Array<{ label: string; value: AnnotationPosition }> = [
   { label: "Bottom right", value: "bottom-right" },
 ];
 
+const threadCardClass = css({
+  backgroundColor: "var(--annotation-background)",
+  transition: "border-color 150ms ease, opacity 150ms ease, background-color 150ms ease",
+  "& [data-thread-card-actions='true']": {
+    opacity: 0,
+    transition: "opacity 150ms ease",
+  },
+  "&:hover [data-thread-card-actions='true']": {
+    opacity: 1,
+  },
+});
+
+const threadCardActiveClass = css({
+  borderColor: "var(--annotation-primary)",
+});
+
+const threadCardResolvedClass = css({
+  opacity: 0.5,
+});
+
+const threadCardHeaderClass = css({
+  alignItems: "center",
+  display: "flex",
+  gap: "0.5rem",
+  justifyContent: "space-between",
+});
+
+const threadCardActionsClass = css({
+  alignItems: "center",
+  display: "flex",
+  gap: "0.125rem",
+});
+
+const threadCardBodyClass = css({
+  display: "flex",
+  flexDirection: "column",
+  fontSize: "0.875rem",
+  gap: "0.5rem",
+});
+
+const threadCardCopyClass = css({
+  alignItems: "flex-start",
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.125rem",
+});
+
+const threadAuthorClass = css({
+  color: "var(--annotation-foreground)",
+  fontWeight: 600,
+  margin: 0,
+});
+
+const threadTextClass = css({
+  color: "var(--annotation-muted-foreground)",
+  margin: 0,
+  whiteSpace: "pre-wrap",
+});
+
+const threadMetaClass = css({
+  color: "var(--annotation-muted-foreground)",
+  display: "flex",
+  fontSize: "0.75rem",
+  gap: "0.5rem",
+  justifyContent: "space-between",
+});
+
+const resolveSliderTrackClass = css({
+  backgroundColor: "var(--annotation-muted)",
+  border: "1px solid var(--annotation-border)",
+  borderRadius: "9999px",
+  boxSizing: "content-box",
+  height: 24,
+  overflow: "hidden",
+  position: "relative",
+});
+
+const resolveSliderFillClass = css({
+  backgroundColor: "var(--annotation-primary)",
+  borderRadius: "9999px",
+  inset: "0 auto 0 0",
+  position: "absolute",
+});
+
+const resolveSliderThumbClass = css({
+  alignItems: "center",
+  backgroundColor: "var(--annotation-background)",
+  border: "1px solid var(--annotation-border)",
+  borderRadius: "9999px",
+  boxShadow: "0 1px 3px color-mix(in oklab, var(--annotation-foreground) 12%, transparent)",
+  color: "var(--annotation-foreground)",
+  display: "flex",
+  height: 24,
+  justifyContent: "center",
+  position: "relative",
+  transition: "transform 150ms ease, color 150ms ease",
+  width: 24,
+  zIndex: 10,
+});
+
+const resolveSliderThumbInteractiveClass = css({
+  cursor: "grab",
+  "&:active": {
+    cursor: "grabbing",
+  },
+});
+
+const toolbarClass = css({
+  alignItems: "center",
+  display: "flex",
+  gap: "0.5rem",
+  padding: "0.25rem",
+});
+
+const dockShellClass = css({
+  backgroundColor: "var(--annotation-primary)",
+  borderRadius: "calc(var(--annotation-radius) * 1.2)",
+  overflow: "hidden",
+});
+
+const dockShellInnerClass = css({
+  height: "fit-content",
+  overflow: "hidden",
+  position: "relative",
+  width: "fit-content",
+});
+
+const toolbarButtonClass = css({
+  backgroundColor: "transparent",
+  color: "var(--annotation-primary-foreground)",
+  "&:hover:not(:disabled)": {
+    backgroundColor:
+      "color-mix(in oklab, var(--annotation-primary-foreground) 14%, transparent)",
+  },
+});
+
+const toolbarSeparatorClass = css({
+  backgroundColor: "color-mix(in oklab, var(--annotation-primary-foreground) 25%, transparent)",
+});
+
+const authorGateFormClass = css({
+  alignItems: "center",
+  display: "flex",
+  gap: "0.5rem",
+  padding: "0.25rem",
+});
+
+const authorGateInputClass = css({
+  backgroundColor:
+    "color-mix(in oklab, var(--annotation-primary-foreground) 10%, transparent)",
+  border: "none",
+  color: "var(--annotation-primary-foreground)",
+  width: 192,
+  "&::placeholder": {
+    color: "color-mix(in oklab, var(--annotation-primary-foreground) 50%, transparent)",
+  },
+  "&:focus": {
+    borderColor: "transparent",
+    boxShadow:
+      "0 0 0 3px color-mix(in oklab, var(--annotation-primary-foreground) 16%, transparent)",
+  },
+});
+
+const panelCardClass = css({
+  paddingBottom: 0,
+  width: 256,
+});
+
+const panelContentClass = css({
+  borderTop: "1px solid var(--annotation-border)",
+  display: "flex",
+  flexDirection: "column",
+  gap: 0,
+  padding: 0,
+});
+
+const panelBodyClass = css({
+  backgroundColor: "var(--annotation-muted)",
+  display: "grid",
+  gap: 0,
+  height: "min(24rem, calc(100vh - 8rem))",
+});
+
+const panelScrollClass = css({
+  height: "100%",
+  maxHeight: "min(24rem, calc(100vh - 8rem))",
+});
+
+const panelListClass = css({
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.5rem",
+  padding: "0.5rem",
+});
+
+const panelEmptyTextClass = css({
+  color: "var(--annotation-muted-foreground)",
+  fontSize: "0.875rem",
+  margin: 0,
+  padding: "0.5rem",
+  textAlign: "center",
+});
+
+const panelErrorWrapClass = css({
+  borderTop: "1px solid color-mix(in oklab, var(--annotation-border) 60%, transparent)",
+  padding: "0.75rem 1rem",
+});
+
+const settingsCardClass = css({
+  width: 256,
+});
+
+const settingsTitleClass = css({
+  alignItems: "baseline",
+  display: "flex",
+  gap: "0.5rem",
+  justifyContent: "space-between",
+});
+
+const logoClass = css({
+  display: "block",
+  height: 12,
+  width: "auto",
+});
+
+const versionClass = css({
+  color: "var(--annotation-muted-foreground)",
+  fontSize: "0.75rem",
+});
+
+const positionGridClass = css({
+  display: "grid",
+  gap: "0.5rem",
+  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+});
+
+const resolveHeadingRowClass = css({
+  alignItems: "center",
+  display: "flex",
+  gap: "0.5rem",
+  justifyContent: "space-between",
+});
+
 function isAnnotationPosition(value: string): value is AnnotationPosition {
   return POSITION_OPTIONS.some((option) => option.value === value);
 }
@@ -94,31 +339,33 @@ function getPositionConfig(position: AnnotationPosition) {
   const isLeft = position.endsWith("left");
   const isTop = position.startsWith("top");
 
+  const rootStyle: CSSProperties = {
+    alignItems: isLeft ? "flex-start" : "flex-end",
+    display: "flex",
+    flexDirection: isTop ? "column-reverse" : "column",
+    gap: "1rem",
+    position: "fixed",
+    zIndex: 2147483602,
+  };
+
+  if (isTop) {
+    rootStyle.top = "1.5rem";
+  } else {
+    rootStyle.bottom = "1.5rem";
+  }
+
+  if (isLeft) {
+    rootStyle.left = "1.5rem";
+  } else {
+    rootStyle.right = "1.5rem";
+  }
+
   return {
     anchorX: isLeft ? "left" : "right",
     anchorY: isTop ? "top" : "bottom",
     buttonTransformOrigin: isLeft ? "center left" : "center right",
     cardOffset: isTop ? -10 : 10,
-    rootClassName: cn(
-      "fixed z-2147483602 flex gap-4",
-      isTop ? "top-6 flex-col-reverse" : "bottom-6 flex-col",
-      isLeft ? "left-6 items-start" : "right-6 items-end",
-    ),
-    toolbarOriginClassName: (() => {
-      if (position === "top-left") {
-        return "origin-top-left";
-      }
-
-      if (position === "top-right") {
-        return "origin-top-right";
-      }
-
-      if (position === "bottom-left") {
-        return "origin-bottom-left";
-      }
-
-      return "origin-bottom-right";
-    })(),
+    rootStyle,
   } as const;
 }
 
@@ -157,22 +404,22 @@ async function copyToClipboard(value: string): Promise<boolean> {
 
 function getCopyActionIcon(state: CopyState) {
   if (state === "copied") {
-    return <CheckIcon />;
+    return <CheckIcon size={16} />;
   }
 
   if (state === "error") {
-    return <XIcon />;
+    return <XIcon size={16} />;
   }
 
-  return <CopySimpleIcon />;
+  return <CopySimpleIcon size={16} />;
 }
 
 function getResolveSliderIcon(state: ResolveSliderIconState) {
   if (state === "loading") {
-    return <Spinner className="size-4" />;
+    return <Spinner />;
   }
 
-  return <ArrowRightIcon className="size-4" />;
+  return <ArrowRightIcon size={16} />;
 }
 
 function stopItemClick(event: MouseEvent<HTMLButtonElement>): void {
@@ -190,9 +437,9 @@ function AnimatedIconTransition<T extends string>({
   return (
     <AnimatePresence initial={false} mode="popLayout">
       <motion.div
-        animate={{ opacity: 1, filter: "blur(0px)", scale: 1 }}
-        exit={{ opacity: 0, filter: "blur(5px)", scale: 0.5 }}
-        initial={{ opacity: 0, filter: "blur(5px)", scale: 0.5 }}
+        animate={{ filter: "blur(0px)", opacity: 1, scale: 1 }}
+        exit={{ filter: "blur(5px)", opacity: 0, scale: 0.5 }}
+        initial={{ filter: "blur(5px)", opacity: 0, scale: 0.5 }}
         key={state}
       >
         {renderIcon(state)}
@@ -240,19 +487,18 @@ function ThreadCard({
 
   return (
     <Item
-      className={cn(
-        "group bg-background transition-all",
-        isActive && "border border-primary",
-        comment.resolved && "opacity-50",
+      className={cx(
+        threadCardClass(),
+        isActive && threadCardActiveClass(),
+        comment.resolved && threadCardResolvedClass(),
       )}
       onClick={() => goToThreadAndOpenComposer(comment.id)}
-      size="xs"
-      variant="outline"
     >
-      <ItemHeader className="flex items-center justify-between gap-2">
+      <ItemHeader className={threadCardHeaderClass()}>
         <Badge variant="secondary">{comment.page_path}</Badge>
-        <div className="flex items-center gap-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+        <div className={threadCardActionsClass()} data-thread-card-actions="true">
           <Button
+            className={toolbarButtonClass()}
             onClick={(event) => {
               stopItemClick(event);
               void handleCopy();
@@ -266,6 +512,7 @@ function ThreadCard({
           {canManage ? (
             <Button
               aria-label={comment.resolved ? "Mark annotation as open" : "Resolve annotation"}
+              className={toolbarButtonClass()}
               onClick={(event) => {
                 stopItemClick(event);
                 void toggleResolved(comment.id);
@@ -274,17 +521,21 @@ function ThreadCard({
               type="button"
               variant="ghost"
             >
-              {comment.resolved ? <CheckCircleIcon weight="fill" /> : <CheckCircleIcon />}
+              {comment.resolved ? (
+                <CheckCircleIcon size={16} weight="fill" />
+              ) : (
+                <CheckCircleIcon size={16} />
+              )}
             </Button>
           ) : null}
         </div>
       </ItemHeader>
-      <ItemContent className="flex flex-col gap-2 text-sm">
-        <div className="flex flex-col">
-          <p className="font-medium">{comment.author}</p>
-          <p className="whitespace-pre-wrap text-muted-foreground">{comment.text}</p>
+      <ItemContent className={threadCardBodyClass()}>
+        <div className={threadCardCopyClass()}>
+          <p className={threadAuthorClass()}>{comment.author}</p>
+          <p className={threadTextClass()}>{comment.text}</p>
         </div>
-        <div className="flex justify-between gap-2 text-xs text-muted-foreground">
+        <div className={threadMetaClass()}>
           <span>
             {replies.length > 0 &&
               `${replies.length} ${replies.length === 1 ? "reply" : "replies"}`}
@@ -326,19 +577,19 @@ function ResolveAllSlider({ onResolveAll }: ResolveAllSliderProps) {
 
   const moveThumbToEnd = useCallback(() => {
     void animate(x, maxDrag, {
-      type: "spring",
-      stiffness: 560,
       damping: 42,
       mass: 0.4,
+      stiffness: 560,
+      type: "spring",
     });
   }, [maxDrag, x]);
 
   const resetThumb = useCallback(() => {
     void animate(x, 0, {
-      type: "spring",
-      stiffness: 560,
       damping: 42,
       mass: 0.4,
+      stiffness: 560,
+      type: "spring",
     });
   }, [x]);
 
@@ -393,22 +644,19 @@ function ResolveAllSlider({ onResolveAll }: ResolveAllSliderProps) {
   const resolveSliderIconState: ResolveSliderIconState = isResolving ? "loading" : "idle";
 
   return (
-    <div
-      className="relative box-content h-6 overflow-hidden rounded-full border bg-muted"
-      ref={setTrackRef}
-    >
+    <div className={resolveSliderTrackClass()} ref={setTrackRef}>
       <motion.div
         aria-hidden
-        className="absolute inset-y-0 left-0 rounded-full bg-primary"
+        className={resolveSliderFillClass()}
         style={{
           width: progressWidth,
         }}
       />
       <motion.button
         aria-label="Resolve all"
-        className={cn(
-          "relative z-10 flex size-6 items-center justify-center rounded-full bg-background shadow-sm ring-1 ring-border transition-colors",
-          !isResolving && "cursor-grab active:cursor-grabbing",
+        className={cx(
+          resolveSliderThumbClass(),
+          !isResolving && resolveSliderThumbInteractiveClass(),
         )}
         disabled={isResolving}
         drag={isResolving ? false : "x"}
@@ -492,21 +740,21 @@ export function AnnotationDock({
   const variantsButton = useMemo(
     () =>
       ({
-        initial: { opacity: 0, filter: "blur(10px)", transform: "scale(0.75)" },
         animate: {
-          opacity: 1,
           filter: "blur(0px)",
+          opacity: 1,
           transform: "scale(1)",
           transformOrigin: positionConfig.buttonTransformOrigin,
           transition: { duration: 0.4, ease: [0.17, 0.84, 0.44, 1] },
         },
         exit: {
-          opacity: 0,
           filter: "blur(10px)",
+          opacity: 0,
           transform: "scale(0.75)",
           transformOrigin: positionConfig.buttonTransformOrigin,
           transition: { duration: 0.4, ease: [0.17, 0.84, 0.44, 1] },
         },
+        initial: { filter: "blur(10px)", opacity: 0, transform: "scale(0.75)" },
       }) satisfies Variants,
     [positionConfig.buttonTransformOrigin],
   );
@@ -514,10 +762,6 @@ export function AnnotationDock({
   const variantsCard = useMemo(
     () =>
       ({
-        initial: {
-          opacity: 0,
-          transform: `translateY(${positionConfig.cardOffset}px)`,
-        },
         animate: {
           opacity: 1,
           transform: "translateY(0)",
@@ -533,6 +777,10 @@ export function AnnotationDock({
             duration: 0.15,
             ease: [0.17, 0.84, 0.44, 1],
           },
+        },
+        initial: {
+          opacity: 0,
+          transform: `translateY(${positionConfig.cardOffset}px)`,
         },
       }) satisfies Variants,
     [positionConfig.cardOffset],
@@ -592,15 +840,21 @@ export function AnnotationDock({
       return (
         <motion.div
           animate="animate"
-          className="flex items-center"
+          className={toolbarClass()}
           exit="exit"
           initial="initial"
           key="floating-button"
           variants={variantsButton}
         >
-          <Button className="pr-1" onClick={() => startAnnotationMode()} size="sm">
+          <Button
+            className={toolbarButtonClass()}
+            onClick={() => startAnnotationMode()}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
             Annotation
-            <Kbd className="bg-primary-foreground/15 text-primary-foreground">C</Kbd>
+            <Kbd>c</Kbd>
           </Button>
         </motion.div>
       );
@@ -610,7 +864,7 @@ export function AnnotationDock({
       return (
         <motion.form
           animate="animate"
-          className="flex items-center gap-2 p-1"
+          className={authorGateFormClass()}
           exit="exit"
           initial="initial"
           key="floating-button-author-gate"
@@ -622,19 +876,31 @@ export function AnnotationDock({
         >
           <Input
             autoFocus
-            className="w-48 border-none bg-primary-foreground/10 text-primary-foreground placeholder:text-primary-foreground/50"
+            className={authorGateInputClass()}
             id="annotation-author-gate-name"
             maxLength={48}
             onChange={(event) => setAuthorGateInput(event.target.value)}
             placeholder="What's your name?"
             value={authorGateInput}
           />
-          <Button disabled={!authorGateInput.trim()} size="icon-sm" type="submit">
-            <CheckIcon />
+          <Button
+            className={toolbarButtonClass()}
+            disabled={!authorGateInput.trim()}
+            size="iconSm"
+            type="submit"
+            variant="ghost"
+          >
+            <CheckIcon size={16} />
           </Button>
-          <Separator className="bg-primary-foreground/25" orientation="vertical" />
-          <Button onClick={closeAuthorGate} size="icon-sm" type="button">
-            <XIcon />
+          <Separator className={toolbarSeparatorClass()} orientation="vertical" />
+          <Button
+            className={toolbarButtonClass()}
+            onClick={closeAuthorGate}
+            size="iconSm"
+            type="button"
+            variant="ghost"
+          >
+            <XIcon size={16} />
           </Button>
         </motion.form>
       );
@@ -643,30 +909,37 @@ export function AnnotationDock({
     return (
       <motion.div
         animate="animate"
-        className={cn("flex items-center gap-2 p-1", positionConfig.toolbarOriginClassName)}
+        className={toolbarClass()}
         exit="exit"
         initial="initial"
         key="floating-button-active"
         variants={variantsButton}
       >
         <Button
+          className={toolbarButtonClass()}
           disabled={currentRouteOpenThreads.length === 0}
           onClick={() => void handleBulkCopy()}
-          size="icon-sm"
+          size="iconSm"
+          type="button"
+          variant="ghost"
         >
           <AnimatedCopyStateIcon state={bulkCopyState} />
         </Button>
         <Button
           aria-expanded={isPanelOpen}
           aria-label="Annotations panel"
+          className={toolbarButtonClass()}
           onClick={toggleAnnotationsPanel}
-          size="icon-sm"
+          size="iconSm"
+          type="button"
+          variant="ghost"
         >
-          <ChatsIcon />
+          <ChatsIcon size={16} />
         </Button>
         <Button
           aria-expanded={isSettingsOpen}
           aria-label="Annotation settings"
+          className={toolbarButtonClass()}
           onClick={() => {
             setIsSettingsOpen((open) => {
               const next = !open;
@@ -677,20 +950,28 @@ export function AnnotationDock({
               return next;
             });
           }}
-          size="icon-sm"
+          size="iconSm"
+          type="button"
+          variant="ghost"
         >
-          <GearSixIcon />
+          <GearSixIcon size={16} />
         </Button>
-        <Separator className="bg-primary-foreground/25" orientation="vertical" />
-        <Button onClick={closeAnnotationDock} size="icon-sm">
-          <XIcon />
+        <Separator className={toolbarSeparatorClass()} orientation="vertical" />
+        <Button
+          className={toolbarButtonClass()}
+          onClick={closeAnnotationDock}
+          size="iconSm"
+          type="button"
+          variant="ghost"
+        >
+          <XIcon size={16} />
         </Button>
       </motion.div>
     );
   };
 
   return (
-    <div className={positionConfig.rootClassName} data-annotation-overlay-root="true">
+    <div data-annotation-overlay-root="true" style={positionConfig.rootStyle}>
       <AnimatePresence
         anchorX={positionConfig.anchorX}
         anchorY={positionConfig.anchorY}
@@ -704,7 +985,7 @@ export function AnnotationDock({
             key="annotations"
             variants={variantsCard}
           >
-            <Card className="w-64 pb-0">
+            <Card className={panelCardClass()}>
               <CardHeader>
                 <FieldGroup>
                   <Field orientation="horizontal">
@@ -730,19 +1011,15 @@ export function AnnotationDock({
                   </Field>
                 </FieldGroup>
               </CardHeader>
-              <CardContent className="flex flex-col gap-0 border-t p-0">
-                <div className="grid h-[min(24rem,calc(100vh-8rem))] gap-0 bg-muted">
-                  <ScrollArea className="h-full max-h-[min(24rem,calc(100vh-8rem))]" type="scroll">
-                    <div className="flex flex-col gap-2 p-2">
+              <CardContent className={panelContentClass()}>
+                <div className={panelBodyClass()}>
+                  <ScrollArea className={panelScrollClass()}>
+                    <div className={panelListClass()}>
                       {isLoading ? (
-                        <p className="p-2 text-center text-sm text-muted-foreground">
-                          Loading annotations…
-                        </p>
+                        <p className={panelEmptyTextClass()}>Loading annotations…</p>
                       ) : null}
                       {!isLoading && visibleThreads.length === 0 ? (
-                        <p className="p-2 text-center text-sm text-muted-foreground">
-                          No annotations
-                        </p>
+                        <p className={panelEmptyTextClass()}>No annotations</p>
                       ) : null}
                       {!isLoading
                         ? visibleThreads.map((comment) => (
@@ -759,10 +1036,8 @@ export function AnnotationDock({
                     </div>
                   </ScrollArea>
                   {errorMessage ? (
-                    <div className="border-t border-border/60 px-4 py-3">
-                      <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                        {errorMessage}
-                      </div>
+                    <div className={panelErrorWrapClass()}>
+                      <div className={errorMessageClass()}>{errorMessage}</div>
                     </div>
                   ) : null}
                 </div>
@@ -779,11 +1054,11 @@ export function AnnotationDock({
             key="settings"
             variants={variantsCard}
           >
-            <Card className="w-64">
+            <Card className={settingsCardClass()}>
               <CardHeader>
-                <CardTitle className="flex items-baseline justify-between gap-2">
-                  <img alt="Annotation" className="h-3 w-fit" src={logo} />
-                  <span className="text-xs text-muted-foreground">v0.1</span>
+                <CardTitle className={settingsTitleClass()}>
+                  <img alt="Annotation" className={logoClass()} src={logo} />
+                  <span className={versionClass()}>v0.1</span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -805,7 +1080,7 @@ export function AnnotationDock({
                   </Field>
                   <Field>
                     <FieldLabel>Position</FieldLabel>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className={positionGridClass()}>
                       {POSITION_OPTIONS.map((option) => (
                         <Button
                           key={option.value}
@@ -823,7 +1098,7 @@ export function AnnotationDock({
                     </div>
                   </Field>
                   <Field>
-                    <div className="flex items-center justify-between gap-2">
+                    <div className={resolveHeadingRowClass()}>
                       <FieldLabel>Resolve all</FieldLabel>
                       <Badge variant="secondary">{unresolvedThreadCount}</Badge>
                     </div>
@@ -831,8 +1106,8 @@ export function AnnotationDock({
                   </Field>
                 </FieldGroup>
                 {errorMessage ? (
-                  <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    {errorMessage}
+                  <div style={{ marginTop: "1rem" }}>
+                    <div className={errorMessageClass()}>{errorMessage}</div>
                   </div>
                 ) : null}
               </CardContent>
@@ -843,10 +1118,10 @@ export function AnnotationDock({
 
       <motion.div
         animate={{ height, width }}
-        className="overflow-hidden rounded-md bg-primary"
+        className={dockShellClass()}
         transition={{ duration: 0.25, ease: [0.17, 0.84, 0.44, 1] }}
       >
-        <div className="relative h-fit w-fit overflow-hidden" ref={refContainer}>
+        <div className={dockShellInnerClass()} ref={refContainer}>
           <AnimatePresence mode="popLayout">{renderDock()}</AnimatePresence>
         </div>
       </motion.div>

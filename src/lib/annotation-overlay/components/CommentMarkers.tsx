@@ -9,9 +9,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { css, cx } from "../stitches";
 import type { AnnotationComment, AnnotationRect, MarkerPosition } from "../types";
 import { generateSelector, getSelectableElementAtPoint, querySelectorSafely } from "../selector";
 import { useAnnotation } from "../useAnnotation";
@@ -30,6 +28,75 @@ const MARKER_SIZE = 32;
 const MARKER_OFFSET_X = -(MARKER_SIZE / 2);
 const MARKER_OFFSET_Y = -(MARKER_SIZE / 2);
 const DRAG_DISTANCE_THRESHOLD = 4;
+
+const markersLayerClass = css({
+  inset: 0,
+  pointerEvents: "none",
+  position: "absolute",
+  zIndex: 2147483602,
+});
+
+const markerButtonClass = css({
+  appearance: "none",
+  background: "transparent",
+  border: 0,
+  cursor: "grab",
+  height: MARKER_SIZE,
+  left: 0,
+  padding: 0,
+  pointerEvents: "auto",
+  position: "absolute",
+  top: 0,
+  touchAction: "none",
+  userSelect: "none",
+  width: MARKER_SIZE,
+  "&:active": {
+    cursor: "grabbing",
+  },
+  "&:focus-visible": {
+    outline: "none",
+  },
+});
+
+const markerResolvedClass = css({
+  opacity: 0.35,
+});
+
+const markerBubbleClass = css({
+  alignItems: "center",
+  backgroundColor: "var(--annotation-primary)",
+  borderRadius: "9999px",
+  boxShadow: "0 18px 30px color-mix(in oklab, var(--annotation-foreground) 18%, transparent)",
+  color: "var(--annotation-primary-foreground)",
+  display: "flex",
+  fontSize: "0.75rem",
+  fontWeight: 600,
+  height: "100%",
+  inset: 0,
+  justifyContent: "center",
+  position: "absolute",
+  transition: "opacity 150ms ease, background-color 150ms ease, color 150ms ease",
+  width: "100%",
+});
+
+const markerCountBadgeClass = css({
+  alignItems: "center",
+  backgroundColor: "var(--annotation-foreground)",
+  borderRadius: "9999px",
+  color: "var(--annotation-background)",
+  display: "inline-flex",
+  fontSize: "0.6875rem",
+  fontWeight: 600,
+  height: 20,
+  justifyContent: "center",
+  minWidth: 20,
+  padding: "0 0.35rem",
+  pointerEvents: "none",
+  position: "absolute",
+  right: 0,
+  top: 0,
+  transform: "translate(33%, -33%)",
+});
 
 type DragSession = {
   pointerId: number;
@@ -294,14 +361,14 @@ export function CommentMarkers() {
     const markerRect = event.currentTarget.getBoundingClientRect();
 
     dragSessionRef.current = {
+      hasMoved: false,
       pointerId: event.pointerId,
-      threadId,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
       pointerOffsetX: event.clientX - markerRect.left,
       pointerOffsetY: event.clientY - markerRect.top,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
       target: querySelectorSafely(comment?.selector ?? null),
-      hasMoved: false,
+      threadId,
     };
 
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -449,12 +516,9 @@ export function CommentMarkers() {
   }, [syncMarkerPositions]);
 
   return (
-    <div
-      className="pointer-events-none absolute inset-0 z-2147483602"
-      data-annotation-overlay-root="true"
-    >
+    <div className={markersLayerClass()} data-annotation-overlay-root="true">
       {dragHighlightRect ? <AnnotationHighlight rect={dragHighlightRect} /> : null}
-      <AnimatePresence mode="popLayout" initial={false}>
+      <AnimatePresence initial={false} mode="popLayout">
         {annotationMode &&
           topLevelComments.map((comment) => {
             const position = positions[comment.id];
@@ -465,13 +529,10 @@ export function CommentMarkers() {
             const threadCount = getThreadCount(comments, comment.id);
 
             return (
-              <Button
-                key={comment.id}
-                className={cn(
-                  "pointer-events-auto absolute top-0 left-0 inline-flex cursor-grab touch-none rounded-full bg-transparent transition-none select-none active:cursor-grabbing",
-                  comment.resolved && "opacity-35",
-                )}
+              <button
+                className={cx(markerButtonClass(), comment.resolved && markerResolvedClass())}
                 data-thread-id={comment.id}
+                key={comment.id}
                 onClick={handleMarkerClick}
                 onPointerCancel={handlePointerCancel}
                 onPointerDown={handlePointerDown}
@@ -480,45 +541,39 @@ export function CommentMarkers() {
                 onPointerMove={handlePointerMove}
                 onPointerUp={handlePointerUp}
                 ref={(node) => setMarkerElement(comment.id, node)}
-                size="icon"
                 style={getMarkerStyle(position)}
                 title={`${comment.author} · ${comment.resolved ? "Resolved" : "Open"} · ${threadCount} message${
                   threadCount === 1 ? "" : "s"
                 }`}
+                type="button"
               >
                 <motion.div
-                  initial={{ scale: 0.8, opacity: 0 }}
                   animate={{
-                    scale: 1,
                     opacity: 1,
+                    scale: 1,
                     transition: {
                       duration: 0.15,
                       ease: "easeOut",
                     },
                   }}
+                  className={cx(markerBubbleClass(), comment.resolved && markerResolvedClass())}
                   exit={{
-                    scale: 0.8,
                     opacity: 0,
+                    scale: 0.8,
                     transition: {
                       duration: 0.15,
                       ease: "easeIn",
                     },
                   }}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  transition={{ damping: 50, stiffness: 500, type: "spring" }}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  transition={{ type: "spring", stiffness: 500, damping: 50 }}
-                  className={cn(
-                    "absolute inset-0 flex items-center justify-center rounded-full text-xs shadow-lg transition-colors",
-                    "bg-primary text-primary-foreground",
-                    comment.resolved && "opacity-35",
-                  )}
                 >
-                  <Badge className="pointer-events-none absolute top-0 right-0 size-5 translate-x-1/3 -translate-y-1/3 bg-foreground text-xs text-background">
-                    {threadCount}
-                  </Badge>
+                  <span className={markerCountBadgeClass()}>{threadCount}</span>
                   <span>{getInitials(comment.author)}</span>
                 </motion.div>
-              </Button>
+              </button>
             );
           })}
       </AnimatePresence>

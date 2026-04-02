@@ -1,30 +1,45 @@
-import { Switch as SwitchPrimitive } from "radix-ui";
-import * as React from "react";
-import { cn } from "@/lib/utils";
+"use client";
 
-function Switch({
-  className,
-  size = "default",
-  ...props
-}: React.ComponentProps<typeof SwitchPrimitive.Root> & {
-  size?: "sm" | "default";
-}) {
+import { css } from "@/lib/annotation-overlay/stitches";
+
+const switchThumbClass = css({
+  backgroundColor: "var(--annotation-card)",
+  borderRadius: 9999,
+  boxShadow: "0 1px 3px color-mix(in oklab, var(--annotation-foreground) 12%, transparent)",
+  display: "block",
+  height: 18,
+  transition: "transform 150ms ease, background-color 150ms ease",
+  width: 18,
+});
+
+type SwitchProps = {
+  checked: boolean;
+  id?: string;
+  onCheckedChange: (checked: boolean) => void;
+};
+
+export function Switch({ checked, id, onCheckedChange }: SwitchProps) {
   return (
-    <SwitchPrimitive.Root
-      data-slot="switch"
-      data-size={size}
-      className={cn(
-        "peer group/switch relative inline-flex shrink-0 items-center rounded-full border border-transparent transition-all outline-none after:absolute after:-inset-x-3 after:-inset-y-2 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[size=default]:h-[18.4px] data-[size=default]:w-[32px] data-[size=sm]:h-[14px] data-[size=sm]:w-[24px] dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-checked:bg-primary data-unchecked:bg-input dark:data-unchecked:bg-input/80 data-disabled:cursor-not-allowed data-disabled:opacity-50",
-        className,
-      )}
-      {...props}
+    <button
+      aria-checked={checked}
+      id={id}
+      onClick={() => onCheckedChange(!checked)}
+      role="switch"
+      style={{
+        alignItems: "center",
+        backgroundColor: checked ? "var(--annotation-primary)" : "var(--annotation-input)",
+        border: "1px solid transparent",
+        borderRadius: 9999,
+        display: "inline-flex",
+        height: 24,
+        justifyContent: checked ? "flex-end" : "flex-start",
+        padding: 2,
+        transition: "background-color 150ms ease",
+        width: 40,
+      }}
+      type="button"
     >
-      <SwitchPrimitive.Thumb
-        data-slot="switch-thumb"
-        className="pointer-events-none block rounded-full bg-background ring-0 transition-transform group-data-[size=default]/switch:size-4 group-data-[size=sm]/switch:size-3 group-data-[size=default]/switch:data-checked:translate-x-[calc(100%-2px)] group-data-[size=sm]/switch:data-checked:translate-x-[calc(100%-2px)] dark:data-checked:bg-primary-foreground group-data-[size=default]/switch:data-unchecked:translate-x-0 group-data-[size=sm]/switch:data-unchecked:translate-x-0 dark:data-unchecked:bg-foreground"
-      />
-    </SwitchPrimitive.Root>
+      <span className={switchThumbClass()} style={{ transform: "translateX(0)" }} />
+    </button>
   );
 }
-
-export { Switch };

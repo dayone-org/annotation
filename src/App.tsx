@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { AnnotationOverlay } from "@/lib/annotation-overlay/AnnotationOverlay";
 import logo from "@/logo.svg";
 
@@ -116,23 +115,25 @@ function RouteNavigation({
   onNavigate: (path: string) => void;
 }) {
   return (
-    <div className="-ml-2 flex flex-wrap gap-2">
-      <Button
+    <div className="demo-nav">
+      <button
+        className="demo-nav-button"
+        data-active={currentPath === "/"}
         onClick={() => onNavigate("/")}
         type="button"
-        variant={currentPath === "/" ? "secondary" : "ghost"}
       >
         Home
-      </Button>
+      </button>
       {contentPages.map((page) => (
-        <Button
+        <button
+          className="demo-nav-button"
+          data-active={currentPath === page.path}
           key={page.path}
           onClick={() => onNavigate(page.path)}
           type="button"
-          variant={currentPath === page.path ? "secondary" : "ghost"}
         >
           {page.label}
-        </Button>
+        </button>
       ))}
     </div>
   );
@@ -140,24 +141,24 @@ function RouteNavigation({
 
 function HomePage() {
   return (
-    <div className="flex flex-col gap-16">
-      <img src={logo} alt="Annotation" className="h-12 w-fit" />
-      <header className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold text-balance">Annotate your interface</h2>
-        <p className="text-muted-foreground">
+    <div className="demo-stack demo-stack-lg">
+      <img alt="Annotation" className="demo-logo" src={logo} />
+      <header className="demo-stack">
+        <h2 className="demo-heading demo-heading-md">Annotate your interface</h2>
+        <p className="demo-muted">
           This package mounts an overlay, lets an annotator click real DOM targets, and stores
           page-scoped threads in Supabase without turning the app itself into a product feature.
         </p>
       </header>
-      <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold">Getting started</h2>
+      <section className="demo-stack">
+        <h2 className="demo-heading demo-heading-md">Getting started</h2>
         {steps.map((step) => (
-          <div key={step.title} className="flex flex-col gap-4 rounded-md bg-muted/50 p-4">
-            <div className="flex flex-col ">
-              <h3 className="font-semibold">{step.title}</h3>
-              <p className="text-sm text-muted-foreground">{step.description}</p>
+          <div className="demo-step" key={step.title}>
+            <div className="demo-stack">
+              <h3 className="demo-heading demo-heading-sm">{step.title}</h3>
+              <p className="demo-muted demo-small">{step.description}</p>
             </div>
-            <pre className="overflow-x-auto rounded-md border border-border p-4 font-mono text-xs">
+            <pre className="demo-code-block">
               {step.code}
             </pre>
           </div>
@@ -180,18 +181,18 @@ function ContentPage({
   }[];
 }) {
   return (
-    <div className="flex flex-col gap-16">
-      <header className="flex flex-col gap-4">
-        <h1 className="text-4xl font-semibold text-balance">{title}</h1>
-        <p className="text-muted-foreground">{intro}</p>
+    <div className="demo-stack demo-stack-lg">
+      <header className="demo-stack demo-stack-md">
+        <h1 className="demo-heading demo-heading-xl">{title}</h1>
+        <p className="demo-muted">{intro}</p>
       </header>
-      <div className="flex flex-col gap-10">
+      <div className="demo-stack demo-stack-xl">
         {sections.map((section) => (
-          <section key={section.heading} className="flex flex-col gap-4">
-            <h2 className="text-2xl font-semibold">{section.heading}</h2>
-            <div className="flex flex-col gap-4 text-muted-foreground">
+          <section className="demo-stack demo-stack-md" key={section.heading}>
+            <h2 className="demo-heading demo-heading-lg">{section.heading}</h2>
+            <div className="demo-stack demo-stack-md demo-muted">
               {section.paragraphs.map((paragraph) => (
-                <p key={paragraph} className="leading-7">
+                <p className="demo-paragraph" key={paragraph}>
                   {paragraph}
                 </p>
               ))}
@@ -248,8 +249,8 @@ function App() {
   const currentContentPage = contentPages.find((page) => page.path === currentPath);
 
   return (
-    <div className="min-h-screen p-8">
-      <div className="mx-auto flex max-w-3xl flex-col gap-32">
+    <div className="demo-app-shell">
+      <div className="demo-app-frame">
         <RouteNavigation currentPath={currentPath} onNavigate={navigateTo} />
         {currentContentPage ? (
           <ContentPage

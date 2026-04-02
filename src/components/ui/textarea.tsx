@@ -1,17 +1,31 @@
-import * as React from "react";
-import { cn } from "@/lib/utils";
+"use client";
 
-function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
-  return (
-    <textarea
-      data-slot="textarea"
-      className={cn(
-        "flex field-sizing-content min-h-12 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 text-base transition-colors outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
+import { styled } from "@/lib/annotation-overlay/stitches";
 
-export { Textarea };
+const textareaBase = {
+  appearance: "none" as const,
+  backgroundColor: "transparent",
+  border: "1px solid var(--annotation-input)",
+  borderRadius: "calc(var(--annotation-radius) * 0.8)",
+  color: "var(--annotation-foreground)",
+  fontFamily: "inherit",
+  fontSize: "0.875rem",
+  lineHeight: 1.4,
+  outline: "none",
+  transition: "border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease",
+  width: "100%",
+  "&::placeholder": {
+    color: "var(--annotation-muted-foreground)",
+  },
+  "&:focus": {
+    borderColor: "var(--annotation-ring)",
+    boxShadow: "0 0 0 3px color-mix(in oklab, var(--annotation-ring) 28%, transparent)",
+  },
+};
+
+export const Textarea = styled("textarea", {
+  ...textareaBase,
+  minHeight: 72,
+  padding: "0.625rem",
+  resize: "vertical",
+});
