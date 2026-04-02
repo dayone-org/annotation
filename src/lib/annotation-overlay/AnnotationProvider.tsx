@@ -56,13 +56,16 @@ function getActivePath(pathOverride?: string): string {
   return typeof window === "undefined" ? "/" : window.location.pathname;
 }
 
-function getRealtimeChannelName(tableName: string): string {
-  return `annotation-comments:${tableName}`;
+function getRealtimeChannelName(tableName: string, projectId: string | null): string {
+  return projectId
+    ? `annotation-comments:${tableName}:${projectId}`
+    : `annotation-comments:${tableName}`;
 }
 
 export function AnnotationProvider({
   children,
   pagePath,
+  projectId,
   storageKeyPrefix = DEFAULT_STORAGE_KEY_PREFIX,
   supabaseAnonKey,
   supabaseUrl,
@@ -80,6 +83,7 @@ export function AnnotationProvider({
     () => getStorageKey(storageKeyPrefix, "show_resolved"),
     [storageKeyPrefix],
   );
+  const normalizedProjectId = useMemo(() => projectId?.trim() || null, [projectId]);
   const [author, setAuthorState] = useState(() => readStoredString(authorStorageKey));
   const [showResolved, setShowResolvedState] = useState(() =>
     readStoredBoolean(showResolvedStorageKey, false),
@@ -101,10 +105,12 @@ export function AnnotationProvider({
     setIsLoading(true);
     setErrorMessage(null);
 
-    const { data, error } = await client
-      .from(tableName)
-      .select("*")
-      .order("created_at", { ascending: true });
+    let query = client.from(tableName).select("*").order("created_at", { ascending: true });
+    if (normalizedProjectId) {
+      query = query.eq("project_id", normalizedProjectId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       setComments([]);
@@ -123,7 +129,7 @@ export function AnnotationProvider({
       );
       setIsLoading(false);
     });
-  }, [client, tableName]);
+  }, [client, normalizedProjectId, tableName]);
 
   const syncPath = useCallback(() => {
     const nextPath = getActivePath(pagePath);
@@ -168,11 +174,12 @@ export function AnnotationProvider({
 
   useEffect(() => {
     const channel = client
-      .channel(getRealtimeChannelName(tableName))
+      .channel(getRealtimeChannelName(tableName, normalizedProjectId))
       .on(
         "postgres_changes",
         {
           event: "*",
+          filter: normalizedProjectId ? `project_id=eq.${normalizedProjectId}` : undefined,
           schema: "public",
           table: tableName,
         },
@@ -185,7 +192,7 @@ export function AnnotationProvider({
     return () => {
       void client.removeChannel(channel);
     };
-  }, [client, loadComments, tableName]);
+  }, [client, loadComments, normalizedProjectId, tableName]);
 
   const setAuthor = useCallback(
     (value: string) => {
@@ -312,10 +319,12 @@ export function AnnotationProvider({
         );
       });
 
-      const { error } = await client
-        .from(tableName)
-        .update({ rect, selector: nextSelector })
-        .eq("id", threadId);
+      let query = client.from(tableName).update({ rect, selector: nextSelector }).eq("id", threadId);
+      if (normalizedProjectId) {
+        query = query.eq("project_id", normalizedProjectId);
+      }
+
+      const { error } = await query;
 
       if (error) {
         setErrorMessage(error.message);
@@ -333,7 +342,7 @@ export function AnnotationProvider({
 
       return true;
     },
-    [client, commentMap, tableName],
+    [client, commentMap, normalizedProjectId, tableName],
   );
 
   const scrollToComment = useCallback(
@@ -420,6 +429,7 @@ export function AnnotationProvider({
         author,
         resolved: false,
         parent_id: composer.parentId,
+        ...(normalizedProjectId ? { project_id: normalizedProjectId } : {}),
       };
 
       const { data, error } = await client.from(tableName).insert(payload).select().single();
@@ -441,7 +451,7 @@ export function AnnotationProvider({
       );
       return true;
     },
-    [author, client, commentMap, composer, currentPath, tableName],
+    [author, client, commentMap, composer, currentPath, normalizedProjectId, tableName],
   );
 
   const removeThread = useCallback(
@@ -459,7 +469,12 @@ export function AnnotationProvider({
         .map((comment) => comment.id);
 
       if (replyIds.length > 0) {
-        const { error: repliesError } = await client.from(tableName).delete().in("id", replyIds);
+        let repliesQuery = client.from(tableName).delete().in("id", replyIds);
+        if (normalizedProjectId) {
+          repliesQuery = repliesQuery.eq("project_id", normalizedProjectId);
+        }
+
+        const { error: repliesError } = await repliesQuery;
 
         if (repliesError) {
           setErrorMessage(repliesError.message);
@@ -467,7 +482,12 @@ export function AnnotationProvider({
         }
       }
 
-      const { error } = await client.from(tableName).delete().eq("id", threadId);
+      let threadQuery = client.from(tableName).delete().eq("id", threadId);
+      if (normalizedProjectId) {
+        threadQuery = threadQuery.eq("project_id", normalizedProjectId);
+      }
+
+      const { error } = await threadQuery;
 
       if (error) {
         setErrorMessage(error.message);
@@ -488,7 +508,7 @@ export function AnnotationProvider({
       setActiveThreadId((previous) => (previous === threadId ? null : previous));
       return true;
     },
-    [client, closeComposer, commentMap, comments, composer, tableName],
+    [client, closeComposer, commentMap, comments, composer, normalizedProjectId, tableName],
   );
 
   const resolveAllComments = useCallback(async () => {
@@ -503,13 +523,18 @@ export function AnnotationProvider({
     setErrorMessage(null);
 
     const resolvedAt = new Date().toISOString();
-    const { error } = await client
+    let query = client
       .from(tableName)
       .update({
         resolved: true,
         resolved_at: resolvedAt,
       })
       .in("id", openThreadIds);
+    if (normalizedProjectId) {
+      query = query.eq("project_id", normalizedProjectId);
+    }
+
+    const { error } = await query;
 
     if (error) {
       setErrorMessage(error.message);
@@ -541,7 +566,7 @@ export function AnnotationProvider({
       previous && resolvedThreadIds.has(previous) ? null : previous,
     );
     return true;
-  }, [client, closeComposer, comments, composer, tableName]);
+  }, [client, closeComposer, comments, composer, normalizedProjectId, tableName]);
 
   const toggleResolved = useCallback(
     async (commentId: string) => {
@@ -553,13 +578,18 @@ export function AnnotationProvider({
 
       const nextResolved = !target.resolved;
       const resolvedAt = nextResolved ? new Date().toISOString() : null;
-      const { error } = await client
+      let query = client
         .from(tableName)
         .update({
           resolved: nextResolved,
           resolved_at: resolvedAt,
         })
         .eq("id", threadId);
+      if (normalizedProjectId) {
+        query = query.eq("project_id", normalizedProjectId);
+      }
+
+      const { error } = await query;
 
       if (error) {
         setErrorMessage(error.message);
@@ -586,7 +616,7 @@ export function AnnotationProvider({
 
       setActiveThreadId(threadId);
     },
-    [client, closeComposer, commentMap, composer, tableName],
+    [client, closeComposer, commentMap, composer, normalizedProjectId, tableName],
   );
 
   useEffect(() => {

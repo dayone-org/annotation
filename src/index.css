@@ -1,12 +1,12 @@
-@import "tailwindcss";
+@import "tailwindcss/theme.css";
 @import "tw-animate-css";
 @import "@fontsource-variable/geist";
 @import "shadcn/tailwind.css";
+@import "tailwindcss/utilities.css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: "Geist Variable", sans-serif;
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -55,7 +55,7 @@
     --radius: 0.25rem;
     --overlay-scrim: color-mix(in oklab, var(--foreground) 8%, transparent);
     color: var(--foreground);
-    font-family: var(--font-sans);
+    font-family: "Geist Variable", sans-serif;
     line-height: 1.5;
   }
 

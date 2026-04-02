@@ -25,6 +25,7 @@ export default function RootLayout({
         <Annotation
           supabaseUrl={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_URL!}
           supabaseAnonKey={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY!}
+          position="bottom-right"
         />
       </body>
     </html>
@@ -49,6 +50,24 @@ create table comments (
 );
 ```
 
+### Single Table Mode
+
+If you want one comments table to back multiple projects, add a `project_id` column and pass
+`projectId` to `<Annotation />`.
+
+```sql
+alter table comments
+  add column project_id text not null default 'default-project';
+```
+
+```tsx
+<Annotation
+  supabaseUrl={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_URL!}
+  supabaseAnonKey={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY!}
+  projectId="marketing-site"
+/>
+```
+
 ## Environment Variables
 
 ```bash
@@ -64,5 +83,7 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=
 - Marker repositioning on scroll and resize
 - Threaded comments with resolve, remove, and bulk copy actions
 - Cross-page thread browsing from the dock
+- Dock positioning in all four corners
+- Optional shared-table scoping with `projectId`
 - Local annotator name and resolved-thread visibility preferences
-- Optional `tableName`, `storageKeyPrefix`, and `pagePath` props for advanced integration
+- Optional `pagePath`, `position`, `projectId`, `storageKeyPrefix`, and `tableName` props for advanced integration

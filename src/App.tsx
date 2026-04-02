@@ -14,10 +14,11 @@ const steps = [
   },
   {
     title: "Database",
-    description: "Create a comments table in Supabase.",
+    description: "Create a comments table in Supabase. Add project_id if you want one table for multiple projects.",
     code: `comments(
   id uuid primary key,
   page_path text not null,
+  project_id text,
   selector text,
   rect jsonb,
   text text not null,
@@ -42,6 +43,7 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=your-supabase-anon-key`,
 <Annotation
   supabaseUrl={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_URL!}
   supabaseAnonKey={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY!}
+  position="bottom-right"
 />`,
   },
 ];

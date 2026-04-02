@@ -11,7 +11,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { AnnotationOverlayProps } from "./types";
+import type { AnnotationOverlayProps, AnnotationPosition } from "./types";
 import { cn } from "../utils";
 import { AnnotationProvider } from "./AnnotationProvider";
 import { AnnotationComposer } from "./components/AnnotationComposer";
@@ -208,7 +208,7 @@ function ComposerPopover() {
   );
 }
 
-function AnnotationOverlayScene() {
+function AnnotationOverlayScene({ position }: { position?: AnnotationPosition }) {
   return createPortal(
     <div
       className="absolute top-0 left-0 z-2147483600 h-px w-px"
@@ -218,7 +218,7 @@ function AnnotationOverlayScene() {
       <InteractionLayer />
       <CommentMarkers />
       <ComposerPopover />
-      <AnnotationDock />
+      <AnnotationDock defaultPosition={position} />
     </div>,
     document.body,
   );
@@ -237,7 +237,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps) {
 
   return (
     <AnnotationProvider {...props}>
-      <AnnotationOverlayScene />
+      <AnnotationOverlayScene position={props.position} />
     </AnnotationProvider>
   );
 }

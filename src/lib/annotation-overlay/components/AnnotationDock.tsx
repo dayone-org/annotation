@@ -38,8 +38,14 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import logo from "@/logo.svg";
-import type { AnnotationComment } from "../types";
-import { getStorageKey, readStoredBoolean, writeStoredBoolean } from "../storage";
+import type { AnnotationComment, AnnotationPosition } from "../types";
+import {
+  getStorageKey,
+  readStoredBoolean,
+  readStoredString,
+  writeStoredBoolean,
+  writeStoredString,
+} from "../storage";
 import { useAnnotation } from "../useAnnotation";
 import {
   formatAnnotationCollectionMarkdown,
@@ -67,6 +73,54 @@ type ThreadCardProps = {
 };
 
 const RESOLVE_ALL_COMPLETE_THRESHOLD = 0.96;
+const DEFAULT_POSITION: AnnotationPosition = "bottom-right";
+const POSITION_OPTIONS: Array<{ label: string; value: AnnotationPosition }> = [
+  { label: "Top left", value: "top-left" },
+  { label: "Top right", value: "top-right" },
+  { label: "Bottom left", value: "bottom-left" },
+  { label: "Bottom right", value: "bottom-right" },
+];
+
+function isAnnotationPosition(value: string): value is AnnotationPosition {
+  return POSITION_OPTIONS.some((option) => option.value === value);
+}
+
+function readStoredPosition(key: string, fallback: AnnotationPosition): AnnotationPosition {
+  const value = readStoredString(key);
+  return isAnnotationPosition(value) ? value : fallback;
+}
+
+function getPositionConfig(position: AnnotationPosition) {
+  const isLeft = position.endsWith("left");
+  const isTop = position.startsWith("top");
+
+  return {
+    anchorX: isLeft ? "left" : "right",
+    anchorY: isTop ? "top" : "bottom",
+    buttonTransformOrigin: isLeft ? "center left" : "center right",
+    cardOffset: isTop ? -10 : 10,
+    rootClassName: cn(
+      "fixed z-2147483602 flex gap-4",
+      isTop ? "top-6 flex-col-reverse" : "bottom-6 flex-col",
+      isLeft ? "left-6 items-start" : "right-6 items-end",
+    ),
+    toolbarOriginClassName: (() => {
+      if (position === "top-left") {
+        return "origin-top-left";
+      }
+
+      if (position === "top-right") {
+        return "origin-top-right";
+      }
+
+      if (position === "bottom-left") {
+        return "origin-bottom-left";
+      }
+
+      return "origin-bottom-right";
+    })(),
+  } as const;
+}
 
 function useCopyState() {
   const [state, setState] = useState<CopyState>("idle");
@@ -373,7 +427,11 @@ function ResolveAllSlider({ onResolveAll }: ResolveAllSliderProps) {
   );
 }
 
-export function AnnotationDock() {
+export function AnnotationDock({
+  defaultPosition = DEFAULT_POSITION,
+}: {
+  defaultPosition?: AnnotationPosition;
+}) {
   const {
     activeThreadId,
     annotationMode,
@@ -398,8 +456,15 @@ export function AnnotationDock() {
     () => getStorageKey(storageKeyPrefix, "only_current_page"),
     [storageKeyPrefix],
   );
+  const positionKey = useMemo(
+    () => getStorageKey(storageKeyPrefix, "position"),
+    [storageKeyPrefix],
+  );
   const [showOnlyCurrentPage, setShowOnlyCurrentPage] = useState(() =>
     readStoredBoolean(onlyCurrentPageKey, false),
+  );
+  const [position, setPosition] = useState<AnnotationPosition>(() =>
+    readStoredPosition(positionKey, defaultPosition),
   );
   const [isPanelOpen, setPanelOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -422,51 +487,64 @@ export function AnnotationDock() {
   );
   const unresolvedThreadCount = topLevelComments.filter((comment) => !comment.resolved).length;
   const hasAuthor = Boolean(author);
+  const positionConfig = useMemo(() => getPositionConfig(position), [position]);
 
-  const variantsButton = {
-    initial: { opacity: 0, filter: "blur(10px)", transform: "scale(0.75)" },
-    animate: {
-      opacity: 1,
-      filter: "blur(0px)",
-      transform: "scale(1)",
-      transformOrigin: "center left",
-      transition: { duration: 0.4, ease: [0.17, 0.84, 0.44, 1] },
-    },
-    exit: {
-      opacity: 0,
-      filter: "blur(10px)",
-      transform: "scale(0.75)",
-      transformOrigin: "center left",
-      transition: { duration: 0.4, ease: [0.17, 0.84, 0.44, 1] },
-    },
-  } satisfies Variants;
+  const variantsButton = useMemo(
+    () =>
+      ({
+        initial: { opacity: 0, filter: "blur(10px)", transform: "scale(0.75)" },
+        animate: {
+          opacity: 1,
+          filter: "blur(0px)",
+          transform: "scale(1)",
+          transformOrigin: positionConfig.buttonTransformOrigin,
+          transition: { duration: 0.4, ease: [0.17, 0.84, 0.44, 1] },
+        },
+        exit: {
+          opacity: 0,
+          filter: "blur(10px)",
+          transform: "scale(0.75)",
+          transformOrigin: positionConfig.buttonTransformOrigin,
+          transition: { duration: 0.4, ease: [0.17, 0.84, 0.44, 1] },
+        },
+      }) satisfies Variants,
+    [positionConfig.buttonTransformOrigin],
+  );
 
-  const variantsCard = {
-    initial: {
-      opacity: 0,
-      transform: "translateY(10px)",
-    },
-    animate: {
-      opacity: 1,
-      transform: "translateY(0)",
-      transition: {
-        duration: 0.25,
-        ease: [0.17, 0.84, 0.44, 1],
-      },
-    },
-    exit: {
-      opacity: 0,
-      transform: "translateY(0px)",
-      transition: {
-        duration: 0.15,
-        ease: [0.17, 0.84, 0.44, 1],
-      },
-    },
-  } satisfies Variants;
+  const variantsCard = useMemo(
+    () =>
+      ({
+        initial: {
+          opacity: 0,
+          transform: `translateY(${positionConfig.cardOffset}px)`,
+        },
+        animate: {
+          opacity: 1,
+          transform: "translateY(0)",
+          transition: {
+            duration: 0.25,
+            ease: [0.17, 0.84, 0.44, 1],
+          },
+        },
+        exit: {
+          opacity: 0,
+          transform: "translateY(0px)",
+          transition: {
+            duration: 0.15,
+            ease: [0.17, 0.84, 0.44, 1],
+          },
+        },
+      }) satisfies Variants,
+    [positionConfig.cardOffset],
+  );
 
   useEffect(() => {
     setShowOnlyCurrentPage(readStoredBoolean(onlyCurrentPageKey, false));
   }, [onlyCurrentPageKey]);
+
+  useEffect(() => {
+    setPosition(readStoredPosition(positionKey, defaultPosition));
+  }, [defaultPosition, positionKey]);
 
   useEffect(() => {
     if (!annotationMode) {
@@ -565,7 +643,7 @@ export function AnnotationDock() {
     return (
       <motion.div
         animate="animate"
-        className="flex origin-bottom-right items-center gap-2 p-1"
+        className={cn("flex items-center gap-2 p-1", positionConfig.toolbarOriginClassName)}
         exit="exit"
         initial="initial"
         key="floating-button-active"
@@ -612,11 +690,12 @@ export function AnnotationDock() {
   };
 
   return (
-    <div
-      className="fixed right-6 bottom-6 z-2147483602 flex flex-col items-end gap-4"
-      data-annotation-overlay-root="true"
-    >
-      <AnimatePresence anchorX="right" anchorY="bottom" mode="popLayout">
+    <div className={positionConfig.rootClassName} data-annotation-overlay-root="true">
+      <AnimatePresence
+        anchorX={positionConfig.anchorX}
+        anchorY={positionConfig.anchorY}
+        mode="popLayout"
+      >
         {isPanelOpen ? (
           <motion.div
             animate="animate"
@@ -723,6 +802,25 @@ export function AnnotationDock() {
                       placeholder="Annotator"
                       value={author}
                     />
+                  </Field>
+                  <Field>
+                    <FieldLabel>Position</FieldLabel>
+                    <div className="grid grid-cols-2 gap-2">
+                      {POSITION_OPTIONS.map((option) => (
+                        <Button
+                          key={option.value}
+                          onClick={() => {
+                            writeStoredString(positionKey, option.value);
+                            setPosition(option.value);
+                          }}
+                          size="xs"
+                          type="button"
+                          variant={position === option.value ? "secondary" : "outline"}
+                        >
+                          {option.label}
+                        </Button>
+                      ))}
+                    </div>
                   </Field>
                   <Field>
                     <div className="flex items-center justify-between gap-2">

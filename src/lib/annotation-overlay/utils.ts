@@ -82,6 +82,7 @@ export function normalizeComment(
   return {
     id: row.id,
     page_path: row.page_path ?? window.location.pathname,
+    project_id: row.project_id ?? null,
     selector: row.selector ?? null,
     rect: row.rect ?? null,
     text: row.text ?? "",
