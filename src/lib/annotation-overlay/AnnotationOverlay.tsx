@@ -9,7 +9,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { srOnlyClass } from "@/components/ui/styles";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AnnotationOverlayProps, AnnotationPosition } from "./types";
@@ -65,10 +64,6 @@ const composerPopoverClass = css({
   overflow: "hidden",
   padding: 0,
   width: "min(22rem, calc(100vw - 2rem))",
-});
-
-const composerScrollClass = css({
-  maxHeight: "min(18rem, 40vh)",
 });
 
 const composerThreadListClass = css({
@@ -219,13 +214,13 @@ function ComposerPopover() {
         sideOffset={12}
       >
         <PopoverHeader>
-          <PopoverTitle className={srOnlyClass()}>
+          <PopoverTitle visuallyHidden>
             {parentComment ? "Reply to annotation" : "New annotation"}
           </PopoverTitle>
         </PopoverHeader>
         {parentComment ? (
           <div>
-            <ScrollArea className={composerScrollClass()}>
+            <ScrollArea heightMode="composer">
               <div className={composerThreadListClass()}>
                 {threadComments.map((comment) => (
                   <ThreadComment

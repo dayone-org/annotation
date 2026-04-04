@@ -3,6 +3,7 @@
 import { Popover as PopoverPrimitive } from "radix-ui";
 import * as React from "react";
 import { annotationScopeClass, cx, styled } from "@/lib/annotation-overlay/stitches";
+import { srOnlyStyles } from "@/components/ui/styles";
 
 export const Popover = PopoverPrimitive.Root;
 export const PopoverTrigger = PopoverPrimitive.Trigger;
@@ -49,4 +50,12 @@ export const PopoverTitle = styled("h2", {
   fontSize: "0.875rem",
   fontWeight: 600,
   margin: 0,
+  variants: {
+    visuallyHidden: {
+      true: srOnlyStyles,
+    },
+  },
+  defaultVariants: {
+    visuallyHidden: false,
+  },
 });

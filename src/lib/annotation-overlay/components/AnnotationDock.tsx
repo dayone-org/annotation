@@ -7,18 +7,6 @@ import {
   GearSixIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { Item, ItemContent, ItemHeader } from "@/components/ui/item";
-import { Kbd } from "@/components/ui/kbd";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
-import { Spinner } from "@/components/ui/spinner";
-import { errorMessageClass } from "@/components/ui/styles";
-import { Switch } from "@/components/ui/switch";
 import {
   AnimatePresence,
   animate,
@@ -38,7 +26,21 @@ import {
   type ReactNode,
 } from "react";
 import useMeasure from "react-use-measure";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Item, ItemContent, ItemHeader } from "@/components/ui/item";
+import { Kbd } from "@/components/ui/kbd";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
+import { errorMessageClass } from "@/components/ui/styles";
+import { Switch } from "@/components/ui/switch";
 import logo from "@/logo.svg";
+import type { AnnotationComment, AnnotationPosition } from "../types";
+import { css, cx } from "../stitches";
 import {
   getStorageKey,
   readStoredBoolean,
@@ -46,8 +48,7 @@ import {
   writeStoredBoolean,
   writeStoredString,
 } from "../storage";
-import { css, cx } from "../stitches";
-import type { AnnotationComment, AnnotationPosition } from "../types";
+import { useAnnotation } from "../useAnnotation";
 import {
   formatAnnotationCollectionMarkdown,
   formatAnnotationThreadMarkdown,
@@ -56,7 +57,6 @@ import {
   getTopLevelComments,
   measureRect,
 } from "../utils";
-import { useAnnotation } from "../useAnnotation";
 
 type CopyState = "idle" | "copied" | "error";
 
@@ -210,19 +210,6 @@ const dockShellInnerClass = css({
   width: "fit-content",
 });
 
-const toolbarButtonClass = css({
-  backgroundColor: "transparent",
-  color: "var(--annotation-primary-foreground)",
-  "&:hover:not(:disabled)": {
-    backgroundColor:
-      "color-mix(in oklab, var(--annotation-primary-foreground) 14%, transparent)",
-  },
-});
-
-const toolbarSeparatorClass = css({
-  backgroundColor: "color-mix(in oklab, var(--annotation-primary-foreground) 25%, transparent)",
-});
-
 const authorGateFormClass = css({
   alignItems: "center",
   display: "flex",
@@ -230,45 +217,11 @@ const authorGateFormClass = css({
   padding: "0.25rem",
 });
 
-const authorGateInputClass = css({
-  backgroundColor:
-    "color-mix(in oklab, var(--annotation-primary-foreground) 10%, transparent)",
-  border: "none",
-  color: "var(--annotation-primary-foreground)",
-  width: 192,
-  "&::placeholder": {
-    color: "color-mix(in oklab, var(--annotation-primary-foreground) 50%, transparent)",
-  },
-  "&:focus": {
-    borderColor: "transparent",
-    boxShadow:
-      "0 0 0 3px color-mix(in oklab, var(--annotation-primary-foreground) 16%, transparent)",
-  },
-});
-
-const panelCardClass = css({
-  paddingBottom: 0,
-  width: 256,
-});
-
-const panelContentClass = css({
-  borderTop: "1px solid var(--annotation-border)",
-  display: "flex",
-  flexDirection: "column",
-  gap: 0,
-  padding: 0,
-});
-
 const panelBodyClass = css({
   backgroundColor: "var(--annotation-muted)",
   display: "grid",
   gap: 0,
   height: "min(24rem, calc(100vh - 8rem))",
-});
-
-const panelScrollClass = css({
-  height: "100%",
-  maxHeight: "min(24rem, calc(100vh - 8rem))",
 });
 
 const panelListClass = css({
@@ -289,17 +242,6 @@ const panelEmptyTextClass = css({
 const panelErrorWrapClass = css({
   borderTop: "1px solid color-mix(in oklab, var(--annotation-border) 60%, transparent)",
   padding: "0.75rem 1rem",
-});
-
-const settingsCardClass = css({
-  width: 256,
-});
-
-const settingsTitleClass = css({
-  alignItems: "baseline",
-  display: "flex",
-  gap: "0.5rem",
-  justifyContent: "space-between",
 });
 
 const logoClass = css({
@@ -498,28 +440,26 @@ function ThreadCard({
         <Badge variant="secondary">{comment.page_path}</Badge>
         <div className={threadCardActionsClass()} data-thread-card-actions="true">
           <Button
-            className={toolbarButtonClass()}
             onClick={(event) => {
               stopItemClick(event);
               void handleCopy();
             }}
             size="icon"
             type="button"
-            variant="ghost"
+            variant="ghostOnPrimary"
           >
             <AnimatedCopyStateIcon state={copyState} />
           </Button>
           {canManage ? (
             <Button
               aria-label={comment.resolved ? "Mark annotation as open" : "Resolve annotation"}
-              className={toolbarButtonClass()}
               onClick={(event) => {
                 stopItemClick(event);
                 void toggleResolved(comment.id);
               }}
               size="icon"
               type="button"
-              variant="ghost"
+              variant="ghostOnPrimary"
             >
               {comment.resolved ? (
                 <CheckCircleIcon size={16} weight="fill" />
@@ -847,11 +787,10 @@ export function AnnotationDock({
           variants={variantsButton}
         >
           <Button
-            className={toolbarButtonClass()}
             onClick={() => startAnnotationMode()}
             size="sm"
             type="button"
-            variant="ghost"
+            variant="ghostOnPrimary"
           >
             Annotation
             <Kbd>c</Kbd>
@@ -876,29 +815,27 @@ export function AnnotationDock({
         >
           <Input
             autoFocus
-            className={authorGateInputClass()}
             id="annotation-author-gate-name"
             maxLength={48}
             onChange={(event) => setAuthorGateInput(event.target.value)}
             placeholder="What's your name?"
+            surface="onPrimary"
             value={authorGateInput}
           />
           <Button
-            className={toolbarButtonClass()}
             disabled={!authorGateInput.trim()}
             size="iconSm"
             type="submit"
-            variant="ghost"
+            variant="ghostOnPrimary"
           >
             <CheckIcon size={16} />
           </Button>
-          <Separator className={toolbarSeparatorClass()} orientation="vertical" />
+          <Separator orientation="vertical" tone="onPrimary" />
           <Button
-            className={toolbarButtonClass()}
             onClick={closeAuthorGate}
             size="iconSm"
             type="button"
-            variant="ghost"
+            variant="ghostOnPrimary"
           >
             <XIcon size={16} />
           </Button>
@@ -916,30 +853,27 @@ export function AnnotationDock({
         variants={variantsButton}
       >
         <Button
-          className={toolbarButtonClass()}
           disabled={currentRouteOpenThreads.length === 0}
           onClick={() => void handleBulkCopy()}
           size="iconSm"
           type="button"
-          variant="ghost"
+          variant="ghostOnPrimary"
         >
           <AnimatedCopyStateIcon state={bulkCopyState} />
         </Button>
         <Button
           aria-expanded={isPanelOpen}
           aria-label="Annotations panel"
-          className={toolbarButtonClass()}
           onClick={toggleAnnotationsPanel}
           size="iconSm"
           type="button"
-          variant="ghost"
+          variant="ghostOnPrimary"
         >
           <ChatsIcon size={16} />
         </Button>
         <Button
           aria-expanded={isSettingsOpen}
           aria-label="Annotation settings"
-          className={toolbarButtonClass()}
           onClick={() => {
             setIsSettingsOpen((open) => {
               const next = !open;
@@ -952,17 +886,16 @@ export function AnnotationDock({
           }}
           size="iconSm"
           type="button"
-          variant="ghost"
+          variant="ghostOnPrimary"
         >
           <GearSixIcon size={16} />
         </Button>
-        <Separator className={toolbarSeparatorClass()} orientation="vertical" />
+        <Separator orientation="vertical" tone="onPrimary" />
         <Button
-          className={toolbarButtonClass()}
           onClick={closeAnnotationDock}
           size="iconSm"
           type="button"
-          variant="ghost"
+          variant="ghostOnPrimary"
         >
           <XIcon size={16} />
         </Button>
@@ -985,7 +918,7 @@ export function AnnotationDock({
             key="annotations"
             variants={variantsCard}
           >
-            <Card className={panelCardClass()}>
+            <Card layout="panel">
               <CardHeader>
                 <FieldGroup>
                   <Field orientation="horizontal">
@@ -1011,9 +944,9 @@ export function AnnotationDock({
                   </Field>
                 </FieldGroup>
               </CardHeader>
-              <CardContent className={panelContentClass()}>
+              <CardContent flush>
                 <div className={panelBodyClass()}>
-                  <ScrollArea className={panelScrollClass()}>
+                  <ScrollArea heightMode="panel">
                     <div className={panelListClass()}>
                       {isLoading ? (
                         <p className={panelEmptyTextClass()}>Loading annotations…</p>
@@ -1054,9 +987,9 @@ export function AnnotationDock({
             key="settings"
             variants={variantsCard}
           >
-            <Card className={settingsCardClass()}>
+            <Card layout="settings">
               <CardHeader>
-                <CardTitle className={settingsTitleClass()}>
+                <CardTitle layout="settings">
                   <img alt="Annotation" className={logoClass()} src={logo} />
                   <span className={versionClass()}>v0.1</span>
                 </CardTitle>

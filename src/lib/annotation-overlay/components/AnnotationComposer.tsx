@@ -17,18 +17,6 @@ const formClass = css({
   gap: "0.75rem",
 });
 
-const textareaClass = css({
-  backgroundColor: "transparent",
-  border: 0,
-  minHeight: 0,
-  padding: 0,
-  resize: "none",
-  "&:focus": {
-    borderColor: "transparent",
-    boxShadow: "none",
-  },
-});
-
 const actionsClass = css({
   display: "flex",
   gap: "0.5rem",
@@ -57,8 +45,8 @@ export function AnnotationComposer({ errorMessage = null, onSubmit }: Annotation
       }}
     >
       <Textarea
+        appearance="borderless"
         autoFocus
-        className={textareaClass()}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={(event) => {
           if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) {

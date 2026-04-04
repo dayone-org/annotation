@@ -27,4 +27,26 @@ export const Input = styled("input", {
   ...inputBase,
   height: 32,
   padding: "0 0.625rem",
+  variants: {
+    surface: {
+      default: {},
+      onPrimary: {
+        backgroundColor: "color-mix(in oklab, var(--annotation-primary-foreground) 10%, transparent)",
+        border: "none",
+        color: "var(--annotation-primary-foreground)",
+        width: 192,
+        "&::placeholder": {
+          color: "color-mix(in oklab, var(--annotation-primary-foreground) 50%, transparent)",
+        },
+        "&:focus": {
+          borderColor: "transparent",
+          boxShadow:
+            "0 0 0 3px color-mix(in oklab, var(--annotation-primary-foreground) 16%, transparent)",
+        },
+      },
+    },
+  },
+  defaultVariants: {
+    surface: "default",
+  },
 });

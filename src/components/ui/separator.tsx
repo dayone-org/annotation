@@ -3,7 +3,6 @@
 import { styled } from "@/lib/annotation-overlay/stitches";
 
 export const Separator = styled("div", {
-  backgroundColor: "var(--annotation-border)",
   flexShrink: 0,
   variants: {
     orientation: {
@@ -16,8 +15,17 @@ export const Separator = styled("div", {
         width: 1,
       },
     },
+    tone: {
+      default: {
+        backgroundColor: "var(--annotation-border)",
+      },
+      onPrimary: {
+        backgroundColor: "color-mix(in oklab, var(--annotation-primary-foreground) 25%, transparent)",
+      },
+    },
   },
   defaultVariants: {
     orientation: "horizontal",
+    tone: "default",
   },
 });

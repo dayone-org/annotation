@@ -28,4 +28,23 @@ export const Textarea = styled("textarea", {
   minHeight: 72,
   padding: "0.625rem",
   resize: "vertical",
+  variants: {
+    appearance: {
+      default: {},
+      borderless: {
+        backgroundColor: "transparent",
+        border: 0,
+        minHeight: 0,
+        padding: 0,
+        resize: "none",
+        "&:focus": {
+          borderColor: "transparent",
+          boxShadow: "none",
+        },
+      },
+    },
+  },
+  defaultVariants: {
+    appearance: "default",
+  },
 });

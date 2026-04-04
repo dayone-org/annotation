@@ -1,6 +1,6 @@
 import { css } from "@/lib/annotation-overlay/stitches";
 
-export const srOnlyClass = css({
+export const srOnlyStyles = {
   border: 0,
   clip: "rect(0, 0, 0, 0)",
   clipPath: "inset(50%)",
@@ -8,10 +8,12 @@ export const srOnlyClass = css({
   margin: -1,
   overflow: "hidden",
   padding: 0,
-  position: "absolute",
-  whiteSpace: "nowrap",
+  position: "absolute" as const,
+  whiteSpace: "nowrap" as const,
   width: 1,
-});
+};
+
+export const srOnlyClass = css(srOnlyStyles);
 
 export const errorMessageClass = css({
   backgroundColor: "color-mix(in oklab, var(--annotation-destructive) 10%, transparent)",

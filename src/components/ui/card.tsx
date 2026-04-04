@@ -9,6 +9,21 @@ export const Card = styled("section", {
   boxShadow: "0 12px 30px color-mix(in oklab, var(--annotation-foreground) 10%, transparent)",
   color: "var(--annotation-card-foreground)",
   overflow: "hidden",
+  variants: {
+    layout: {
+      default: {},
+      panel: {
+        paddingBottom: 0,
+        width: 256,
+      },
+      settings: {
+        width: 256,
+      },
+    },
+  },
+  defaultVariants: {
+    layout: "default",
+  },
 });
 
 export const CardHeader = styled("div", {
@@ -20,6 +35,20 @@ export const CardHeader = styled("div", {
 
 export const CardContent = styled("div", {
   padding: "1rem",
+  variants: {
+    flush: {
+      true: {
+        borderTop: "1px solid var(--annotation-border)",
+        display: "flex",
+        flexDirection: "column",
+        gap: 0,
+        padding: 0,
+      },
+    },
+  },
+  defaultVariants: {
+    flush: false,
+  },
 });
 
 export const CardTitle = styled("h2", {
@@ -27,4 +56,18 @@ export const CardTitle = styled("h2", {
   fontWeight: 600,
   lineHeight: 1.2,
   margin: 0,
+  variants: {
+    layout: {
+      default: {},
+      settings: {
+        alignItems: "baseline",
+        display: "flex",
+        gap: "0.5rem",
+        justifyContent: "space-between",
+      },
+    },
+  },
+  defaultVariants: {
+    layout: "default",
+  },
 });

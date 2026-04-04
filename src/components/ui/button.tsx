@@ -90,6 +90,13 @@ export const Button = styled("button", {
           backgroundColor: "var(--annotation-muted)",
         },
       },
+      ghostOnPrimary: {
+        backgroundColor: "transparent",
+        color: "var(--annotation-primary-foreground)",
+        "&:hover:not(:disabled)": {
+          backgroundColor: "color-mix(in oklab, var(--annotation-primary-foreground) 14%, transparent)",
+        },
+      },
       outline: {
         backgroundColor: "var(--annotation-background)",
         borderColor: "var(--annotation-border)",
