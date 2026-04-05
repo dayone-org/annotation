@@ -1,3 +1,9 @@
+@import "tailwindcss/theme.css";
+
+@source "./App.tsx";
+
+@tailwind utilities source(none);
+
 @layer base {
   :root {
     --background: oklch(1 0 0);

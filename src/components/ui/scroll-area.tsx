@@ -12,12 +12,12 @@ function ScrollArea({
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
-      className={cn("relative", className)}
+      className={cn("annotation:relative", className)}
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
-        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none"
+        className="annotation:size-full annotation:rounded-[inherit] annotation:transition-[color,box-shadow] annotation:outline-none"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
@@ -38,14 +38,14 @@ function ScrollBar({
       data-orientation={orientation}
       orientation={orientation}
       className={cn(
-        "flex touch-none p-px transition-colors select-none data-horizontal:h-2.5 data-horizontal:flex-col data-horizontal:border-t data-horizontal:border-t-transparent data-vertical:h-full data-vertical:w-2.5 data-vertical:border-l data-vertical:border-l-transparent",
+        "annotation:flex annotation:touch-none annotation:p-px annotation:transition-colors annotation:select-none annotation:data-[orientation=horizontal]:h-2.5 annotation:data-[orientation=horizontal]:flex-col annotation:data-[orientation=horizontal]:border-t annotation:data-[orientation=horizontal]:border-t-transparent annotation:data-[orientation=vertical]:h-full annotation:data-[orientation=vertical]:w-2.5 annotation:data-[orientation=vertical]:border-l annotation:data-[orientation=vertical]:border-l-transparent",
         className,
       )}
       {...props}
     >
       <ScrollAreaPrimitive.ScrollAreaThumb
         data-slot="scroll-area-thumb"
-        className="relative flex-1 rounded-full bg-border"
+        className="annotation:relative annotation:flex-1 annotation:rounded-full annotation:bg-border"
       />
     </ScrollAreaPrimitive.ScrollAreaScrollbar>
   );

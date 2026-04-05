@@ -450,7 +450,7 @@ export function CommentMarkers() {
 
   return (
     <div
-      className="pointer-events-none absolute inset-0 z-2147483602"
+      className="annotation:pointer-events-none annotation:absolute annotation:inset-0 annotation:z-2147483602"
       data-annotation-overlay-root="true"
     >
       {dragHighlightRect ? <AnnotationHighlight rect={dragHighlightRect} /> : null}
@@ -468,8 +468,8 @@ export function CommentMarkers() {
               <Button
                 key={comment.id}
                 className={cn(
-                  "pointer-events-auto absolute top-0 left-0 inline-flex cursor-grab touch-none rounded-full bg-transparent transition-none select-none active:cursor-grabbing",
-                  comment.resolved && "opacity-35",
+                  "annotation:pointer-events-auto annotation:absolute annotation:top-0 annotation:left-0 annotation:inline-flex annotation:cursor-grab annotation:touch-none annotation:rounded-full annotation:bg-transparent annotation:transition-none annotation:select-none annotation:active:cursor-grabbing",
+                  comment.resolved && "annotation:opacity-35",
                 )}
                 data-thread-id={comment.id}
                 onClick={handleMarkerClick}
@@ -508,12 +508,12 @@ export function CommentMarkers() {
                   whileTap={{ scale: 0.95 }}
                   transition={{ type: "spring", stiffness: 500, damping: 50 }}
                   className={cn(
-                    "absolute inset-0 flex items-center justify-center rounded-full text-xs shadow-lg transition-colors",
-                    "bg-primary text-primary-foreground",
-                    comment.resolved && "opacity-35",
+                    "annotation:absolute annotation:inset-0 annotation:flex annotation:items-center annotation:justify-center annotation:rounded-full annotation:text-xs annotation:shadow-lg annotation:transition-colors",
+                    "annotation:bg-primary annotation:text-primary-foreground",
+                    comment.resolved && "annotation:opacity-35",
                   )}
                 >
-                  <Badge className="pointer-events-none absolute top-0 right-0 size-5 translate-x-1/3 -translate-y-1/3 bg-foreground text-xs text-background">
+                  <Badge className="annotation:pointer-events-none annotation:absolute annotation:top-0 annotation:right-0 annotation:size-5 annotation:translate-x-1/3 annotation:-translate-y-1/3 annotation:bg-foreground annotation:text-xs annotation:text-background">
                     {threadCount}
                   </Badge>
                   <span>{getInitials(comment.author)}</span>

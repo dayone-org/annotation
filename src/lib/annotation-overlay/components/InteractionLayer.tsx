@@ -133,7 +133,7 @@ export function InteractionLayer() {
       {isInteractionActive ? (
         <div
           aria-hidden="true"
-          className="fixed inset-0 z-2147483601 cursor-crosshair"
+          className="annotation:fixed annotation:inset-0 annotation:z-2147483601 annotation:cursor-crosshair"
           data-annotation-overlay-root="true"
           onClick={handleClick}
           onPointerMove={handlePointerMove}
@@ -141,7 +141,7 @@ export function InteractionLayer() {
       ) : null}
 
       {highlightedElement ? (
-        <AnnotationHighlight className="z-2147483601" ref={setHighlightNode} />
+        <AnnotationHighlight className="annotation:z-2147483601" ref={setHighlightNode} />
       ) : null}
     </>
   );

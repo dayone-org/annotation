@@ -26,7 +26,7 @@ function PopoverContent({
       <PopoverPrimitive.Content
         align={align}
         className={cn(
-          "z-50 w-72 origin-(--radix-popover-content-transform-origin) rounded-2xl border bg-popover p-4 text-popover-foreground shadow-lg outline-hidden data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "annotation:z-50 annotation:w-72 annotation:origin-(--radix-popover-content-transform-origin) annotation:rounded-2xl annotation:border annotation:bg-popover annotation:p-4 annotation:text-popover-foreground annotation:shadow-lg annotation:outline-hidden annotation:transition-[opacity,transform] annotation:duration-150 annotation:ease-out annotation:data-[state=closed]:scale-95 annotation:data-[state=closed]:opacity-0 annotation:data-[state=open]:scale-100 annotation:data-[state=open]:opacity-100",
           className,
         )}
         data-slot="popover-content"
@@ -43,20 +43,28 @@ function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitiv
 
 function PopoverHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <div className={cn("flex flex-col gap-1.5", className)} data-slot="popover-header" {...props} />
+    <div
+      className={cn("annotation:flex annotation:flex-col annotation:gap-1.5", className)}
+      data-slot="popover-header"
+      {...props}
+    />
   );
 }
 
 function PopoverTitle({ className, ...props }: React.ComponentProps<"h2">) {
   return (
-    <h2 className={cn("text-sm font-semibold", className)} data-slot="popover-title" {...props} />
+    <h2
+      className={cn("annotation:text-sm annotation:font-semibold", className)}
+      data-slot="popover-title"
+      {...props}
+    />
   );
 }
 
 function PopoverDescription({ className, ...props }: React.ComponentProps<"p">) {
   return (
     <p
-      className={cn("text-sm text-muted-foreground", className)}
+      className={cn("annotation:text-sm annotation:text-muted-foreground", className)}
       data-slot="popover-description"
       {...props}
     />

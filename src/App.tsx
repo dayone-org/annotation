@@ -14,7 +14,8 @@ const steps = [
   },
   {
     title: "Database",
-    description: "Create a comments table in Supabase. Add project_id if you want one table for multiple projects.",
+    description:
+      "Create a comments table in Supabase. Add project_id if you want one table for multiple projects.",
     code: `comments(
   id uuid primary key,
   page_path text not null,

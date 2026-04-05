@@ -1,12 +1,9 @@
 @import "tailwindcss/theme.css";
-@import "tw-animate-css";
 @import "@fontsource-variable/geist";
-@import "shadcn/tailwind.css";
-@import "tailwindcss/utilities.css";
 
 @custom-variant dark (&:is(.dark *));
 
-@theme inline {
+@theme inline prefix(annotation) {
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -31,6 +28,11 @@
   --radius-xl: calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);
 }
+
+@source "./components/ui/**/*.{ts,tsx}";
+@source "./lib/**/*.{ts,tsx}";
+
+@tailwind utilities source(none);
 
 @layer base {
   [data-annotation-overlay-scene="true"] {
@@ -84,11 +86,9 @@
   [data-annotation-overlay-scene="true"],
   [data-annotation-overlay-scene="true"] * {
     box-sizing: border-box;
-  }
-
-  [data-annotation-overlay-scene="true"],
-  [data-annotation-overlay-scene="true"] * {
-    @apply border-border;
+    border-width: 0;
+    border-style: solid;
+    border-color: var(--border);
   }
 
   [data-annotation-overlay-scene="true"] button:not(:disabled),
@@ -98,7 +98,28 @@
 
   [data-annotation-overlay-scene="true"] button,
   [data-annotation-overlay-scene="true"] input,
+  [data-annotation-overlay-scene="true"] select,
+  [data-annotation-overlay-scene="true"] optgroup,
   [data-annotation-overlay-scene="true"] textarea {
     font: inherit;
+    font-feature-settings: inherit;
+    font-variation-settings: inherit;
+    letter-spacing: inherit;
+    color: inherit;
+    border-radius: 0;
+    background-color: transparent;
+    opacity: 1;
+  }
+
+  [data-annotation-overlay-scene="true"] button,
+  [data-annotation-overlay-scene="true"] input:where([type="button"], [type="reset"], [type="submit"]) {
+    appearance: button;
+    background-image: none;
+    padding: 0;
+  }
+
+  [data-annotation-overlay-scene="true"] button,
+  [data-annotation-overlay-scene="true"] select {
+    text-transform: none;
   }
 }

@@ -25,9 +25,15 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), oxlintPlugin()],
   build: {
     lib: {
-      entry: fileURLToPath(new URL("./src/index.ts", import.meta.url)),
+      entry: {
+        index: fileURLToPath(new URL("./src/index.ts", import.meta.url)),
+        styles: fileURLToPath(new URL("./src/styles.ts", import.meta.url)),
+      },
       formats: ["es", "cjs"],
-      fileName: "index",
+      fileName: (format, entryName) => {
+        const extension = format === "es" ? "js" : "cjs";
+        return `${entryName}.${extension}`;
+      },
       cssFileName: "styles",
     },
     rollupOptions: {

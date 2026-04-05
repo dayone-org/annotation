@@ -7,7 +7,7 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
       type={type}
       data-slot="input"
       className={cn(
-        "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
+        "annotation:h-8 annotation:w-full annotation:min-w-0 annotation:rounded-lg annotation:border annotation:border-input annotation:bg-transparent annotation:px-2.5 annotation:py-1 annotation:text-base annotation:transition-colors annotation:outline-none annotation:file:inline-flex annotation:file:h-6 annotation:file:border-0 annotation:file:bg-transparent annotation:file:text-sm annotation:file:font-medium annotation:file:text-foreground annotation:placeholder:text-muted-foreground annotation:disabled:pointer-events-none annotation:disabled:cursor-not-allowed annotation:disabled:bg-input/50 annotation:disabled:opacity-50 annotation:aria-invalid:border-destructive annotation:aria-invalid:ring-3 annotation:aria-invalid:ring-destructive/20 annotation:md:text-sm annotation:dark:bg-input/30 annotation:dark:disabled:bg-input/80 annotation:dark:aria-invalid:border-destructive/50 annotation:dark:aria-invalid:ring-destructive/40",
         className,
       )}
       {...props}

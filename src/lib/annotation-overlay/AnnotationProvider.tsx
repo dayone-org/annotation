@@ -319,7 +319,10 @@ export function AnnotationProvider({
         );
       });
 
-      let query = client.from(tableName).update({ rect, selector: nextSelector }).eq("id", threadId);
+      let query = client
+        .from(tableName)
+        .update({ rect, selector: nextSelector })
+        .eq("id", threadId);
       if (normalizedProjectId) {
         query = query.eq("project_id", normalizedProjectId);
       }

@@ -11,13 +11,10 @@ npm install github:dayone-org/annotation#main
 ## Usage
 
 ```tsx
+import "annotation/styles.css";
 import { Annotation } from "annotation";
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>

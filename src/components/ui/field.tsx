@@ -9,7 +9,7 @@ function FieldSet({ className, ...props }: React.ComponentProps<"fieldset">) {
     <fieldset
       data-slot="field-set"
       className={cn(
-        "flex flex-col gap-4 has-[>[data-slot=checkbox-group]]:gap-3 has-[>[data-slot=radio-group]]:gap-3",
+        "annotation:flex annotation:flex-col annotation:gap-4 annotation:has-[>[data-slot=checkbox-group]]:gap-3 annotation:has-[>[data-slot=radio-group]]:gap-3",
         className,
       )}
       {...props}
@@ -27,7 +27,7 @@ function FieldLegend({
       data-slot="field-legend"
       data-variant={variant}
       className={cn(
-        "mb-1.5 font-medium data-[variant=label]:text-sm data-[variant=legend]:text-base",
+        "annotation:mb-1.5 annotation:font-medium annotation:data-[variant=label]:text-sm annotation:data-[variant=legend]:text-base",
         className,
       )}
       {...props}
@@ -40,7 +40,7 @@ function FieldGroup({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="field-group"
       className={cn(
-        "group/field-group @container/field-group flex w-full flex-col gap-5 data-[slot=checkbox-group]:gap-3 *:data-[slot=field-group]:gap-4",
+        "annotation:group/field-group annotation:@container/field-group annotation:flex annotation:w-full annotation:flex-col annotation:gap-5 annotation:data-[slot=checkbox-group]:gap-3 annotation:*:data-[slot=field-group]:gap-4",
         className,
       )}
       {...props}
@@ -48,20 +48,23 @@ function FieldGroup({ className, ...props }: React.ComponentProps<"div">) {
   );
 }
 
-const fieldVariants = cva("group/field flex w-full gap-2 data-[invalid=true]:text-destructive", {
-  variants: {
-    orientation: {
-      vertical: "flex-col *:w-full [&>.sr-only]:w-auto",
-      horizontal:
-        "flex-row items-center has-[>[data-slot=field-content]]:items-start *:data-[slot=field-label]:flex-auto has-[>[data-slot=field-content]]:[&>[role=checkbox],[role=radio]]:mt-px",
-      responsive:
-        "flex-col *:w-full @md/field-group:flex-row @md/field-group:items-center @md/field-group:*:w-auto @md/field-group:has-[>[data-slot=field-content]]:items-start @md/field-group:*:data-[slot=field-label]:flex-auto [&>.sr-only]:w-auto @md/field-group:has-[>[data-slot=field-content]]:[&>[role=checkbox],[role=radio]]:mt-px",
+const fieldVariants = cva(
+  "annotation:group/field annotation:flex annotation:w-full annotation:gap-2 annotation:data-[invalid=true]:text-destructive",
+  {
+    variants: {
+      orientation: {
+        vertical: "annotation:flex-col annotation:*:w-full annotation:[&>.sr-only]:w-auto",
+        horizontal:
+          "annotation:flex-row annotation:items-center annotation:has-[>[data-slot=field-content]]:items-start annotation:*:data-[slot=field-label]:flex-auto annotation:has-[>[data-slot=field-content]]:[&>[role=checkbox],[role=radio]]:mt-px",
+        responsive:
+          "annotation:flex-col annotation:*:w-full annotation:@md/field-group:flex-row annotation:@md/field-group:items-center annotation:@md/field-group:*:w-auto annotation:@md/field-group:has-[>[data-slot=field-content]]:items-start annotation:@md/field-group:*:data-[slot=field-label]:flex-auto annotation:[&>.sr-only]:w-auto annotation:@md/field-group:has-[>[data-slot=field-content]]:[&>[role=checkbox],[role=radio]]:mt-px",
+      },
+    },
+    defaultVariants: {
+      orientation: "vertical",
     },
   },
-  defaultVariants: {
-    orientation: "vertical",
-  },
-});
+);
 
 function Field({
   className,
@@ -83,7 +86,10 @@ function FieldContent({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="field-content"
-      className={cn("group/field-content flex flex-1 flex-col gap-0.5 leading-snug", className)}
+      className={cn(
+        "annotation:group/field-content annotation:flex annotation:flex-1 annotation:flex-col annotation:gap-0.5 annotation:leading-snug",
+        className,
+      )}
       {...props}
     />
   );
@@ -94,8 +100,8 @@ function FieldLabel({ className, ...props }: React.ComponentProps<typeof Label>)
     <Label
       data-slot="field-label"
       className={cn(
-        "group/field-label peer/field-label flex w-fit gap-2 leading-snug group-data-[disabled=true]/field:opacity-50 has-data-checked:border-primary/30 has-data-checked:bg-primary/5 has-[>[data-slot=field]]:rounded-lg has-[>[data-slot=field]]:border *:data-[slot=field]:p-2.5 dark:has-data-checked:border-primary/20 dark:has-data-checked:bg-primary/10",
-        "has-[>[data-slot=field]]:w-full has-[>[data-slot=field]]:flex-col",
+        "annotation:group/field-label annotation:peer/field-label annotation:flex annotation:w-fit annotation:gap-2 annotation:leading-snug annotation:group-data-[disabled=true]/field:opacity-50 annotation:has-data-[state=checked]:border-primary/30 annotation:has-data-[state=checked]:bg-primary/5 annotation:has-[>[data-slot=field]]:rounded-lg annotation:has-[>[data-slot=field]]:border annotation:*:data-[slot=field]:p-2.5 annotation:dark:has-data-[state=checked]:border-primary/20 annotation:dark:has-data-[state=checked]:bg-primary/10",
+        "annotation:has-[>[data-slot=field]]:w-full annotation:has-[>[data-slot=field]]:flex-col",
         className,
       )}
       {...props}
@@ -108,7 +114,7 @@ function FieldTitle({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="field-label"
       className={cn(
-        "flex w-fit items-center gap-2 text-sm leading-snug font-medium group-data-[disabled=true]/field:opacity-50",
+        "annotation:flex annotation:w-fit annotation:items-center annotation:gap-2 annotation:text-sm annotation:leading-snug annotation:font-medium annotation:group-data-[disabled=true]/field:opacity-50",
         className,
       )}
       {...props}
@@ -121,9 +127,9 @@ function FieldDescription({ className, ...props }: React.ComponentProps<"p">) {
     <p
       data-slot="field-description"
       className={cn(
-        "text-left text-sm leading-normal font-normal text-muted-foreground group-has-data-horizontal/field:text-balance [[data-variant=legend]+&]:-mt-1.5",
-        "last:mt-0 nth-last-2:-mt-1",
-        "[&>a]:underline [&>a]:underline-offset-4 [&>a:hover]:text-primary",
+        "annotation:text-left annotation:text-sm annotation:leading-normal annotation:font-normal annotation:text-muted-foreground annotation:group-data-[orientation=horizontal]/field:text-balance annotation:[[data-variant=legend]+&]:-mt-1.5",
+        "annotation:last:mt-0 annotation:nth-last-2:-mt-1",
+        "annotation:[&>a]:underline annotation:[&>a]:underline-offset-4 annotation:[&>a:hover]:text-primary",
         className,
       )}
       {...props}
@@ -143,15 +149,15 @@ function FieldSeparator({
       data-slot="field-separator"
       data-content={!!children}
       className={cn(
-        "relative -my-2 h-5 text-sm group-data-[variant=outline]/field-group:-mb-2",
+        "annotation:relative annotation:-my-2 annotation:h-5 annotation:text-sm annotation:group-data-[variant=outline]/field-group:-mb-2",
         className,
       )}
       {...props}
     >
-      <Separator className="absolute inset-0 top-1/2" />
+      <Separator className="annotation:absolute annotation:inset-0 annotation:top-1/2" />
       {children && (
         <span
-          className="relative mx-auto block w-fit bg-background px-2 text-muted-foreground"
+          className="annotation:relative annotation:mx-auto annotation:block annotation:w-fit annotation:bg-background annotation:px-2 annotation:text-muted-foreground"
           data-slot="field-separator-content"
         >
           {children}
@@ -185,7 +191,7 @@ function FieldError({
     }
 
     return (
-      <ul className="ml-4 flex list-disc flex-col gap-1">
+      <ul className="annotation:ml-4 annotation:flex annotation:list-disc annotation:flex-col annotation:gap-1">
         {uniqueErrors.map((error, index) => error?.message && <li key={index}>{error.message}</li>)}
       </ul>
     );
@@ -199,7 +205,10 @@ function FieldError({
     <div
       role="alert"
       data-slot="field-error"
-      className={cn("text-sm font-normal text-destructive", className)}
+      className={cn(
+        "annotation:text-sm annotation:font-normal annotation:text-destructive",
+        className,
+      )}
       {...props}
     >
       {content}

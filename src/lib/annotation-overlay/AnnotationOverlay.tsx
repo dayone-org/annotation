@@ -16,7 +16,6 @@ import { cn } from "../utils";
 import { AnnotationProvider } from "./AnnotationProvider";
 import { AnnotationComposer } from "./components/AnnotationComposer";
 import { AnnotationDock } from "./components/AnnotationDock";
-import { ensureAnnotationStyles } from "./install-styles";
 import { CommentMarkers } from "./components/CommentMarkers";
 import { InteractionLayer } from "./components/InteractionLayer";
 import { useAnnotation } from "./useAnnotation";
@@ -46,15 +45,15 @@ function ThreadComment({
   const [isActionsOpen, setIsActionsOpen] = useState(false);
 
   return (
-    <article className="flex flex-col gap-1 border-b border-border bg-background p-4">
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <strong className="text-sm text-foreground">{author}</strong>
+    <article className="annotation:flex annotation:flex-col annotation:gap-1 annotation:border-b annotation:border-border annotation:bg-background annotation:p-4">
+      <div className="annotation:flex annotation:flex-col annotation:gap-2">
+        <div className="annotation:flex annotation:items-center annotation:justify-between annotation:gap-3">
+          <div className="annotation:flex annotation:items-center annotation:gap-2 annotation:text-xs annotation:text-muted-foreground">
+            <strong className="annotation:text-sm annotation:text-foreground">{author}</strong>
             <span>{formatTimestamp(createdAt)}</span>
           </div>
           {isRoot && (onToggleResolved || onRemove) ? (
-            <div className="flex items-center gap-1">
+            <div className="annotation:flex annotation:items-center annotation:gap-1">
               {onRemove && (
                 <Popover onOpenChange={setIsActionsOpen} open={isActionsOpen}>
                   <PopoverTrigger asChild>
@@ -69,14 +68,14 @@ function ThreadComment({
                   </PopoverTrigger>
                   <PopoverContent
                     align="end"
-                    className="z-2147483604 w-32 p-1"
+                    className="annotation:z-2147483604 annotation:w-32 annotation:p-1"
                     data-annotation-overlay-root="true"
                     data-annotation-overlay-scene="true"
                     portalContainer={portalContainer}
                     sideOffset={4}
                   >
                     <Button
-                      className="w-full justify-start"
+                      className="annotation:w-full annotation:justify-start"
                       onClick={() => {
                         setIsActionsOpen(false);
                         onRemove();
@@ -93,7 +92,7 @@ function ThreadComment({
               {onToggleResolved && (
                 <Button
                   aria-label={isResolved ? "Mark annotation as open" : "Resolve annotation"}
-                  className={isResolved ? "opacity-50" : ""}
+                  className={isResolved ? "annotation:opacity-50" : ""}
                   onClick={onToggleResolved}
                   size="icon"
                   type="button"
@@ -105,7 +104,7 @@ function ThreadComment({
             </div>
           ) : null}
         </div>
-        <p className="text-sm leading-6 text-foreground">{text}</p>
+        <p className="annotation:text-sm annotation:leading-6 annotation:text-foreground">{text}</p>
       </div>
     </article>
   );
@@ -155,7 +154,7 @@ function ComposerPopover({
     <Popover onOpenChange={(open) => !open && closeComposer()} open>
       <PopoverAnchor asChild>
         <div
-          className="absolute top-0 left-0"
+          className="annotation:absolute annotation:top-0 annotation:left-0"
           data-annotation-overlay-root="true"
           style={{
             height: composer.rect.height,
@@ -166,7 +165,7 @@ function ComposerPopover({
       </PopoverAnchor>
       <PopoverContent
         align="center"
-        className="z-2147483603 w-[min(22rem,calc(100vw-2rem))] overflow-hidden bg-muted p-0"
+        className="annotation:z-2147483603 annotation:w-[min(22rem,calc(100vw-2rem))] annotation:overflow-hidden annotation:bg-muted annotation:p-0"
         collisionPadding={16}
         data-annotation-overlay-root="true"
         data-annotation-overlay-scene="true"
@@ -183,14 +182,14 @@ function ComposerPopover({
         sideOffset={12}
       >
         <PopoverHeader>
-          <PopoverTitle className="sr-only">
+          <PopoverTitle className="annotation:sr-only">
             {parentComment ? "Reply to annotation" : "New annotation"}
           </PopoverTitle>
         </PopoverHeader>
         {parentComment ? (
           <div>
-            <ScrollArea className="max-h-[min(18rem,40vh)]">
-              <div className="flex flex-col">
+            <ScrollArea className="annotation:max-h-[min(18rem,40vh)]">
+              <div className="annotation:flex annotation:flex-col">
                 {threadComments.map((comment) => (
                   <ThreadComment
                     author={comment.author}
@@ -210,7 +209,7 @@ function ComposerPopover({
             </ScrollArea>
           </div>
         ) : null}
-        <div className={cn("p-2", !parentComment && "bg-background")}>
+        <div className={cn("annotation:p-2", !parentComment && "annotation:bg-background")}>
           <AnnotationComposer errorMessage={errorMessage} onSubmit={submitComment} />
         </div>
       </PopoverContent>
@@ -227,7 +226,7 @@ function AnnotationOverlayScene({
 }) {
   return (
     <div
-      className="absolute top-0 left-0 z-2147483600 h-px w-px"
+      className="annotation:absolute annotation:top-0 annotation:left-0 annotation:z-2147483600 annotation:h-px annotation:w-px"
       data-annotation-overlay-root="true"
       data-annotation-overlay-scene="true"
     >
@@ -240,7 +239,7 @@ function AnnotationOverlayScene({
 }
 
 export function AnnotationOverlay(props: AnnotationOverlayProps) {
-  const [portalContainer, setPortalContainer] = useState<ShadowRoot | null>(null);
+  const [portalContainer, setPortalContainer] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (typeof document === "undefined") {
@@ -249,14 +248,11 @@ export function AnnotationOverlay(props: AnnotationOverlayProps) {
 
     const host = document.createElement("div");
     host.setAttribute("data-dayone-annotation-host", "true");
-
-    const shadowRoot = host.attachShadow({ mode: "open" });
     document.body.appendChild(host);
-    ensureAnnotationStyles(shadowRoot);
-    setPortalContainer(shadowRoot);
+    setPortalContainer(host);
 
     return () => {
-      setPortalContainer((current) => (current === shadowRoot ? null : current));
+      setPortalContainer((current) => (current === host ? null : current));
       host.remove();
     };
   }, []);

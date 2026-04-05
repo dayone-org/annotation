@@ -4,17 +4,21 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 const badgeVariants = cva(
-  "group/badge inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-4xl border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-all has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3!",
+  "annotation:group/badge annotation:inline-flex annotation:h-5 annotation:w-fit annotation:shrink-0 annotation:items-center annotation:justify-center annotation:gap-1 annotation:overflow-hidden annotation:rounded-4xl annotation:border annotation:border-transparent annotation:px-2 annotation:py-0.5 annotation:text-xs annotation:font-medium annotation:whitespace-nowrap annotation:transition-all annotation:has-data-[icon=inline-end]:pr-1.5 annotation:has-data-[icon=inline-start]:pl-1.5 annotation:aria-invalid:border-destructive annotation:aria-invalid:ring-destructive/20 annotation:dark:aria-invalid:ring-destructive/40 annotation:[&>svg]:pointer-events-none annotation:[&>svg]:size-3!",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
-        secondary: "bg-secondary text-secondary-foreground [a]:hover:bg-secondary/80",
+        default:
+          "annotation:bg-primary annotation:text-primary-foreground annotation:[a]:hover:bg-primary/80",
+        secondary:
+          "annotation:bg-secondary annotation:text-secondary-foreground annotation:[a]:hover:bg-secondary/80",
         destructive:
-          "bg-destructive/10 text-destructive dark:bg-destructive/20 [a]:hover:bg-destructive/20",
-        outline: "border-border text-foreground [a]:hover:bg-muted [a]:hover:text-muted-foreground",
-        ghost: "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
-        link: "text-primary underline-offset-4 hover:underline",
+          "annotation:bg-destructive/10 annotation:text-destructive annotation:dark:bg-destructive/20 annotation:[a]:hover:bg-destructive/20",
+        outline:
+          "annotation:border-border annotation:text-foreground annotation:[a]:hover:bg-muted annotation:[a]:hover:text-muted-foreground",
+        ghost:
+          "annotation:hover:bg-muted annotation:hover:text-muted-foreground annotation:dark:hover:bg-muted/50",
+        link: "annotation:text-primary annotation:underline-offset-4 annotation:hover:underline",
       },
     },
     defaultVariants: {

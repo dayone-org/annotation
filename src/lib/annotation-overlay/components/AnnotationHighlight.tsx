@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 import type { AnnotationRect } from "../types";
 
 const annotationHighlightClassName =
-  "pointer-events-none absolute top-0 left-0 rounded-md border-2 border-primary bg-primary/10 will-change-transform";
+  "annotation:pointer-events-none annotation:absolute annotation:top-0 annotation:left-0 annotation:rounded-md annotation:border-2 annotation:border-primary annotation:bg-primary/10 annotation:will-change-transform";
 
 function getAnnotationHighlightStyle(rect: AnnotationRect): CSSProperties {
   return {

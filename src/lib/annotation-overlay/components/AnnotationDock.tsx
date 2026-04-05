@@ -1,5 +1,9 @@
 import {
+  ArrowDownLeftIcon,
+  ArrowDownRightIcon,
   ArrowRightIcon,
+  ArrowUpLeftIcon,
+  ArrowUpRightIcon,
   ChatsIcon,
   CheckCircleIcon,
   CheckIcon,
@@ -74,11 +78,11 @@ type ThreadCardProps = {
 
 const RESOLVE_ALL_COMPLETE_THRESHOLD = 0.96;
 const DEFAULT_POSITION: AnnotationPosition = "bottom-right";
-const POSITION_OPTIONS: Array<{ label: string; value: AnnotationPosition }> = [
-  { label: "Top left", value: "top-left" },
-  { label: "Top right", value: "top-right" },
-  { label: "Bottom left", value: "bottom-left" },
-  { label: "Bottom right", value: "bottom-right" },
+const POSITION_OPTIONS: Array<{ icon: ReactNode; value: AnnotationPosition }> = [
+  { icon: <ArrowUpLeftIcon />, value: "top-left" },
+  { icon: <ArrowUpRightIcon />, value: "top-right" },
+  { icon: <ArrowDownLeftIcon />, value: "bottom-left" },
+  { icon: <ArrowDownRightIcon />, value: "bottom-right" },
 ];
 
 function isAnnotationPosition(value: string): value is AnnotationPosition {
@@ -100,24 +104,28 @@ function getPositionConfig(position: AnnotationPosition) {
     buttonTransformOrigin: isLeft ? "center left" : "center right",
     cardOffset: isTop ? -10 : 10,
     rootClassName: cn(
-      "fixed z-2147483602 flex gap-4",
-      isTop ? "top-6 flex-col-reverse" : "bottom-6 flex-col",
-      isLeft ? "left-6 items-start" : "right-6 items-end",
+      "annotation:fixed annotation:z-2147483602 annotation:flex annotation:gap-4",
+      isTop
+        ? "annotation:top-6 annotation:flex-col-reverse"
+        : "annotation:bottom-6 annotation:flex-col",
+      isLeft
+        ? "annotation:left-6 annotation:items-start"
+        : "annotation:right-6 annotation:items-end",
     ),
     toolbarOriginClassName: (() => {
       if (position === "top-left") {
-        return "origin-top-left";
+        return "annotation:origin-top-left";
       }
 
       if (position === "top-right") {
-        return "origin-top-right";
+        return "annotation:origin-top-right";
       }
 
       if (position === "bottom-left") {
-        return "origin-bottom-left";
+        return "annotation:origin-bottom-left";
       }
 
-      return "origin-bottom-right";
+      return "annotation:origin-bottom-right";
     })(),
   } as const;
 }
@@ -169,10 +177,10 @@ function getCopyActionIcon(state: CopyState) {
 
 function getResolveSliderIcon(state: ResolveSliderIconState) {
   if (state === "loading") {
-    return <Spinner className="size-4" />;
+    return <Spinner className="annotation:size-4" />;
   }
 
-  return <ArrowRightIcon className="size-4" />;
+  return <ArrowRightIcon className="annotation:size-4" />;
 }
 
 function stopItemClick(event: MouseEvent<HTMLButtonElement>): void {
@@ -190,6 +198,7 @@ function AnimatedIconTransition<T extends string>({
   return (
     <AnimatePresence initial={false} mode="popLayout">
       <motion.div
+        className="annotation:flex annotation:items-center annotation:justify-center"
         animate={{ opacity: 1, filter: "blur(0px)", scale: 1 }}
         exit={{ opacity: 0, filter: "blur(5px)", scale: 0.5 }}
         initial={{ opacity: 0, filter: "blur(5px)", scale: 0.5 }}
@@ -241,17 +250,17 @@ function ThreadCard({
   return (
     <Item
       className={cn(
-        "group bg-background transition-all",
-        isActive && "border border-primary",
-        comment.resolved && "opacity-50",
+        "annotation:group annotation:bg-background annotation:transition-all",
+        isActive && "annotation:border annotation:border-primary",
+        comment.resolved && "annotation:opacity-50",
       )}
       onClick={() => goToThreadAndOpenComposer(comment.id)}
       size="xs"
       variant="outline"
     >
-      <ItemHeader className="flex items-center justify-between gap-2">
+      <ItemHeader className="annotation:flex annotation:items-center annotation:justify-between annotation:gap-2">
         <Badge variant="secondary">{comment.page_path}</Badge>
-        <div className="flex items-center gap-0 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+        <div className="annotation:flex annotation:items-center annotation:gap-0 annotation:opacity-0 annotation:transition-opacity annotation:duration-150 annotation:group-hover:opacity-100">
           <Button
             onClick={(event) => {
               stopItemClick(event);
@@ -279,12 +288,14 @@ function ThreadCard({
           ) : null}
         </div>
       </ItemHeader>
-      <ItemContent className="flex flex-col gap-2 text-sm">
-        <div className="flex flex-col">
-          <p className="font-medium">{comment.author}</p>
-          <p className="whitespace-pre-wrap text-muted-foreground">{comment.text}</p>
+      <ItemContent className="annotation:flex annotation:flex-col annotation:gap-2 annotation:text-sm">
+        <div className="annotation:flex annotation:flex-col">
+          <p className="annotation:font-medium">{comment.author}</p>
+          <p className="annotation:whitespace-pre-wrap annotation:text-muted-foreground">
+            {comment.text}
+          </p>
         </div>
-        <div className="flex justify-between gap-2 text-xs text-muted-foreground">
+        <div className="annotation:flex annotation:justify-between annotation:gap-2 annotation:text-xs annotation:text-muted-foreground">
           <span>
             {replies.length > 0 &&
               `${replies.length} ${replies.length === 1 ? "reply" : "replies"}`}
@@ -394,12 +405,12 @@ function ResolveAllSlider({ onResolveAll }: ResolveAllSliderProps) {
 
   return (
     <div
-      className="relative box-content h-6 overflow-hidden rounded-full border bg-muted"
+      className="annotation:relative annotation:box-content annotation:h-6 annotation:overflow-hidden annotation:rounded-full annotation:border annotation:bg-muted"
       ref={setTrackRef}
     >
       <motion.div
         aria-hidden
-        className="absolute inset-y-0 left-0 rounded-full bg-primary"
+        className="annotation:absolute annotation:inset-y-0 annotation:left-0 annotation:rounded-full annotation:bg-primary"
         style={{
           width: progressWidth,
         }}
@@ -407,8 +418,8 @@ function ResolveAllSlider({ onResolveAll }: ResolveAllSliderProps) {
       <motion.button
         aria-label="Resolve all"
         className={cn(
-          "relative z-10 flex size-6 items-center justify-center rounded-full bg-background shadow-sm ring-1 ring-border transition-colors",
-          !isResolving && "cursor-grab active:cursor-grabbing",
+          "annotation:relative annotation:z-10 annotation:flex annotation:size-6 annotation:items-center annotation:justify-center annotation:rounded-full annotation:bg-background annotation:shadow-sm annotation:ring-1 annotation:ring-border annotation:transition-colors",
+          !isResolving && "annotation:cursor-grab annotation:active:cursor-grabbing",
         )}
         disabled={isResolving}
         drag={isResolving ? false : "x"}
@@ -592,15 +603,17 @@ export function AnnotationDock({
       return (
         <motion.div
           animate="animate"
-          className="flex items-center"
+          className="annotation:flex annotation:items-center"
           exit="exit"
           initial="initial"
           key="floating-button"
           variants={variantsButton}
         >
-          <Button className="pr-1" onClick={() => startAnnotationMode()} size="sm">
+          <Button className="annotation:pr-1" onClick={() => startAnnotationMode()} size="sm">
             Annotation
-            <Kbd className="bg-primary-foreground/15 text-primary-foreground">C</Kbd>
+            <Kbd className="annotation:bg-primary-foreground/15 annotation:text-primary-foreground">
+              C
+            </Kbd>
           </Button>
         </motion.div>
       );
@@ -610,7 +623,7 @@ export function AnnotationDock({
       return (
         <motion.form
           animate="animate"
-          className="flex items-center gap-2 p-1"
+          className="annotation:flex annotation:items-center annotation:gap-2 annotation:p-1"
           exit="exit"
           initial="initial"
           key="floating-button-author-gate"
@@ -622,7 +635,7 @@ export function AnnotationDock({
         >
           <Input
             autoFocus
-            className="w-48 border-none bg-primary-foreground/10 text-primary-foreground placeholder:text-primary-foreground/50"
+            className="annotation:w-48 annotation:border-none annotation:bg-primary-foreground/10 annotation:text-primary-foreground annotation:placeholder:text-primary-foreground/50"
             id="annotation-author-gate-name"
             maxLength={48}
             onChange={(event) => setAuthorGateInput(event.target.value)}
@@ -632,7 +645,7 @@ export function AnnotationDock({
           <Button disabled={!authorGateInput.trim()} size="icon-sm" type="submit">
             <CheckIcon />
           </Button>
-          <Separator className="bg-primary-foreground/25" orientation="vertical" />
+          <Separator className="annotation:bg-primary-black" orientation="vertical" />
           <Button onClick={closeAuthorGate} size="icon-sm" type="button">
             <XIcon />
           </Button>
@@ -643,7 +656,10 @@ export function AnnotationDock({
     return (
       <motion.div
         animate="animate"
-        className={cn("flex items-center gap-2 p-1", positionConfig.toolbarOriginClassName)}
+        className={cn(
+          "annotation:flex annotation:items-center annotation:gap-2 annotation:p-1",
+          positionConfig.toolbarOriginClassName,
+        )}
         exit="exit"
         initial="initial"
         key="floating-button-active"
@@ -681,7 +697,7 @@ export function AnnotationDock({
         >
           <GearSixIcon />
         </Button>
-        <Separator className="bg-primary-foreground/25" orientation="vertical" />
+        <Separator className="annotation:bg-primary-foreground/25" orientation="vertical" />
         <Button onClick={closeAnnotationDock} size="icon-sm">
           <XIcon />
         </Button>
@@ -704,7 +720,7 @@ export function AnnotationDock({
             key="annotations"
             variants={variantsCard}
           >
-            <Card className="w-64 pb-0">
+            <Card className="annotation:w-64 annotation:pb-0">
               <CardHeader>
                 <FieldGroup>
                   <Field orientation="horizontal">
@@ -730,17 +746,20 @@ export function AnnotationDock({
                   </Field>
                 </FieldGroup>
               </CardHeader>
-              <CardContent className="flex flex-col gap-0 border-t p-0">
-                <div className="grid h-[min(24rem,calc(100vh-8rem))] gap-0 bg-muted">
-                  <ScrollArea className="h-full max-h-[min(24rem,calc(100vh-8rem))]" type="scroll">
-                    <div className="flex flex-col gap-2 p-2">
+              <CardContent className="annotation:flex annotation:flex-col annotation:gap-0 annotation:border-t annotation:p-0">
+                <div className="annotation:grid annotation:h-[min(24rem,calc(100vh-8rem))] annotation:gap-0 annotation:bg-muted">
+                  <ScrollArea
+                    className="annotation:h-full annotation:max-h-[min(24rem,calc(100vh-8rem))]"
+                    type="scroll"
+                  >
+                    <div className="annotation:flex annotation:flex-col annotation:gap-2 annotation:p-2">
                       {isLoading ? (
-                        <p className="p-2 text-center text-sm text-muted-foreground">
+                        <p className="annotation:p-2 annotation:text-center annotation:text-sm annotation:text-muted-foreground">
                           Loading annotations…
                         </p>
                       ) : null}
                       {!isLoading && visibleThreads.length === 0 ? (
-                        <p className="p-2 text-center text-sm text-muted-foreground">
+                        <p className="annotation:p-2 annotation:text-center annotation:text-sm annotation:text-muted-foreground">
                           No annotations
                         </p>
                       ) : null}
@@ -759,8 +778,8 @@ export function AnnotationDock({
                     </div>
                   </ScrollArea>
                   {errorMessage ? (
-                    <div className="border-t border-border/60 px-4 py-3">
-                      <div className="rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                    <div className="annotation:border-t annotation:border-border/60 annotation:px-4 annotation:py-3">
+                      <div className="annotation:rounded-xl annotation:border annotation:border-destructive/30 annotation:bg-destructive/10 annotation:px-3 annotation:py-2 annotation:text-sm annotation:text-destructive">
                         {errorMessage}
                       </div>
                     </div>
@@ -779,11 +798,11 @@ export function AnnotationDock({
             key="settings"
             variants={variantsCard}
           >
-            <Card className="w-64">
+            <Card className="annotation:w-64">
               <CardHeader>
-                <CardTitle className="flex items-baseline justify-between gap-2">
-                  <img alt="Annotation" className="h-3 w-fit" src={logo} />
-                  <span className="text-xs text-muted-foreground">v0.1</span>
+                <CardTitle className="annotation:flex annotation:items-baseline annotation:justify-between annotation:gap-2">
+                  <img alt="Annotation" className="annotation:h-3 annotation:w-fit" src={logo} />
+                  <span className="annotation:text-xs annotation:text-muted-foreground">v0.1</span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -805,7 +824,7 @@ export function AnnotationDock({
                   </Field>
                   <Field>
                     <FieldLabel>Position</FieldLabel>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="annotation:grid annotation:grid-cols-2 annotation:gap-2">
                       {POSITION_OPTIONS.map((option) => (
                         <Button
                           key={option.value}
@@ -817,13 +836,13 @@ export function AnnotationDock({
                           type="button"
                           variant={position === option.value ? "secondary" : "outline"}
                         >
-                          {option.label}
+                          {option.icon}
                         </Button>
                       ))}
                     </div>
                   </Field>
                   <Field>
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="annotation:flex annotation:items-center annotation:justify-between annotation:gap-2">
                       <FieldLabel>Resolve all</FieldLabel>
                       <Badge variant="secondary">{unresolvedThreadCount}</Badge>
                     </div>
@@ -831,7 +850,7 @@ export function AnnotationDock({
                   </Field>
                 </FieldGroup>
                 {errorMessage ? (
-                  <div className="mt-4 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                  <div className="annotation:mt-4 annotation:rounded-xl annotation:border annotation:border-destructive/30 annotation:bg-destructive/10 annotation:px-3 annotation:py-2 annotation:text-sm annotation:text-destructive">
                     {errorMessage}
                   </div>
                 ) : null}
@@ -843,10 +862,13 @@ export function AnnotationDock({
 
       <motion.div
         animate={{ height, width }}
-        className="overflow-hidden rounded-md bg-primary"
+        className="annotation:overflow-hidden annotation:rounded-md annotation:bg-primary"
         transition={{ duration: 0.25, ease: [0.17, 0.84, 0.44, 1] }}
       >
-        <div className="relative h-fit w-fit overflow-hidden" ref={refContainer}>
+        <div
+          className="annotation:relative annotation:h-fit annotation:w-fit annotation:overflow-hidden"
+          ref={refContainer}
+        >
           <AnimatePresence mode="popLayout">{renderDock()}</AnimatePresence>
         </div>
       </motion.div>

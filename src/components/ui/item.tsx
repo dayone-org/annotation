@@ -10,7 +10,7 @@ function ItemGroup({ className, ...props }: React.ComponentProps<"div">) {
       role="list"
       data-slot="item-group"
       className={cn(
-        "group/item-group flex w-full flex-col gap-4 has-data-[size=sm]:gap-2.5 has-data-[size=xs]:gap-2",
+        "annotation:group/item-group annotation:flex annotation:w-full annotation:flex-col annotation:gap-4 annotation:has-data-[size=sm]:gap-2.5 annotation:has-data-[size=xs]:gap-2",
         className,
       )}
       {...props}
@@ -23,25 +23,25 @@ function ItemSeparator({ className, ...props }: React.ComponentProps<typeof Sepa
     <Separator
       data-slot="item-separator"
       orientation="horizontal"
-      className={cn("my-2", className)}
+      className={cn("annotation:my-2", className)}
       {...props}
     />
   );
 }
 
 const itemVariants = cva(
-  "group/item flex w-full flex-wrap items-center rounded-lg border text-sm transition-colors duration-100 outline-none [a]:transition-colors [a]:hover:bg-muted",
+  "annotation:group/item annotation:flex annotation:w-full annotation:flex-wrap annotation:items-center annotation:rounded-lg annotation:border annotation:text-sm annotation:transition-colors annotation:duration-100 annotation:outline-none annotation:[a]:transition-colors annotation:[a]:hover:bg-muted",
   {
     variants: {
       variant: {
-        default: "border-transparent",
-        outline: "border-border",
-        muted: "border-transparent bg-muted/50",
+        default: "annotation:border-transparent",
+        outline: "annotation:border-border",
+        muted: "annotation:border-transparent annotation:bg-muted/50",
       },
       size: {
-        default: "gap-2.5 px-3 py-2.5",
-        sm: "gap-2.5 px-3 py-2.5",
-        xs: "gap-2 px-2.5 py-2 in-data-[slot=dropdown-menu-content]:p-0",
+        default: "annotation:gap-2.5 annotation:px-3 annotation:py-2.5",
+        sm: "annotation:gap-2.5 annotation:px-3 annotation:py-2.5",
+        xs: "annotation:gap-2 annotation:px-2.5 annotation:py-2 annotation:in-data-[slot=dropdown-menu-content]:p-0",
       },
     },
     defaultVariants: {
@@ -71,14 +71,14 @@ function Item({
 }
 
 const itemMediaVariants = cva(
-  "flex shrink-0 items-center justify-center gap-2 group-has-data-[slot=item-description]/item:translate-y-0.5 group-has-data-[slot=item-description]/item:self-start [&_svg]:pointer-events-none",
+  "annotation:flex annotation:shrink-0 annotation:items-center annotation:justify-center annotation:gap-2 annotation:group-has-data-[slot=item-description]/item:translate-y-0.5 annotation:group-has-data-[slot=item-description]/item:self-start annotation:[&_svg]:pointer-events-none",
   {
     variants: {
       variant: {
-        default: "bg-transparent",
-        icon: "[&_svg:not([class*='size-'])]:size-4",
+        default: "annotation:bg-transparent",
+        icon: "annotation:[&_svg:not([class*='size-'])]:size-4",
         image:
-          "size-10 overflow-hidden rounded-sm group-data-[size=sm]/item:size-8 group-data-[size=xs]/item:size-6 [&_img]:size-full [&_img]:object-cover",
+          "annotation:size-10 annotation:overflow-hidden annotation:rounded-sm annotation:group-data-[size=sm]/item:size-8 annotation:group-data-[size=xs]/item:size-6 annotation:[&_img]:size-full annotation:[&_img]:object-cover",
       },
     },
     defaultVariants: {
@@ -107,7 +107,7 @@ function ItemContent({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="item-content"
       className={cn(
-        "flex flex-1 flex-col gap-1 group-data-[size=xs]/item:gap-0 [&+[data-slot=item-content]]:flex-none",
+        "annotation:flex annotation:flex-1 annotation:flex-col annotation:gap-1 annotation:group-data-[size=xs]/item:gap-0 annotation:[&+[data-slot=item-content]]:flex-none",
         className,
       )}
       {...props}
@@ -120,7 +120,7 @@ function ItemTitle({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="item-title"
       className={cn(
-        "line-clamp-1 flex w-fit items-center gap-2 text-sm leading-snug font-medium underline-offset-4",
+        "annotation:line-clamp-1 annotation:flex annotation:w-fit annotation:items-center annotation:gap-2 annotation:text-sm annotation:leading-snug annotation:font-medium annotation:underline-offset-4",
         className,
       )}
       {...props}
@@ -133,7 +133,7 @@ function ItemDescription({ className, ...props }: React.ComponentProps<"p">) {
     <p
       data-slot="item-description"
       className={cn(
-        "line-clamp-2 text-left text-sm leading-normal font-normal text-muted-foreground group-data-[size=xs]/item:text-xs [&>a]:underline [&>a]:underline-offset-4 [&>a:hover]:text-primary",
+        "annotation:line-clamp-2 annotation:text-left annotation:text-sm annotation:leading-normal annotation:font-normal annotation:text-muted-foreground annotation:group-data-[size=xs]/item:text-xs annotation:[&>a]:underline annotation:[&>a]:underline-offset-4 annotation:[&>a:hover]:text-primary",
         className,
       )}
       {...props}
@@ -143,7 +143,11 @@ function ItemDescription({ className, ...props }: React.ComponentProps<"p">) {
 
 function ItemActions({ className, ...props }: React.ComponentProps<"div">) {
   return (
-    <div data-slot="item-actions" className={cn("flex items-center gap-2", className)} {...props} />
+    <div
+      data-slot="item-actions"
+      className={cn("annotation:flex annotation:items-center annotation:gap-2", className)}
+      {...props}
+    />
   );
 }
 
@@ -151,7 +155,10 @@ function ItemHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="item-header"
-      className={cn("flex basis-full items-center justify-between gap-2", className)}
+      className={cn(
+        "annotation:flex annotation:basis-full annotation:items-center annotation:justify-between annotation:gap-2",
+        className,
+      )}
       {...props}
     />
   );
@@ -161,7 +168,10 @@ function ItemFooter({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="item-footer"
-      className={cn("flex basis-full items-center justify-between gap-2", className)}
+      className={cn(
+        "annotation:flex annotation:basis-full annotation:items-center annotation:justify-between annotation:gap-2",
+        className,
+      )}
       {...props}
     />
   );
