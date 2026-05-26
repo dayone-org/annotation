@@ -15,11 +15,10 @@ const steps = [
   {
     title: "Database",
     description:
-      "Create a comments table in Supabase. Add project_id if you want one table for multiple projects.",
+      "Create one comments table per project, or add project_id when one table should back multiple projects.",
     code: `comments(
   id uuid primary key,
   page_path text not null,
-  project_id text,
   selector text,
   rect jsonb,
   text text not null,
@@ -28,7 +27,10 @@ const steps = [
   created_at timestamptz default now(),
   resolved_at timestamptz,
   parent_id uuid references comments(id)
-)`,
+)
+
+-- Shared table mode only:
+alter table comments add column project_id text not null;`,
   },
   {
     title: "Environment",
@@ -38,7 +40,8 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=your-supabase-anon-key`,
   },
   {
     title: "Usage",
-    description: "Render the annotation widget from your app layout.",
+    description:
+      "Render the widget from your app layout. Add projectId only for shared table mode.",
     code: `import { Annotation } from "annotation";
 
 <Annotation
@@ -265,6 +268,7 @@ function App() {
           pagePath={currentPath}
           supabaseAnonKey={annotationSupabaseAnonKey}
           supabaseUrl={annotationSupabaseUrl}
+          projectId="demo"
         />
       </div>
     </div>

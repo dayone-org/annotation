@@ -104,7 +104,9 @@ function ThreadComment({
             </div>
           ) : null}
         </div>
-        <p className="annotation:text-sm annotation:leading-6 annotation:text-foreground">{text}</p>
+        <p className="annotation:text-sm annotation:leading-6 annotation:whitespace-pre-wrap annotation:text-foreground">
+          {text}
+        </p>
       </div>
     </article>
   );

@@ -29,6 +29,17 @@ import { getCommentMap, getThreadRootId, normalizeComment, sortComments } from "
 
 const supabaseClientCache = new Map<string, SupabaseClient>();
 const DEFAULT_TABLE_NAME = "comments";
+const PROJECT_ID_REQUIRED_MESSAGE =
+  "This comments table has a project_id column. Pass projectId to <Annotation /> to keep projects isolated.";
+
+type SupabaseErrorLike = {
+  code?: string;
+  details?: string;
+  hint?: string;
+  message?: string;
+};
+
+type ProjectIdColumnState = "unknown" | "present" | "absent" | "error";
 
 function getSupabaseClient(url: string, key: string): SupabaseClient {
   const cacheKey = `${url}::${key}`;
@@ -60,6 +71,15 @@ function getRealtimeChannelName(tableName: string, projectId: string | null): st
   return projectId
     ? `annotation-comments:${tableName}:${projectId}`
     : `annotation-comments:${tableName}`;
+}
+
+function isMissingProjectIdColumnError(error: SupabaseErrorLike): boolean {
+  const errorText = [error.message, error.details, error.hint]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return (error.code === "42703" || error.code === "PGRST204") && errorText.includes("project_id");
 }
 
 export function AnnotationProvider({
@@ -98,12 +118,45 @@ export function AnnotationProvider({
   const afterAuthorGateRef = useRef<(() => void) | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [projectIdColumnState, setProjectIdColumnState] = useState<ProjectIdColumnState>("unknown");
 
   const commentMap = useMemo(() => getCommentMap(comments), [comments]);
+  const canUseCommentsTable = Boolean(normalizedProjectId) || projectIdColumnState === "absent";
+  const isMissingProjectIdForSharedTable =
+    !normalizedProjectId && projectIdColumnState === "present";
+
+  const blockMissingProjectId = useCallback(() => {
+    setComments([]);
+    setErrorMessage(PROJECT_ID_REQUIRED_MESSAGE);
+    setIsLoading(false);
+  }, []);
+
+  const canWriteComments = useCallback(() => {
+    if (canUseCommentsTable) {
+      return true;
+    }
+
+    if (isMissingProjectIdForSharedTable) {
+      blockMissingProjectId();
+    }
+
+    return false;
+  }, [blockMissingProjectId, canUseCommentsTable, isMissingProjectIdForSharedTable]);
 
   const loadComments = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage(null);
+
+    if (!canUseCommentsTable) {
+      setComments([]);
+
+      if (isMissingProjectIdForSharedTable) {
+        setErrorMessage(PROJECT_ID_REQUIRED_MESSAGE);
+        setIsLoading(false);
+      }
+
+      return;
+    }
 
     let query = client.from(tableName).select("*").order("created_at", { ascending: true });
     if (normalizedProjectId) {
@@ -129,7 +182,13 @@ export function AnnotationProvider({
       );
       setIsLoading(false);
     });
-  }, [client, normalizedProjectId, tableName]);
+  }, [
+    canUseCommentsTable,
+    client,
+    isMissingProjectIdForSharedTable,
+    normalizedProjectId,
+    tableName,
+  ]);
 
   const syncPath = useCallback(() => {
     const nextPath = getActivePath(pagePath);
@@ -155,6 +214,51 @@ export function AnnotationProvider({
   }, [annotationMode]);
 
   useEffect(() => {
+    if (normalizedProjectId) {
+      setProjectIdColumnState("unknown");
+      return;
+    }
+
+    let isActive = true;
+
+    setProjectIdColumnState("unknown");
+    setIsLoading(true);
+    setErrorMessage(null);
+
+    async function detectProjectIdColumn() {
+      const { error } = await client.from(tableName).select("project_id").limit(1);
+
+      if (!isActive) {
+        return;
+      }
+
+      if (!error) {
+        setProjectIdColumnState("present");
+        setComments([]);
+        setErrorMessage(PROJECT_ID_REQUIRED_MESSAGE);
+        setIsLoading(false);
+        return;
+      }
+
+      if (isMissingProjectIdColumnError(error)) {
+        setProjectIdColumnState("absent");
+        return;
+      }
+
+      setProjectIdColumnState("error");
+      setComments([]);
+      setErrorMessage(error.message);
+      setIsLoading(false);
+    }
+
+    void detectProjectIdColumn();
+
+    return () => {
+      isActive = false;
+    };
+  }, [client, normalizedProjectId, tableName]);
+
+  useEffect(() => {
     void loadComments();
   }, [currentPath, loadComments]);
 
@@ -173,6 +277,10 @@ export function AnnotationProvider({
   }, [pagePath, syncPath]);
 
   useEffect(() => {
+    if (!canUseCommentsTable) {
+      return;
+    }
+
     const channel = client
       .channel(getRealtimeChannelName(tableName, normalizedProjectId))
       .on(
@@ -192,7 +300,7 @@ export function AnnotationProvider({
     return () => {
       void client.removeChannel(channel);
     };
-  }, [client, loadComments, normalizedProjectId, tableName]);
+  }, [canUseCommentsTable, client, loadComments, normalizedProjectId, tableName]);
 
   const setAuthor = useCallback(
     (value: string) => {
@@ -300,6 +408,10 @@ export function AnnotationProvider({
 
   const updateThreadRect = useCallback(
     async (commentId: string, rect: AnnotationRect, selector?: string | null) => {
+      if (!canWriteComments()) {
+        return false;
+      }
+
       const threadId = getThreadRootId(commentId, commentMap);
       const target = commentMap.get(threadId);
       if (!target) {
@@ -345,7 +457,7 @@ export function AnnotationProvider({
 
       return true;
     },
-    [client, commentMap, normalizedProjectId, tableName],
+    [canWriteComments, client, commentMap, normalizedProjectId, tableName],
   );
 
   const scrollToComment = useCallback(
@@ -413,6 +525,10 @@ export function AnnotationProvider({
 
   const submitComment = useCallback(
     async (text: string) => {
+      if (!canWriteComments()) {
+        return false;
+      }
+
       if (!composer) {
         return false;
       }
@@ -454,11 +570,24 @@ export function AnnotationProvider({
       );
       return true;
     },
-    [author, client, commentMap, composer, currentPath, normalizedProjectId, tableName],
+    [
+      author,
+      canWriteComments,
+      client,
+      commentMap,
+      composer,
+      currentPath,
+      normalizedProjectId,
+      tableName,
+    ],
   );
 
   const removeThread = useCallback(
     async (commentId: string) => {
+      if (!canWriteComments()) {
+        return false;
+      }
+
       const threadId = getThreadRootId(commentId, commentMap);
       const target = commentMap.get(threadId);
       if (!target) {
@@ -511,10 +640,23 @@ export function AnnotationProvider({
       setActiveThreadId((previous) => (previous === threadId ? null : previous));
       return true;
     },
-    [client, closeComposer, commentMap, comments, composer, normalizedProjectId, tableName],
+    [
+      canWriteComments,
+      client,
+      closeComposer,
+      commentMap,
+      comments,
+      composer,
+      normalizedProjectId,
+      tableName,
+    ],
   );
 
   const resolveAllComments = useCallback(async () => {
+    if (!canWriteComments()) {
+      return false;
+    }
+
     const openThreadIds = comments
       .filter((comment) => comment.parent_id === null && !comment.resolved)
       .map((comment) => comment.id);
@@ -569,10 +711,14 @@ export function AnnotationProvider({
       previous && resolvedThreadIds.has(previous) ? null : previous,
     );
     return true;
-  }, [client, closeComposer, comments, composer, normalizedProjectId, tableName]);
+  }, [canWriteComments, client, closeComposer, comments, composer, normalizedProjectId, tableName]);
 
   const toggleResolved = useCallback(
     async (commentId: string) => {
+      if (!canWriteComments()) {
+        return;
+      }
+
       const threadId = getThreadRootId(commentId, commentMap);
       const target = commentMap.get(threadId);
       if (!target) {
@@ -619,7 +765,7 @@ export function AnnotationProvider({
 
       setActiveThreadId(threadId);
     },
-    [client, closeComposer, commentMap, composer, normalizedProjectId, tableName],
+    [canWriteComments, client, closeComposer, commentMap, composer, normalizedProjectId, tableName],
   );
 
   useEffect(() => {

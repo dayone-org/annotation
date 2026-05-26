@@ -47,7 +47,9 @@ create table comments (
 );
 ```
 
-### Single Table Mode
+### Table Modes
+
+For one project per comments table, use the base schema above and omit `projectId`.
 
 If you want one comments table to back multiple projects, add a `project_id` column and pass
 `projectId` to `<Annotation />`.
@@ -64,6 +66,9 @@ alter table comments
   projectId="marketing-site"
 />
 ```
+
+When a table has a `project_id` column, `<Annotation />` requires `projectId`. This prevents
+loading comments from every project in a shared table by accident.
 
 ## Environment Variables
 
