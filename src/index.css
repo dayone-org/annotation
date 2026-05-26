@@ -84,11 +84,56 @@
   }
 
   [data-annotation-overlay-scene="true"],
-  [data-annotation-overlay-scene="true"] * {
+  [data-annotation-overlay-scene="true"] *,
+  [data-annotation-overlay-scene="true"] ::before,
+  [data-annotation-overlay-scene="true"] ::after {
     box-sizing: border-box;
     border-width: 0;
     border-style: solid;
     border-color: var(--border);
+  }
+
+  [data-annotation-overlay-scene="true"] h1,
+  [data-annotation-overlay-scene="true"] h2,
+  [data-annotation-overlay-scene="true"] h3,
+  [data-annotation-overlay-scene="true"] h4,
+  [data-annotation-overlay-scene="true"] h5,
+  [data-annotation-overlay-scene="true"] h6,
+  [data-annotation-overlay-scene="true"] p,
+  [data-annotation-overlay-scene="true"] pre,
+  [data-annotation-overlay-scene="true"] blockquote,
+  [data-annotation-overlay-scene="true"] figure,
+  [data-annotation-overlay-scene="true"] dl,
+  [data-annotation-overlay-scene="true"] dd {
+    margin: 0;
+  }
+
+  [data-annotation-overlay-scene="true"] ol,
+  [data-annotation-overlay-scene="true"] ul,
+  [data-annotation-overlay-scene="true"] menu {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  [data-annotation-overlay-scene="true"] img,
+  [data-annotation-overlay-scene="true"] svg,
+  [data-annotation-overlay-scene="true"] video,
+  [data-annotation-overlay-scene="true"] canvas {
+    display: block;
+    vertical-align: middle;
+  }
+
+  [data-annotation-overlay-scene="true"] img,
+  [data-annotation-overlay-scene="true"] video {
+    max-width: 100%;
+    height: auto;
+  }
+
+  [data-annotation-overlay-scene="true"] table {
+    border-collapse: collapse;
+    border-color: inherit;
+    text-indent: 0;
   }
 
   [data-annotation-overlay-scene="true"] button:not(:disabled),
@@ -104,6 +149,7 @@
     font: inherit;
     font-feature-settings: inherit;
     font-variation-settings: inherit;
+    margin: 0;
     letter-spacing: inherit;
     color: inherit;
     border-radius: 0;
@@ -112,7 +158,8 @@
   }
 
   [data-annotation-overlay-scene="true"] button,
-  [data-annotation-overlay-scene="true"] input:where([type="button"], [type="reset"], [type="submit"]) {
+  [data-annotation-overlay-scene="true"]
+    input:where([type="button"], [type="reset"], [type="submit"]) {
     appearance: button;
     background-image: none;
     padding: 0;
@@ -121,5 +168,13 @@
   [data-annotation-overlay-scene="true"] button,
   [data-annotation-overlay-scene="true"] select {
     text-transform: none;
+  }
+
+  [data-annotation-overlay-scene="true"] textarea {
+    resize: vertical;
+  }
+
+  [data-annotation-overlay-scene="true"] [hidden] {
+    display: none !important;
   }
 }
