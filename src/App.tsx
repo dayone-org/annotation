@@ -22,6 +22,7 @@ const steps = [
   selector text,
   rect jsonb,
   text text not null,
+  screenshot jsonb,
   author text not null,
   resolved boolean default false,
   created_at timestamptz default now(),

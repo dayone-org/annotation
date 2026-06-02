@@ -8,4 +8,5 @@ export type {
   AnnotationProps,
   AnnotationOverlayProps,
   AnnotationRect,
+  AnnotationScreenshot,
 } from "./lib/annotation-overlay/types";

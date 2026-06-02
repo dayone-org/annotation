@@ -1,6 +1,11 @@
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
-import type { AnnotationComment, AnnotationRect, MarkerPosition } from "./types";
+import type {
+  AnnotationComment,
+  AnnotationRect,
+  AnnotationScreenshot,
+  MarkerPosition,
+} from "./types";
 import { querySelectorSafely } from "./selector";
 
 dayjs.extend(relativeTime);
@@ -86,11 +91,67 @@ export function normalizeComment(
     selector: row.selector ?? null,
     rect: row.rect ?? null,
     text: row.text ?? "",
+    screenshot: normalizeScreenshot(
+      row.screenshot ?? (row as Partial<AnnotationComment> & { screenshots?: unknown }).screenshots,
+    ),
     author: row.author ?? "Unknown",
     resolved: Boolean(row.resolved),
     created_at: row.created_at ?? new Date(0).toISOString(),
     resolved_at: row.resolved_at ?? null,
     parent_id: row.parent_id ?? null,
+  };
+}
+
+export function normalizeScreenshot(value: unknown): AnnotationScreenshot | null {
+  if (Array.isArray(value)) {
+    return normalizeScreenshot(value[0]);
+  }
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const screenshot = value as Partial<AnnotationScreenshot>;
+  if (typeof screenshot.data_url !== "string" || !screenshot.data_url.startsWith("data:image/")) {
+    return null;
+  }
+
+  return {
+    id: typeof screenshot.id === "string" ? screenshot.id : crypto.randomUUID(),
+    name: typeof screenshot.name === "string" ? screenshot.name : "Screenshot",
+    type: typeof screenshot.type === "string" ? screenshot.type : "image/jpeg",
+    size: typeof screenshot.size === "number" ? screenshot.size : 0,
+    data_url: screenshot.data_url,
+    created_at:
+      typeof screenshot.created_at === "string" ? screenshot.created_at : new Date(0).toISOString(),
+    viewport: normalizeScreenshotViewport(screenshot.viewport),
+  };
+}
+
+function normalizeScreenshotViewport(
+  value: AnnotationScreenshot["viewport"] | unknown,
+): AnnotationScreenshot["viewport"] | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const viewport = value as Partial<NonNullable<AnnotationScreenshot["viewport"]>>;
+  if (
+    typeof viewport.width !== "number" ||
+    typeof viewport.height !== "number" ||
+    typeof viewport.scroll_x !== "number" ||
+    typeof viewport.scroll_y !== "number" ||
+    typeof viewport.device_pixel_ratio !== "number"
+  ) {
+    return undefined;
+  }
+
+  return {
+    width: viewport.width,
+    height: viewport.height,
+    scroll_x: viewport.scroll_x,
+    scroll_y: viewport.scroll_y,
+    device_pixel_ratio: viewport.device_pixel_ratio,
   };
 }
 
@@ -148,6 +209,10 @@ function formatThreadMessages(root: AnnotationComment, comments: AnnotationComme
     lines.push(
       `${index + 1}. ${comment.author}: ${normalizeWhitespace(comment.text) || "(empty comment)"}`,
     );
+
+    if (comment.screenshot) {
+      lines.push(`   - Screenshot: ![${comment.screenshot.name}](${comment.screenshot.data_url})`);
+    }
   });
 
   lines.push("");

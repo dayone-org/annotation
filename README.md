@@ -39,6 +39,7 @@ create table comments (
   selector text,
   rect jsonb,
   text text not null,
+  screenshot jsonb,
   author text not null,
   resolved boolean default false,
   created_at timestamptz default now(),
@@ -57,6 +58,27 @@ If you want one comments table to back multiple projects, add a `project_id` col
 ```sql
 alter table comments
   add column project_id text not null default 'default-project';
+```
+
+To add the screenshot column to an existing table:
+
+```sql
+alter table comments
+  add column screenshot jsonb;
+```
+
+If you already added `screenshot` as `not null`, relax it so comments can still save when
+browser-side capture fails. If you previously used the plural `screenshots` draft schema, also
+remove the old array default and clean up existing `[]` values:
+
+```sql
+alter table comments
+  alter column screenshot drop not null,
+  alter column screenshot drop default;
+
+update comments
+set screenshot = null
+where screenshot = '[]'::jsonb;
 ```
 
 ```tsx
@@ -84,6 +106,7 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=
 - Element selection anchored to live DOM targets
 - Marker repositioning on scroll and resize
 - Threaded comments with resolve, remove, and bulk copy actions
+- Automatic viewport screenshot attached to each comment
 - Cross-page thread browsing from the dock
 - Dock positioning in all four corners
 - Optional shared-table scoping with `projectId`

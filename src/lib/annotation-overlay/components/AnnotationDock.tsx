@@ -9,6 +9,7 @@ import {
   CheckIcon,
   CopySimpleIcon,
   GearSixIcon,
+  ImageSquareIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import {
@@ -225,6 +226,7 @@ function ThreadCard({
   const [copyState, setCopyState] = useCopyState();
   const replies = getReplies(comments, comment.id);
   const isActive = activeThreadId === comment.id;
+  const hasScreenshot = [comment, ...replies].some((threadComment) => threadComment.screenshot);
 
   const goToThreadAndOpenComposer = useCallback(
     (scrollTargetId: string) => {
@@ -300,7 +302,12 @@ function ThreadCard({
             {replies.length > 0 &&
               `${replies.length} ${replies.length === 1 ? "reply" : "replies"}`}
           </span>
-          <span>{formatTimestamp(comment.created_at)}</span>
+          <span className="annotation:flex annotation:items-center annotation:gap-2">
+            {hasScreenshot ? (
+              <ImageSquareIcon aria-label="Thread has screenshot" className="annotation:size-3" />
+            ) : null}
+            {formatTimestamp(comment.created_at)}
+          </span>
         </div>
       </ItemContent>
     </Item>

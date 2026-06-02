@@ -16,6 +16,7 @@ import type {
   PendingAnnotation,
 } from "./types";
 import { AnnotationContext, type AnnotationContextValue } from "./annotation-context";
+import { captureViewportScreenshot } from "./screenshot";
 import { querySelectorSafely } from "./selector";
 import {
   DEFAULT_STORAGE_KEY_PREFIX,
@@ -540,6 +541,15 @@ export function AnnotationProvider({
 
       setErrorMessage(null);
 
+      let screenshot;
+      try {
+        screenshot = await captureViewportScreenshot();
+      } catch (error) {
+        console.warn("[annotation] Could not capture screenshot.", error);
+        setErrorMessage(error instanceof Error ? error.message : "Could not capture screenshot.");
+        return false;
+      }
+
       const payload = {
         page_path: currentPath,
         selector: composer.parentId ? null : composer.selector,
@@ -548,6 +558,7 @@ export function AnnotationProvider({
         author,
         resolved: false,
         parent_id: composer.parentId,
+        screenshot,
         ...(normalizedProjectId ? { project_id: normalizedProjectId } : {}),
       };
 

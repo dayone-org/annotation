@@ -22,11 +22,28 @@ export type AnnotationComment = {
   selector: string | null;
   rect: AnnotationRect | null;
   text: string;
+  screenshot: AnnotationScreenshot | null;
   author: string;
   resolved: boolean;
   created_at: string;
   resolved_at: string | null;
   parent_id: string | null;
+};
+
+export type AnnotationScreenshot = {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  data_url: string;
+  created_at: string;
+  viewport?: {
+    width: number;
+    height: number;
+    scroll_x: number;
+    scroll_y: number;
+    device_pixel_ratio: number;
+  };
 };
 
 export type AnnotationPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right";
