@@ -258,7 +258,14 @@ export function getInitials(name: string): string {
     return "?";
   }
 
-  return parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
+  // Single-word names (first-name logins) get two letters so "Sven" and "Simon" stay distinct.
+  // Array.from splits by code point, so umlauts and emoji stay whole.
+  const letters =
+    parts.length === 1
+      ? Array.from(parts[0]).slice(0, 2)
+      : parts.map((part) => Array.from(part)[0]);
+
+  return letters.join("").toUpperCase();
 }
 
 export function formatTimestamp(value: string): string {
