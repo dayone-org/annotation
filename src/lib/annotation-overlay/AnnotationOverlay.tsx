@@ -104,7 +104,7 @@ function ThreadComment({
             </div>
           ) : null}
         </div>
-        <p className="annotation:text-sm annotation:leading-6 annotation:whitespace-pre-wrap annotation:text-foreground">
+        <p className="annotation:text-sm annotation:leading-6 annotation:wrap-anywhere annotation:whitespace-pre-wrap annotation:text-foreground">
           {text}
         </p>
       </div>
@@ -167,7 +167,7 @@ function ComposerPopover({
       </PopoverAnchor>
       <PopoverContent
         align="center"
-        className="annotation:z-2147483603 annotation:w-[min(22rem,calc(100vw-2rem))] annotation:overflow-hidden annotation:bg-muted annotation:p-0"
+        className="annotation:z-2147483603 annotation:flex annotation:max-h-(--radix-popover-content-available-height) annotation:w-[min(22rem,calc(100vw-2rem))] annotation:flex-col annotation:overflow-hidden annotation:bg-muted annotation:p-0"
         collisionPadding={16}
         data-annotation-overlay-root="true"
         data-annotation-overlay-scene="true"
@@ -189,8 +189,8 @@ function ComposerPopover({
           </PopoverTitle>
         </PopoverHeader>
         {parentComment ? (
-          <div>
-            <ScrollArea className="annotation:max-h-[min(18rem,40vh)]">
+          <div className="annotation:flex annotation:min-h-0 annotation:flex-col">
+            <ScrollArea className="annotation:flex annotation:max-h-[min(18rem,40vh)] annotation:min-h-0 annotation:flex-col">
               <div className="annotation:flex annotation:flex-col">
                 {threadComments.map((comment) => (
                   <ThreadComment

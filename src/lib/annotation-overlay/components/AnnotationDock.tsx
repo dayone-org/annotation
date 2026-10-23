@@ -291,7 +291,7 @@ function ThreadCard({
       <ItemContent className="annotation:flex annotation:flex-col annotation:gap-2 annotation:text-sm">
         <div className="annotation:flex annotation:flex-col">
           <p className="annotation:font-medium">{comment.author}</p>
-          <p className="annotation:whitespace-pre-wrap annotation:text-muted-foreground">
+          <p className="annotation:wrap-anywhere annotation:whitespace-pre-wrap annotation:text-muted-foreground">
             {comment.text}
           </p>
         </div>
