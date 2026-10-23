@@ -104,7 +104,7 @@ function getPositionConfig(position: AnnotationPosition) {
     buttonTransformOrigin: isLeft ? "center left" : "center right",
     cardOffset: isTop ? -10 : 10,
     rootClassName: cn(
-      "annotation:fixed annotation:z-2147483602 annotation:flex annotation:gap-4",
+      "annotation:fixed annotation:z-2147483602 annotation:flex annotation:max-h-[calc(100vh-3rem)] annotation:gap-4",
       isTop
         ? "annotation:top-6 annotation:flex-col-reverse"
         : "annotation:bottom-6 annotation:flex-col",
@@ -291,7 +291,7 @@ function ThreadCard({
       <ItemContent className="annotation:flex annotation:flex-col annotation:gap-2 annotation:text-sm">
         <div className="annotation:flex annotation:flex-col">
           <p className="annotation:font-medium">{comment.author}</p>
-          <p className="annotation:whitespace-pre-wrap annotation:text-muted-foreground">
+          <p className="annotation:wrap-anywhere annotation:whitespace-pre-wrap annotation:text-muted-foreground">
             {comment.text}
           </p>
         </div>
@@ -715,6 +715,7 @@ export function AnnotationDock({
         {isPanelOpen ? (
           <motion.div
             animate="animate"
+            className="annotation:flex annotation:min-h-0 annotation:flex-col"
             exit="exit"
             initial="initial"
             key="annotations"
@@ -746,10 +747,10 @@ export function AnnotationDock({
                   </Field>
                 </FieldGroup>
               </CardHeader>
-              <CardContent className="annotation:flex annotation:flex-col annotation:gap-0 annotation:border-t annotation:p-0">
-                <div className="annotation:grid annotation:h-[min(24rem,calc(100vh-8rem))] annotation:gap-0 annotation:bg-muted">
+              <CardContent className="annotation:flex annotation:min-h-0 annotation:flex-col annotation:gap-0 annotation:border-t annotation:p-0">
+                <div className="annotation:grid annotation:h-[min(24rem,calc(100vh-8rem))] annotation:min-h-0 annotation:gap-0 annotation:bg-muted">
                   <ScrollArea
-                    className="annotation:h-full annotation:max-h-[min(24rem,calc(100vh-8rem))]"
+                    className="annotation:h-full annotation:max-h-[min(24rem,calc(100vh-8rem))] annotation:min-h-0"
                     type="scroll"
                   >
                     <div className="annotation:flex annotation:flex-col annotation:gap-2 annotation:p-2">

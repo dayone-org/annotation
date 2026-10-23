@@ -44,7 +44,7 @@ export function AnnotationComposer({ errorMessage = null, onSubmit }: Annotation
         placeholder="Annotate..."
         rows={1}
         value={value}
-        className="annotation:resize-none annotation:border-0 annotation:bg-transparent"
+        className="annotation:max-h-[min(10rem,30vh)] annotation:resize-none annotation:border-0 annotation:bg-transparent"
       />
 
       {errorMessage ? (
