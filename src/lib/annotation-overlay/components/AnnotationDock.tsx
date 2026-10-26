@@ -448,20 +448,19 @@ export function AnnotationDock({
     annotationMode,
     author,
     cancelAnnotationMode,
-    closeAuthorGate,
+    closeAccessNotice,
     comments,
     composer,
     currentPath,
     errorMessage,
-    isAuthorGateOpen,
+    isAccessNoticeOpen,
     isLoading,
+    renameSelf,
     resolveAllComments,
-    setAuthor,
     setShowResolved,
     showResolved,
     startAnnotationMode,
     storageKeyPrefix,
-    submitAuthorGate,
   } = useAnnotation();
   const onlyCurrentPageKey = useMemo(
     () => getStorageKey(storageKeyPrefix, "only_current_page"),
@@ -479,7 +478,10 @@ export function AnnotationDock({
   );
   const [isPanelOpen, setPanelOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [authorGateInput, setAuthorGateInput] = useState("");
+  const [nameDraft, setNameDraft] = useState(author);
+  const trimmedNameDraft = nameDraft.trim();
+  const canSaveName =
+    trimmedNameDraft.length >= 2 && trimmedNameDraft.length <= 48 && trimmedNameDraft !== author;
   const [bulkCopyState, setBulkCopyState] = useCopyState();
 
   const [refContainer, { height, width }] = useMeasure();
@@ -565,10 +567,10 @@ export function AnnotationDock({
   }, [annotationMode]);
 
   useEffect(() => {
-    if (isAuthorGateOpen) {
-      setAuthorGateInput("");
+    if (isSettingsOpen) {
+      setNameDraft(author);
     }
-  }, [isAuthorGateOpen]);
+  }, [author, isSettingsOpen]);
 
   useEffect(() => {
     if (composer && !composer.parentId) {
@@ -578,15 +580,15 @@ export function AnnotationDock({
 
   const toggleAnnotationsPanel = useCallback(() => {
     setIsSettingsOpen(false);
-    closeAuthorGate();
+    closeAccessNotice();
     setPanelOpen((open) => !open);
-  }, [closeAuthorGate]);
+  }, [closeAccessNotice]);
 
   const closeAnnotationDock = useCallback(() => {
     setIsSettingsOpen(false);
-    closeAuthorGate();
+    closeAccessNotice();
     cancelAnnotationMode();
-  }, [cancelAnnotationMode, closeAuthorGate]);
+  }, [cancelAnnotationMode, closeAccessNotice]);
 
   const handleBulkCopy = useCallback(async () => {
     const markdown = formatAnnotationCollectionMarkdown(
@@ -599,7 +601,7 @@ export function AnnotationDock({
   }, [comments, currentPath, currentRouteOpenThreads, setBulkCopyState]);
 
   const renderDock = () => {
-    if (!annotationMode && !isAuthorGateOpen) {
+    if (!annotationMode && !isAccessNoticeOpen) {
       return (
         <motion.div
           animate="animate"
@@ -619,37 +621,24 @@ export function AnnotationDock({
       );
     }
 
-    if (isAuthorGateOpen) {
+    if (isAccessNoticeOpen) {
       return (
-        <motion.form
+        <motion.div
           animate="animate"
-          className="annotation:flex annotation:items-center annotation:gap-2 annotation:p-1"
+          className="annotation:flex annotation:items-center annotation:gap-2 annotation:p-1 annotation:pl-3"
           exit="exit"
           initial="initial"
-          key="floating-button-author-gate"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submitAuthorGate(authorGateInput);
-          }}
+          key="floating-button-access-notice"
+          role="status"
           variants={variantsButton}
         >
-          <Input
-            autoFocus
-            className="annotation:w-48 annotation:border-none annotation:bg-primary-foreground/10 annotation:text-primary-foreground annotation:placeholder:text-primary-foreground/50"
-            id="annotation-author-gate-name"
-            maxLength={48}
-            onChange={(event) => setAuthorGateInput(event.target.value)}
-            placeholder="What's your name?"
-            value={authorGateInput}
-          />
-          <Button disabled={!authorGateInput.trim()} size="icon-sm" type="submit">
-            <CheckIcon />
-          </Button>
-          <Separator className="annotation:bg-primary-black" orientation="vertical" />
-          <Button onClick={closeAuthorGate} size="icon-sm" type="button">
+          <p className="annotation:text-sm annotation:whitespace-nowrap annotation:text-primary-foreground">
+            No access. Open your personal invite link.
+          </p>
+          <Button aria-label="Close" onClick={closeAccessNotice} size="icon-sm" type="button">
             <XIcon />
           </Button>
-        </motion.form>
+        </motion.div>
       );
     }
 
@@ -688,7 +677,7 @@ export function AnnotationDock({
               const next = !open;
               if (next) {
                 setPanelOpen(false);
-                closeAuthorGate();
+                closeAccessNotice();
               }
               return next;
             });
@@ -809,18 +798,26 @@ export function AnnotationDock({
                 <FieldGroup>
                   <Field>
                     <FieldLabel htmlFor="annotation-panel-name">Name</FieldLabel>
-                    <Input
-                      id="annotation-panel-name"
-                      maxLength={48}
-                      onBlur={(event) => {
-                        if (!event.currentTarget.value.trim()) {
-                          cancelAnnotationMode();
+                    <form
+                      className="annotation:flex annotation:gap-2"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (canSaveName) {
+                          void renameSelf(trimmedNameDraft);
                         }
                       }}
-                      onChange={(event) => setAuthor(event.target.value)}
-                      placeholder="Annotator"
-                      value={author}
-                    />
+                    >
+                      <Input
+                        id="annotation-panel-name"
+                        maxLength={48}
+                        minLength={2}
+                        onChange={(event) => setNameDraft(event.target.value)}
+                        value={nameDraft}
+                      />
+                      <Button disabled={!canSaveName} size="sm" type="submit">
+                        Save
+                      </Button>
+                    </form>
                   </Field>
                   <Field>
                     <FieldLabel>Position</FieldLabel>

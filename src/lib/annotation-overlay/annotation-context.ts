@@ -10,13 +10,13 @@ export type AnnotationContextValue = {
   currentPath: string;
   errorMessage: string | null;
   isLoading: boolean;
-  isAuthorGateOpen: boolean;
+  isAccessNoticeOpen: boolean;
   isMarkerHovered: boolean;
+  personId: string | null;
   storageKeyPrefix: string;
-  closeAuthorGate: () => void;
+  closeAccessNotice: () => void;
   setMarkerHovered: (hovered: boolean) => void;
-  setAuthor: (value: string) => void;
-  submitAuthorGate: (name: string) => void;
+  renameSelf: (name: string) => Promise<boolean>;
   setShowResolved: (value: boolean) => void;
   showResolved: boolean;
   startAnnotationMode: () => void;

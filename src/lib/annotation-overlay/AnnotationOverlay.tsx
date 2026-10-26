@@ -122,6 +122,7 @@ function ComposerPopover({
     comments,
     composer,
     errorMessage,
+    personId,
     removeThread,
     submitComment,
     toggleResolved,
@@ -200,7 +201,11 @@ function ComposerPopover({
                     isRoot={comment.id === parentComment.id}
                     key={comment.id}
                     portalContainer={portalContainer}
-                    onRemove={comment.id === parentComment.id ? handleRemoveThread : undefined}
+                    onRemove={
+                      comment.id === parentComment.id && comment.author_id === personId
+                        ? handleRemoveThread
+                        : undefined
+                    }
                     onToggleResolved={
                       comment.id === parentComment.id ? handleToggleResolved : undefined
                     }

@@ -23,6 +23,7 @@ export type AnnotationComment = {
   rect: AnnotationRect | null;
   text: string;
   author: string;
+  author_id?: string | null;
   resolved: boolean;
   created_at: string;
   resolved_at: string | null;
@@ -49,8 +50,9 @@ export type AnnotationOverlayProps = {
   supabaseAnonKey: string;
   pagePath?: string;
   position?: AnnotationPosition;
-  projectId?: string;
+  projectId: string;
   storageKeyPrefix?: string;
+  /** Kommentartabelle im zentralen Schema (Standard `comments`). */
   tableName?: string;
 };
 

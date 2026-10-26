@@ -25,6 +25,30 @@ export function writeStoredString(key: string, value: string): void {
   window.localStorage.removeItem(key);
 }
 
+// Schlüssel aus dem Link (#key=…) übernehmen, speichern und aus der Adresszeile entfernen.
+export function readAccessKey(storageKey: string): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const { hash, pathname, search } = window.location;
+  const match = hash.match(/[#&]key=([^&]*)/);
+  if (match) {
+    const fromLink = decodeURIComponent(match[1]).trim();
+    if (fromLink) {
+      writeStoredString(storageKey, fromLink);
+    }
+    const rest = hash.replace(match[0], "").replace(/^#?&?/, "");
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${pathname}${search}${rest ? `#${rest}` : ""}`,
+    );
+  }
+
+  return readStoredString(storageKey);
+}
+
 export function readStoredBoolean(key: string, fallback: boolean): boolean {
   if (typeof window === "undefined") {
     return fallback;

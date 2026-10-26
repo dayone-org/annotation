@@ -4,11 +4,9 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type PropsWithChildren,
 } from "react";
-import { flushSync } from "react-dom";
 import type {
   AnnotationComment,
   AnnotationOverlayProps,
@@ -20,39 +18,43 @@ import { querySelectorSafely } from "./selector";
 import {
   DEFAULT_STORAGE_KEY_PREFIX,
   getStorageKey,
+  readAccessKey,
   readStoredBoolean,
-  readStoredString,
   writeStoredBoolean,
-  writeStoredString,
 } from "./storage";
 import { getCommentMap, getThreadRootId, normalizeComment, sortComments } from "./utils";
 
 const supabaseClientCache = new Map<string, SupabaseClient>();
 const DEFAULT_TABLE_NAME = "comments";
-const PROJECT_ID_REQUIRED_MESSAGE =
-  "This comments table has a project_id column. Pass projectId to <Annotation /> to keep projects isolated.";
+const PROJECT_ID_REQUIRED_MESSAGE = "Pass projectId to <Annotation />.";
+// Den Anzeigenamen liefert die Person beim Lesen, damit Umbenennungen auch alte Kommentare treffen.
+const COMMENT_SELECT = "*, author:annotation_people(display_name)";
 
-type SupabaseErrorLike = {
-  code?: string;
-  details?: string;
-  hint?: string;
-  message?: string;
+type Person = { id: string; display_name: string };
+
+type CommentRow = Omit<Partial<AnnotationComment>, "author"> & {
+  id: string;
+  author?: { display_name: string } | null;
 };
 
-type ProjectIdColumnState = "unknown" | "present" | "absent" | "error";
+function toComment({ author, ...row }: CommentRow): AnnotationComment {
+  return normalizeComment({ ...row, author: author?.display_name });
+}
 
-function getSupabaseClient(url: string, key: string): SupabaseClient {
-  const cacheKey = `${url}::${key}`;
+function getSupabaseClient(url: string, anonKey: string, accessKey: string): SupabaseClient {
+  const cacheKey = `${url}::${anonKey}::${accessKey}`;
   const cachedClient = supabaseClientCache.get(cacheKey);
   if (cachedClient) {
     return cachedClient;
   }
 
-  const client = createClient(url, key, {
+  const client = createClient(url, anonKey, {
     auth: {
       persistSession: false,
       autoRefreshToken: false,
     },
+    // Die Datenbank prüft bei jeder Anfrage Person und Projektzugriff anhand dieses Schlüssels.
+    global: accessKey ? { headers: { "x-annotation-key": accessKey } } : undefined,
   });
 
   supabaseClientCache.set(cacheKey, client);
@@ -67,21 +69,6 @@ function getActivePath(pathOverride?: string): string {
   return typeof window === "undefined" ? "/" : window.location.pathname;
 }
 
-function getRealtimeChannelName(tableName: string, projectId: string | null): string {
-  return projectId
-    ? `annotation-comments:${tableName}:${projectId}`
-    : `annotation-comments:${tableName}`;
-}
-
-function isMissingProjectIdColumnError(error: SupabaseErrorLike): boolean {
-  const errorText = [error.message, error.details, error.hint]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  return (error.code === "42703" || error.code === "PGRST204") && errorText.includes("project_id");
-}
-
 export function AnnotationProvider({
   children,
   pagePath,
@@ -91,20 +78,18 @@ export function AnnotationProvider({
   supabaseUrl,
   tableName = DEFAULT_TABLE_NAME,
 }: PropsWithChildren<AnnotationOverlayProps>) {
+  const [accessKey] = useState(() => readAccessKey(getStorageKey(storageKeyPrefix, "key")));
   const client = useMemo(
-    () => getSupabaseClient(supabaseUrl, supabaseAnonKey),
-    [supabaseAnonKey, supabaseUrl],
-  );
-  const authorStorageKey = useMemo(
-    () => getStorageKey(storageKeyPrefix, "author"),
-    [storageKeyPrefix],
+    () => getSupabaseClient(supabaseUrl, supabaseAnonKey, accessKey),
+    [accessKey, supabaseAnonKey, supabaseUrl],
   );
   const showResolvedStorageKey = useMemo(
     () => getStorageKey(storageKeyPrefix, "show_resolved"),
     [storageKeyPrefix],
   );
   const normalizedProjectId = useMemo(() => projectId?.trim() || null, [projectId]);
-  const [author, setAuthorState] = useState(() => readStoredString(authorStorageKey));
+  const [person, setPerson] = useState<Person | null>(null);
+  const author = person?.display_name ?? "";
   const [showResolved, setShowResolvedState] = useState(() =>
     readStoredBoolean(showResolvedStorageKey, false),
   );
@@ -112,58 +97,32 @@ export function AnnotationProvider({
   const [comments, setComments] = useState<AnnotationComment[]>([]);
   const [composer, setComposer] = useState<PendingAnnotation | null>(null);
   const [annotationMode, setAnnotationMode] = useState(false);
-  const [isAuthorGateOpen, setAuthorGateOpen] = useState(false);
+  const [isAccessNoticeOpen, setAccessNoticeOpen] = useState(false);
   const [isMarkerHovered, setMarkerHovered] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
-  const afterAuthorGateRef = useRef<(() => void) | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [projectIdColumnState, setProjectIdColumnState] = useState<ProjectIdColumnState>("unknown");
 
   const commentMap = useMemo(() => getCommentMap(comments), [comments]);
-  const canUseCommentsTable = Boolean(normalizedProjectId) || projectIdColumnState === "absent";
-  const isMissingProjectIdForSharedTable =
-    !normalizedProjectId && projectIdColumnState === "present";
-
-  const blockMissingProjectId = useCallback(() => {
-    setComments([]);
-    setErrorMessage(PROJECT_ID_REQUIRED_MESSAGE);
-    setIsLoading(false);
-  }, []);
-
-  const canWriteComments = useCallback(() => {
-    if (canUseCommentsTable) {
-      return true;
-    }
-
-    if (isMissingProjectIdForSharedTable) {
-      blockMissingProjectId();
-    }
-
-    return false;
-  }, [blockMissingProjectId, canUseCommentsTable, isMissingProjectIdForSharedTable]);
+  const canWriteComments = useCallback(
+    () => Boolean(person && normalizedProjectId),
+    [normalizedProjectId, person],
+  );
 
   const loadComments = useCallback(async () => {
-    setIsLoading(true);
-    setErrorMessage(null);
-
-    if (!canUseCommentsTable) {
+    if (!person || !normalizedProjectId) {
       setComments([]);
-
-      if (isMissingProjectIdForSharedTable) {
-        setErrorMessage(PROJECT_ID_REQUIRED_MESSAGE);
-        setIsLoading(false);
-      }
-
       return;
     }
 
-    let query = client.from(tableName).select("*").order("created_at", { ascending: true });
-    if (normalizedProjectId) {
-      query = query.eq("project_id", normalizedProjectId);
-    }
+    setIsLoading(true);
+    setErrorMessage(null);
 
-    const { data, error } = await query;
+    const { data, error } = await client
+      .from(tableName)
+      .select(COMMENT_SELECT)
+      .eq("project_id", normalizedProjectId)
+      .order("created_at", { ascending: true });
 
     if (error) {
       setComments([]);
@@ -173,31 +132,15 @@ export function AnnotationProvider({
     }
 
     startTransition(() => {
-      setComments(
-        sortComments(
-          (data ?? []).map((row) =>
-            normalizeComment(row as Partial<AnnotationComment> & { id: string }),
-          ),
-        ),
-      );
+      setComments(sortComments((data ?? []).map((row) => toComment(row as CommentRow))));
       setIsLoading(false);
     });
-  }, [
-    canUseCommentsTable,
-    client,
-    isMissingProjectIdForSharedTable,
-    normalizedProjectId,
-    tableName,
-  ]);
+  }, [client, normalizedProjectId, person, tableName]);
 
   const syncPath = useCallback(() => {
     const nextPath = getActivePath(pagePath);
     setCurrentPath((previous) => (previous === nextPath ? previous : nextPath));
   }, [pagePath]);
-
-  useEffect(() => {
-    setAuthorState(readStoredString(authorStorageKey));
-  }, [authorStorageKey]);
 
   useEffect(() => {
     setShowResolvedState(readStoredBoolean(showResolvedStorageKey, false));
@@ -213,50 +156,42 @@ export function AnnotationProvider({
     }
   }, [annotationMode]);
 
+  // Wer bin ich in diesem Projekt? Ohne gültigen Schlüssel oder ohne Projektzugriff: niemand.
   useEffect(() => {
-    if (normalizedProjectId) {
-      setProjectIdColumnState("unknown");
+    let isActive = true;
+    setPerson(null);
+
+    if (!normalizedProjectId) {
+      setErrorMessage(PROJECT_ID_REQUIRED_MESSAGE);
+      setIsLoading(false);
       return;
     }
 
-    let isActive = true;
-
-    setProjectIdColumnState("unknown");
-    setIsLoading(true);
-    setErrorMessage(null);
-
-    async function detectProjectIdColumn() {
-      const { error } = await client.from(tableName).select("project_id").limit(1);
-
-      if (!isActive) {
-        return;
-      }
-
-      if (!error) {
-        setProjectIdColumnState("present");
-        setComments([]);
-        setErrorMessage(PROJECT_ID_REQUIRED_MESSAGE);
-        setIsLoading(false);
-        return;
-      }
-
-      if (isMissingProjectIdColumnError(error)) {
-        setProjectIdColumnState("absent");
-        return;
-      }
-
-      setProjectIdColumnState("error");
-      setComments([]);
-      setErrorMessage(error.message);
+    if (!accessKey) {
       setIsLoading(false);
+      return;
     }
 
-    void detectProjectIdColumn();
+    setIsLoading(true);
+    void client
+      .rpc("annotation_whoami", { p_project_id: normalizedProjectId })
+      .then(({ data, error }) => {
+        if (!isActive) {
+          return;
+        }
+
+        const me = (data as Person[] | null)?.[0] ?? null;
+        setPerson(me);
+        setErrorMessage(error ? error.message : null);
+        if (!me) {
+          setIsLoading(false);
+        }
+      });
 
     return () => {
       isActive = false;
     };
-  }, [client, normalizedProjectId, tableName]);
+  }, [accessKey, client, normalizedProjectId]);
 
   useEffect(() => {
     void loadComments();
@@ -276,63 +211,49 @@ export function AnnotationProvider({
     };
   }, [pagePath, syncPath]);
 
+  // postgres_changes sieht den Schlüssel nicht; die DB sendet je Änderung einen leeren Ping.
   useEffect(() => {
-    if (!canUseCommentsTable) {
+    if (!person || !normalizedProjectId) {
       return;
     }
 
     const channel = client
-      .channel(getRealtimeChannelName(tableName, normalizedProjectId))
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          filter: normalizedProjectId ? `project_id=eq.${normalizedProjectId}` : undefined,
-          schema: "public",
-          table: tableName,
-        },
-        () => {
-          void loadComments();
-        },
-      )
+      .channel(`annotation:${normalizedProjectId}`)
+      .on("broadcast", { event: "changed" }, () => {
+        void loadComments();
+      })
       .subscribe();
 
     return () => {
       void client.removeChannel(channel);
     };
-  }, [canUseCommentsTable, client, loadComments, normalizedProjectId, tableName]);
+  }, [client, loadComments, normalizedProjectId, person]);
 
-  const setAuthor = useCallback(
-    (value: string) => {
-      const nextValue = value.trim();
-      writeStoredString(authorStorageKey, nextValue);
-      setAuthorState(nextValue);
-    },
-    [authorStorageKey],
-  );
-
-  const closeAuthorGate = useCallback(() => {
-    afterAuthorGateRef.current = null;
-    setAuthorGateOpen(false);
-  }, []);
-
-  const submitAuthorGate = useCallback(
-    (name: string) => {
+  const renameSelf = useCallback(
+    async (name: string) => {
       const next = name.trim();
-      if (!next) {
-        return;
+      if (!person || next === person.display_name) {
+        return false;
       }
 
-      flushSync(() => {
-        setAuthor(next);
-      });
-      setAuthorGateOpen(false);
-      const resume = afterAuthorGateRef.current;
-      afterAuthorGateRef.current = null;
-      resume?.();
+      setErrorMessage(null);
+      const { error } = await client.rpc("annotation_rename", { p_display_name: next });
+
+      if (error) {
+        setErrorMessage(error.message);
+        return false;
+      }
+
+      setPerson({ ...person, display_name: next });
+      void loadComments();
+      return true;
     },
-    [setAuthor],
+    [client, loadComments, person],
   );
+
+  const closeAccessNotice = useCallback(() => {
+    setAccessNoticeOpen(false);
+  }, []);
 
   const setShowResolved = useCallback(
     (value: boolean) => {
@@ -344,30 +265,23 @@ export function AnnotationProvider({
 
   const closeComposer = useCallback(() => {
     setComposer(null);
-    setAuthorGateOpen(false);
-    afterAuthorGateRef.current = null;
+    setAccessNoticeOpen(false);
     setActiveThreadId(null);
   }, []);
 
   const startAnnotationMode = useCallback(() => {
-    if (author) {
-      setComposer(null);
-      setActiveThreadId(null);
-      setAnnotationMode(true);
+    if (!person) {
+      setAccessNoticeOpen(true);
       return;
     }
 
-    afterAuthorGateRef.current = () => {
-      setComposer(null);
-      setActiveThreadId(null);
-      setAnnotationMode(true);
-    };
-    setAuthorGateOpen(true);
-  }, [author]);
+    setComposer(null);
+    setActiveThreadId(null);
+    setAnnotationMode(true);
+  }, [person]);
 
   const cancelAnnotationMode = useCallback(() => {
-    afterAuthorGateRef.current = null;
-    setAuthorGateOpen(false);
+    setAccessNoticeOpen(false);
     setAnnotationMode(false);
     setComposer(null);
     setActiveThreadId(null);
@@ -384,26 +298,20 @@ export function AnnotationProvider({
 
   const openThreadComposer = useCallback(
     (threadId: string, rect: AnnotationRect) => {
-      const apply = () => {
-        const target = commentMap.get(threadId);
-
-        setComposer({
-          parentId: threadId,
-          selector: target?.selector ?? null,
-          rect,
-        });
-        setActiveThreadId(threadId);
-      };
-
-      if (!author) {
-        afterAuthorGateRef.current = apply;
-        setAuthorGateOpen(true);
+      if (!person) {
+        setAccessNoticeOpen(true);
         return;
       }
 
-      apply();
+      const target = commentMap.get(threadId);
+      setComposer({
+        parentId: threadId,
+        selector: target?.selector ?? null,
+        rect,
+      });
+      setActiveThreadId(threadId);
     },
-    [author, commentMap],
+    [commentMap, person],
   );
 
   const updateThreadRect = useCallback(
@@ -534,7 +442,7 @@ export function AnnotationProvider({
       }
 
       const nextText = text.trim();
-      if (!nextText || !author) {
+      if (!nextText) {
         return false;
       }
 
@@ -545,20 +453,22 @@ export function AnnotationProvider({
         selector: composer.parentId ? null : composer.selector,
         rect: composer.parentId ? null : composer.rect,
         text: nextText,
-        author,
-        resolved: false,
         parent_id: composer.parentId,
-        ...(normalizedProjectId ? { project_id: normalizedProjectId } : {}),
+        project_id: normalizedProjectId,
       };
 
-      const { data, error } = await client.from(tableName).insert(payload).select().single();
+      const { data, error } = await client
+        .from(tableName)
+        .insert(payload)
+        .select(COMMENT_SELECT)
+        .single();
 
       if (error) {
         setErrorMessage(error.message);
         return false;
       }
 
-      const inserted = normalizeComment(data as Partial<AnnotationComment> & { id: string });
+      const inserted = toComment(data as CommentRow);
       startTransition(() => {
         setComments((previous) => sortComments([...previous, inserted]));
       });
@@ -570,16 +480,7 @@ export function AnnotationProvider({
       );
       return true;
     },
-    [
-      author,
-      canWriteComments,
-      client,
-      commentMap,
-      composer,
-      currentPath,
-      normalizedProjectId,
-      tableName,
-    ],
+    [canWriteComments, client, commentMap, composer, currentPath, normalizedProjectId, tableName],
   );
 
   const removeThread = useCallback(
@@ -596,33 +497,16 @@ export function AnnotationProvider({
 
       setErrorMessage(null);
 
-      const replyIds = comments
-        .filter((comment) => comment.parent_id === threadId)
-        .map((comment) => comment.id);
+      // Antworten fallen per Cascade mit; RLS löscht nur eigene Threads.
+      const { data, error } = await client
+        .from(tableName)
+        .delete()
+        .eq("id", threadId)
+        .eq("project_id", normalizedProjectId ?? "")
+        .select("id");
 
-      if (replyIds.length > 0) {
-        let repliesQuery = client.from(tableName).delete().in("id", replyIds);
-        if (normalizedProjectId) {
-          repliesQuery = repliesQuery.eq("project_id", normalizedProjectId);
-        }
-
-        const { error: repliesError } = await repliesQuery;
-
-        if (repliesError) {
-          setErrorMessage(repliesError.message);
-          return false;
-        }
-      }
-
-      let threadQuery = client.from(tableName).delete().eq("id", threadId);
-      if (normalizedProjectId) {
-        threadQuery = threadQuery.eq("project_id", normalizedProjectId);
-      }
-
-      const { error } = await threadQuery;
-
-      if (error) {
-        setErrorMessage(error.message);
+      if (error || !data?.length) {
+        setErrorMessage(error?.message ?? "Only the author can remove this thread.");
         return false;
       }
 
@@ -640,16 +524,7 @@ export function AnnotationProvider({
       setActiveThreadId((previous) => (previous === threadId ? null : previous));
       return true;
     },
-    [
-      canWriteComments,
-      client,
-      closeComposer,
-      commentMap,
-      comments,
-      composer,
-      normalizedProjectId,
-      tableName,
-    ],
+    [canWriteComments, client, closeComposer, commentMap, composer, normalizedProjectId, tableName],
   );
 
   const resolveAllComments = useCallback(async () => {
@@ -790,9 +665,9 @@ export function AnnotationProvider({
       }
 
       if (event.key === "Escape") {
-        if (isAuthorGateOpen) {
+        if (isAccessNoticeOpen) {
           event.preventDefault();
-          closeAuthorGate();
+          closeAccessNotice();
           return;
         }
         if (annotationMode || composer) {
@@ -816,9 +691,9 @@ export function AnnotationProvider({
     activeThreadId,
     annotationMode,
     cancelAnnotationMode,
-    closeAuthorGate,
+    closeAccessNotice,
     composer,
-    isAuthorGateOpen,
+    isAccessNoticeOpen,
     startAnnotationMode,
     toggleResolved,
   ]);
@@ -830,26 +705,26 @@ export function AnnotationProvider({
       author,
       cancelAnnotationMode,
       comments,
+      personId: person?.id ?? null,
       closeComposer,
       composer,
       currentPath,
       errorMessage,
-      isAuthorGateOpen,
+      isAccessNoticeOpen,
       isLoading,
       isMarkerHovered,
       storageKeyPrefix,
-      closeAuthorGate,
+      closeAccessNotice,
       openThreadComposer,
       removeThread,
       resolveAllComments,
       scrollToComment,
       selectElement,
-      setAuthor,
+      renameSelf,
       setMarkerHovered,
       setShowResolved,
       showResolved,
       startAnnotationMode,
-      submitAuthorGate,
       submitComment,
       toggleResolved,
       updateThreadRect,
@@ -859,13 +734,14 @@ export function AnnotationProvider({
       annotationMode,
       author,
       cancelAnnotationMode,
-      closeAuthorGate,
+      closeAccessNotice,
       comments,
+      person,
       closeComposer,
       composer,
       currentPath,
       errorMessage,
-      isAuthorGateOpen,
+      isAccessNoticeOpen,
       isLoading,
       isMarkerHovered,
       storageKeyPrefix,
@@ -874,12 +750,11 @@ export function AnnotationProvider({
       resolveAllComments,
       scrollToComment,
       selectElement,
-      setAuthor,
+      renameSelf,
       setMarkerHovered,
       setShowResolved,
       showResolved,
       startAnnotationMode,
-      submitAuthorGate,
       submitComment,
       toggleResolved,
       updateThreadRect,

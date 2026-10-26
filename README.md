@@ -22,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Annotation
           supabaseUrl={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_URL!}
           supabaseAnonKey={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY!}
+          projectId="marketing-site"
           position="bottom-right"
         />
       </body>
@@ -32,43 +33,29 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 ## Database
 
-```sql
-create table comments (
-  id uuid primary key default gen_random_uuid(),
-  page_path text not null,
-  selector text,
-  rect jsonb,
-  text text not null,
-  author text not null,
-  resolved boolean default false,
-  created_at timestamptz default now(),
-  resolved_at timestamptz,
-  parent_id uuid references comments(id)
-);
+One central Supabase database serves all projects. Apply `supabase/migrations/` once
+(`supabase db push`); `supabase/tests/` holds the pgTAP tests (`supabase test db`).
+
+Access works with a personal key per person, without Supabase Auth:
+
+- **Staff** (DAYONE e-mail, first name, optional last name): the key works in every project.
+- **External people** (display name, one project): the key works only in that project.
+
+The key is stored hashed. It reaches the browser once via the link fragment `#key=…`; the overlay
+saves it in `localStorage`, removes it from the address bar and sends it with every request
+(`x-annotation-key` header). Row level security checks person and project. Without a valid key
+nothing can be read or written. Display names are resolved when reading, so a rename also changes
+old comments.
+
+```bash
+export SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=…
+node scripts/annotation-admin.mjs mitarbeiter --email anna@dayone.de --vorname Anna --url https://example.com
+node scripts/annotation-admin.mjs extern --projekt marketing-site --name "Jane Doe" --url https://example.com
+node scripts/annotation-admin.mjs neuer-schluessel --person <id> --url https://example.com
+node scripts/annotation-admin.mjs entziehen --person <id>
 ```
 
-### Table Modes
-
-For one project per comments table, use the base schema above and omit `projectId`.
-
-If you want one comments table to back multiple projects, add a `project_id` column and pass
-`projectId` to `<Annotation />`.
-
-```sql
-alter table comments
-  add column project_id text not null default 'default-project';
-```
-
-```tsx
-<Annotation
-  supabaseUrl={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_URL!}
-  supabaseAnonKey={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY!}
-  projectId="marketing-site"
-/>
-```
-
-When a table has a `project_id` column, `<Annotation />` requires `projectId`. This prevents
-loading comments from every project in a shared table by accident.
+Each command prints the link once. A new key invalidates the old one; `entziehen` deletes it.
 
 ## Environment Variables
 
@@ -86,6 +73,6 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=
 - Threaded comments with resolve, remove, and bulk copy actions
 - Cross-page thread browsing from the dock
 - Dock positioning in all four corners
-- Optional shared-table scoping with `projectId`
-- Local annotator name and resolved-thread visibility preferences
-- Optional `pagePath`, `position`, `projectId`, `storageKeyPrefix`, and `tableName` props for advanced integration
+- Personal access keys, project isolation and server-side authors via row level security
+- Rename in the settings, applied to all of a person's comments
+- Optional `pagePath`, `position`, `storageKeyPrefix`, and `tableName` props for advanced integration
