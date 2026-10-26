@@ -88,6 +88,7 @@ export function normalizeComment(
     text: row.text ?? "",
     author: row.author ?? "Unknown",
     author_id: row.author_id ?? null,
+    author_is_guest: row.author_is_guest ?? false,
     resolved: Boolean(row.resolved),
     created_at: row.created_at ?? new Date(0).toISOString(),
     resolved_at: row.resolved_at ?? null,

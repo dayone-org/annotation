@@ -94,6 +94,7 @@ export function CommentMarkers() {
     comments,
     currentPath,
     openThreadComposer,
+    personId,
     setMarkerHovered,
     showResolved,
     updateThreadRect,
@@ -280,32 +281,39 @@ export function CommentMarkers() {
     [setMarkerHovered, syncMarkerPositions],
   );
 
-  const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0) {
-      return;
-    }
+  const handlePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLButtonElement>) => {
+      if (event.button !== 0) {
+        return;
+      }
 
-    const threadId = getThreadId(event.currentTarget);
-    if (!threadId) {
-      return;
-    }
+      const threadId = getThreadId(event.currentTarget);
+      if (!threadId) {
+        return;
+      }
 
-    const comment = topLevelCommentMapRef.current.get(threadId);
-    const markerRect = event.currentTarget.getBoundingClientRect();
+      const comment = topLevelCommentMapRef.current.get(threadId);
+      // Verschieben darf nur der Autor; für alle anderen bleibt der Marker ein Klickziel.
+      if (comment?.author_id !== personId) {
+        return;
+      }
+      const markerRect = event.currentTarget.getBoundingClientRect();
 
-    dragSessionRef.current = {
-      pointerId: event.pointerId,
-      threadId,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      pointerOffsetX: event.clientX - markerRect.left,
-      pointerOffsetY: event.clientY - markerRect.top,
-      target: querySelectorSafely(comment?.selector ?? null),
-      hasMoved: false,
-    };
+      dragSessionRef.current = {
+        pointerId: event.pointerId,
+        threadId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        pointerOffsetX: event.clientX - markerRect.left,
+        pointerOffsetY: event.clientY - markerRect.top,
+        target: querySelectorSafely(comment?.selector ?? null),
+        hasMoved: false,
+      };
 
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }, []);
+      event.currentTarget.setPointerCapture(event.pointerId);
+    },
+    [personId],
+  );
 
   const handlePointerMove = useCallback((event: ReactPointerEvent<HTMLButtonElement>) => {
     const threadId = getThreadId(event.currentTarget);

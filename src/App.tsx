@@ -15,9 +15,9 @@ const steps = [
   {
     title: "Database",
     description:
-      "Apply supabase/migrations once to the central database. People and keys are created with scripts/annotation-admin.mjs.",
-    code: `SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… \\
-node scripts/annotation-admin.mjs extern --projekt marketing-site --name "Jane Doe" --url https://example.com`,
+      "Apply supabase/migrations once to the central database. Projects, domains and links are managed with scripts/annotation-admin.mjs.",
+    code: `node scripts/annotation-admin.mjs projekt --id marketing-site --name "Marketing site" --domain example.com
+node scripts/annotation-admin.mjs projekt-link --id marketing-site --url https://example.com`,
   },
   {
     title: "Environment",
@@ -28,13 +28,12 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=your-supabase-anon-key`,
   {
     title: "Usage",
     description:
-      "Render the widget from your app layout. Each person opens their personal link once.",
+      "Render the widget from your app layout. The project is found by the page's domain.",
     code: `import { Annotation } from "annotation";
 
 <Annotation
   supabaseUrl={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_URL!}
   supabaseAnonKey={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY!}
-  projectId="marketing-site"
   position="bottom-right"
 />`,
   },
@@ -195,8 +194,8 @@ function ContentPage({
   );
 }
 
-// Playground: ?project=… wählt das Projekt, damit sich die Projekttrennung lokal prüfen lässt.
-const demoProjectId = new URLSearchParams(window.location.search).get("project") ?? "demo";
+// Playground: ?project=… überschreibt das Projekt der Domain, damit sich die Trennung lokal prüfen lässt.
+const demoProjectId = new URLSearchParams(window.location.search).get("project") ?? undefined;
 
 function App() {
   const [currentPath, setCurrentPath] = useState(() =>

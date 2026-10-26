@@ -290,7 +290,10 @@ function ThreadCard({
       </ItemHeader>
       <ItemContent className="annotation:flex annotation:flex-col annotation:gap-2 annotation:text-sm">
         <div className="annotation:flex annotation:flex-col">
-          <p className="annotation:font-medium">{comment.author}</p>
+          <p className="annotation:flex annotation:items-center annotation:gap-1.5 annotation:font-medium">
+            {comment.author}
+            {comment.author_is_guest ? <Badge variant="outline">External</Badge> : null}
+          </p>
           <p className="annotation:whitespace-pre-wrap annotation:text-muted-foreground">
             {comment.text}
           </p>
@@ -448,12 +451,13 @@ export function AnnotationDock({
     annotationMode,
     author,
     cancelAnnotationMode,
-    closeAccessNotice,
     comments,
     composer,
     currentPath,
     errorMessage,
-    isAccessNoticeOpen,
+    isGuest,
+    joinAsGuest,
+    phase,
     isLoading,
     renameSelf,
     resolveAllComments,
@@ -479,6 +483,9 @@ export function AnnotationDock({
   const [isPanelOpen, setPanelOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState(author);
+  const [joinName, setJoinName] = useState("");
+  const trimmedJoinName = joinName.trim();
+  const canJoin = trimmedJoinName.length >= 2 && trimmedJoinName.length <= 48;
   const trimmedNameDraft = nameDraft.trim();
   const canSaveName =
     trimmedNameDraft.length >= 2 && trimmedNameDraft.length <= 48 && trimmedNameDraft !== author;
@@ -580,15 +587,13 @@ export function AnnotationDock({
 
   const toggleAnnotationsPanel = useCallback(() => {
     setIsSettingsOpen(false);
-    closeAccessNotice();
     setPanelOpen((open) => !open);
-  }, [closeAccessNotice]);
+  }, []);
 
   const closeAnnotationDock = useCallback(() => {
     setIsSettingsOpen(false);
-    closeAccessNotice();
     cancelAnnotationMode();
-  }, [cancelAnnotationMode, closeAccessNotice]);
+  }, [cancelAnnotationMode]);
 
   const handleBulkCopy = useCallback(async () => {
     const markdown = formatAnnotationCollectionMarkdown(
@@ -601,7 +606,41 @@ export function AnnotationDock({
   }, [comments, currentPath, currentRouteOpenThreads, setBulkCopyState]);
 
   const renderDock = () => {
-    if (!annotationMode && !isAccessNoticeOpen) {
+    // Gast mit Projekt-Link: nur der Name, dann ist er im Projekt.
+    if (phase === "join") {
+      return (
+        <motion.form
+          animate="animate"
+          className="annotation:flex annotation:items-center annotation:gap-2 annotation:p-1"
+          exit="exit"
+          initial="initial"
+          key="floating-button-join"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (canJoin) {
+              void joinAsGuest(trimmedJoinName);
+            }
+          }}
+          variants={variantsButton}
+        >
+          <Input
+            aria-label="Your name"
+            autoFocus
+            className="annotation:w-48 annotation:border-none annotation:bg-primary-foreground/10 annotation:text-primary-foreground annotation:placeholder:text-primary-foreground/50"
+            id="annotation-join-name"
+            maxLength={48}
+            onChange={(event) => setJoinName(event.target.value)}
+            placeholder="What's your name?"
+            value={joinName}
+          />
+          <Button aria-label="Join" disabled={!canJoin} size="icon-sm" type="submit">
+            <CheckIcon />
+          </Button>
+        </motion.form>
+      );
+    }
+
+    if (!annotationMode) {
       return (
         <motion.div
           animate="animate"
@@ -616,27 +655,6 @@ export function AnnotationDock({
             <Kbd className="annotation:bg-primary-foreground/15 annotation:text-primary-foreground">
               C
             </Kbd>
-          </Button>
-        </motion.div>
-      );
-    }
-
-    if (isAccessNoticeOpen) {
-      return (
-        <motion.div
-          animate="animate"
-          className="annotation:flex annotation:items-center annotation:gap-2 annotation:p-1 annotation:pl-3"
-          exit="exit"
-          initial="initial"
-          key="floating-button-access-notice"
-          role="status"
-          variants={variantsButton}
-        >
-          <p className="annotation:text-sm annotation:whitespace-nowrap annotation:text-primary-foreground">
-            No access. Open your personal invite link.
-          </p>
-          <Button aria-label="Close" onClick={closeAccessNotice} size="icon-sm" type="button">
-            <XIcon />
           </Button>
         </motion.div>
       );
@@ -677,7 +695,6 @@ export function AnnotationDock({
               const next = !open;
               if (next) {
                 setPanelOpen(false);
-                closeAccessNotice();
               }
               return next;
             });
@@ -807,16 +824,20 @@ export function AnnotationDock({
                         }
                       }}
                     >
+                      {/* Mitarbeitende tragen den Namen aus der Liste; umbenennen dürfen nur Gäste. */}
                       <Input
+                        disabled={!isGuest}
                         id="annotation-panel-name"
                         maxLength={48}
                         minLength={2}
                         onChange={(event) => setNameDraft(event.target.value)}
                         value={nameDraft}
                       />
-                      <Button disabled={!canSaveName} size="sm" type="submit">
-                        Save
-                      </Button>
+                      {isGuest ? (
+                        <Button disabled={!canSaveName} size="sm" type="submit">
+                          Save
+                        </Button>
+                      ) : null}
                     </form>
                   </Field>
                   <Field>

@@ -24,6 +24,7 @@ export type AnnotationComment = {
   text: string;
   author: string;
   author_id?: string | null;
+  author_is_guest?: boolean;
   resolved: boolean;
   created_at: string;
   resolved_at: string | null;
@@ -50,7 +51,8 @@ export type AnnotationOverlayProps = {
   supabaseAnonKey: string;
   pagePath?: string;
   position?: AnnotationPosition;
-  projectId: string;
+  /** Überschreibt das Projekt, das sonst über die Domain (location.host) gefunden wird. */
+  projectId?: string;
   storageKeyPrefix?: string;
   /** Kommentartabelle im zentralen Schema (Standard `comments`). */
   tableName?: string;

@@ -1,6 +1,7 @@
 import { CheckCircleIcon, DotsThreeVerticalIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -22,6 +23,7 @@ import { useAnnotation } from "./useAnnotation";
 import { formatTimestamp } from "./utils";
 
 type ThreadCommentProps = {
+  isGuest?: boolean;
   isRoot?: boolean;
   isResolved?: boolean;
   author: string;
@@ -35,6 +37,7 @@ type ThreadCommentProps = {
 function ThreadComment({
   author,
   createdAt,
+  isGuest = false,
   isResolved = false,
   isRoot = false,
   portalContainer,
@@ -50,6 +53,7 @@ function ThreadComment({
         <div className="annotation:flex annotation:items-center annotation:justify-between annotation:gap-3">
           <div className="annotation:flex annotation:items-center annotation:gap-2 annotation:text-xs annotation:text-muted-foreground">
             <strong className="annotation:text-sm annotation:text-foreground">{author}</strong>
+            {isGuest ? <Badge variant="outline">External</Badge> : null}
             <span>{formatTimestamp(createdAt)}</span>
           </div>
           {isRoot && (onToggleResolved || onRemove) ? (
@@ -141,6 +145,9 @@ function ComposerPopover({
       )
     : [];
 
+  // Löschen nur eigene Threads ohne Antworten anderer; sonst bleibt nur Erledigen.
+  const canRemoveThread = threadComments.every((comment) => comment.author_id === personId);
+
   const handleToggleResolved = () => {
     if (parentComment) {
       void toggleResolved(parentComment.id);
@@ -197,12 +204,13 @@ function ComposerPopover({
                   <ThreadComment
                     author={comment.author}
                     createdAt={comment.created_at}
+                    isGuest={comment.author_is_guest}
                     isResolved={comment.resolved}
                     isRoot={comment.id === parentComment.id}
                     key={comment.id}
                     portalContainer={portalContainer}
                     onRemove={
-                      comment.id === parentComment.id && comment.author_id === personId
+                      comment.id === parentComment.id && canRemoveThread
                         ? handleRemoveThread
                         : undefined
                     }
@@ -231,15 +239,26 @@ function AnnotationOverlayScene({
   portalContainer: Element | DocumentFragment | null;
   position?: AnnotationPosition;
 }) {
+  const { phase } = useAnnotation();
+
+  // Ohne gültigen Schlüssel ist das Overlay komplett unsichtbar.
+  if (phase === "hidden") {
+    return null;
+  }
+
   return (
     <div
       className="annotation:absolute annotation:top-0 annotation:left-0 annotation:z-2147483600 annotation:h-px annotation:w-px"
       data-annotation-overlay-root="true"
       data-annotation-overlay-scene="true"
     >
-      <InteractionLayer />
-      <CommentMarkers />
-      <ComposerPopover portalContainer={portalContainer} />
+      {phase === "ready" ? (
+        <>
+          <InteractionLayer />
+          <CommentMarkers />
+          <ComposerPopover portalContainer={portalContainer} />
+        </>
+      ) : null}
       <AnnotationDock defaultPosition={position} />
     </div>
   );

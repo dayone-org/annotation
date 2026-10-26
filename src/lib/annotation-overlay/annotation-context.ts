@@ -10,11 +10,13 @@ export type AnnotationContextValue = {
   currentPath: string;
   errorMessage: string | null;
   isLoading: boolean;
-  isAccessNoticeOpen: boolean;
+  isGuest: boolean;
+  joinAsGuest: (name: string) => Promise<boolean>;
+  /** hidden: kein gültiger Schlüssel, Overlay unsichtbar; join: Gast mit Projekt-Link gibt Namen ein. */
+  phase: "hidden" | "join" | "ready";
   isMarkerHovered: boolean;
   personId: string | null;
   storageKeyPrefix: string;
-  closeAccessNotice: () => void;
   setMarkerHovered: (hovered: boolean) => void;
   renameSelf: (name: string) => Promise<boolean>;
   setShowResolved: (value: boolean) => void;

@@ -1,12 +1,14 @@
 #!/usr/bin/env node
-// Personen anlegen und Schlüssel verwalten (Service Role). Der Link mit Schlüssel wird genau einmal ausgegeben.
+// Projekte und Mitarbeitende pflegen (Service Role). Links mit Schlüssel werden genau einmal ausgegeben.
 //
 //   SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… node scripts/annotation-admin.mjs <befehl> …
 //
-//   mitarbeiter --email a@dayone.de --vorname Anna [--nachname Muster] --url https://seite.de
-//   extern      --projekt wika --name "Simon Scholz" --url https://seite.de
-//   neuer-schluessel --person <id> --url https://seite.de   (alter Schlüssel ist sofort ungültig)
-//   entziehen        --person <id>                          (Schlüssel löschen)
+//   projekt      --id wika --name "WIKA Relaunch" --domain wika.de --domain localhost:3000
+//                (legt an oder ersetzt Name und Domains; Domain = Host inkl. Port)
+//   projekt-link --id wika --url https://wika.de   (Link für Gäste; alter Link und alle Gäste darüber gesperrt)
+//   mitarbeiter  --email a@dayone.de --vorname Anna [--nachname Muster] --url https://wika.de
+//   neuer-schluessel --person <id> --url https://wika.de   (Mitarbeitende; alter Schlüssel sofort ungültig)
+//   entziehen        --person <id>                         (Mitarbeitende; Schlüssel löschen)
 import { createClient } from "@supabase/supabase-js";
 import { parseArgs } from "node:util";
 
@@ -16,8 +18,9 @@ const { positionals, values } = parseArgs({
     email: { type: "string" },
     vorname: { type: "string" },
     nachname: { type: "string" },
-    projekt: { type: "string" },
+    id: { type: "string" },
     name: { type: "string" },
+    domain: { type: "string", multiple: true },
     person: { type: "string" },
     url: { type: "string" },
   },
@@ -37,7 +40,7 @@ function fail(message) {
 
 function need(...names) {
   for (const name of names) {
-    if (!values[name]?.trim()) fail(`--${name} fehlt.`);
+    if (!String(values[name] ?? "").trim()) fail(`--${name} fehlt.`);
   }
 }
 
@@ -64,13 +67,19 @@ switch (positionals[0]) {
     console.log(`Person ${row.person_id}\n${link(row.key)}`);
     break;
   }
-  case "extern": {
-    need("projekt", "name", "url");
-    const [row] = await rpc("annotation_add_guest", {
-      p_project_id: values.projekt,
-      p_display_name: values.name,
+  case "projekt": {
+    need("id", "name", "domain");
+    await rpc("annotation_set_project", {
+      p_id: values.id,
+      p_name: values.name,
+      p_domains: values.domain,
     });
-    console.log(`Person ${row.person_id}\n${link(row.key)}`);
+    console.log(`Projekt ${values.id}: ${values.domain.join(", ")}`);
+    break;
+  }
+  case "projekt-link": {
+    need("id", "url");
+    console.log(link(await rpc("annotation_new_project_key", { p_project_id: values.id })));
     break;
   }
   case "neuer-schluessel": {
@@ -85,5 +94,7 @@ switch (positionals[0]) {
     break;
   }
   default:
-    fail("Befehl: mitarbeiter | extern | neuer-schluessel | entziehen (Details im Dateikopf).");
+    fail(
+      "Befehl: projekt | projekt-link | mitarbeiter | neuer-schluessel | entziehen (Details im Dateikopf).",
+    );
 }
