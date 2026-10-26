@@ -564,7 +564,12 @@ export function AnnotationProvider({
         .select("id");
 
       if (error || !data?.length) {
-        setErrorMessage(error?.message ?? "Only the author can remove this thread.");
+        // 23503: inzwischen hängt eine Antwort dran; die DB lehnt das Löschen ab (on delete restrict).
+        setErrorMessage(
+          error?.code === "23503"
+            ? "This thread has replies and can only be resolved."
+            : (error?.message ?? "Only the author can remove this thread."),
+        );
         return false;
       }
 

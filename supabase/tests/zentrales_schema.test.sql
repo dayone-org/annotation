@@ -2,7 +2,7 @@
 -- (Rolle anon, Schlüssel im Header x-annotation-key). Unabhängig vom Seed, alles in einer Transaktion.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(103);
+select plan(112);
 
 -- Browser wechseln: Rolle anon, Schlüssel im Header (null = kein Header).
 create function pg_temp.als(p_key text) returns void language plpgsql as $$
@@ -111,12 +111,19 @@ select throws_ok($$select public.annotation_join('pk-eins', e'\u200B\u200BA\u200
 select throws_ok($$select public.annotation_join('pk-eins', e'\t\n \u00A0')$$, '23514', 'invalid name', 'Name: nur Tabs, Umbrüche, Leerzeichen abgelehnt');
 select throws_ok($$select public.annotation_join('pk-eins', repeat('x', 49))$$, '23514', 'invalid name', 'Name: 49 Zeichen abgelehnt');
 select is(pg_temp.details($$select public.annotation_join('pk-eins', 'X')$$), '', 'Name: Fehlermeldung beim Beitritt ohne Zeilen-Details');
+select throws_ok($$select public.annotation_join('pk-eins', '-- ..')$$, '23514', 'invalid name', 'Name: ohne Buchstaben oder Ziffern abgelehnt');
+select throws_ok($$select public.annotation_join('pk-eins', e'\U0001F600\U0001F600')$$, '23514', 'invalid name', 'Name: nur Emoji abgelehnt');
+select throws_ok($$select public.annotation_join('pk-eins', e'A\u0301\u0301\u0301')$$, '23514', 'invalid name', 'Name: ein Buchstabe plus Kombinationszeichen abgelehnt');
+select throws_ok($$select public.annotation_join('pk-eins', 'ab' || repeat(e'\u0301', 47))$$, '23514', 'invalid name', 'Name: Kombinationszeichen zählen gegen die 48');
+select ok(public.annotation_name_ok('Jo') and public.annotation_name_ok('Ülla') and public.annotation_name_ok('Märta Prüfer')
+  and public.annotation_name_ok('李明') and public.annotation_name_ok('R2'), 'Name: Jo, Ülla, Märta Prüfer, 李明, R2 gültig');
+insert into gast values ('uella', public.annotation_join('pk-eins', e'U\u0308lla'));
 insert into gast values ('ina', public.annotation_join('pk-eins', e'\u00A0In\u200Ba\tB\u202E\n'));
 insert into gast values ('lang', public.annotation_join('pk-eins', repeat('ü', 48) || e'\u200B'));
 reset role;
 select results_eq($$select display_name from public.annotation_people where key_hash in
-    (select extensions.digest(k, 'sha256') from gast where name in ('ina', 'lang')) order by char_length(display_name)$$,
-  $$values ('InaB'::text), (repeat('ü', 48))$$, 'Name: unsichtbare Zeichen entfernt, 48 sichtbare erlaubt');
+    (select extensions.digest(k, 'sha256') from gast where name in ('ina', 'uella', 'lang')) order by char_length(display_name), display_name$$,
+  $$values ('InaB'::text), (e'\u00DClla'), (repeat('ü', 48))$$, 'Name: unsichtbare Zeichen entfernt, NFC normalisiert, 48 erlaubt');
 
 select pg_temp.als((select k from gast where name = 'eva'));
 select throws_ok($$select public.annotation_rename(e'X\u200B\u200D')$$, '23514', 'invalid name', 'Umbenennen: Zero-Width zählt nicht');
@@ -209,23 +216,30 @@ select throws_ok($$insert into public.comments (project_id, page_path, text, par
   values ('test-zwei', '/', 'x', '10000000-0000-4000-8000-000000000001')$$, '23503', 'invalid parent', 'Antwort auf Thread eines anderen Projekts abgelehnt');
 
 -- ---------------------------------------------------------------- Löschen
--- Max: Thread 003 mit eigener Antwort 004. Mia: Thread 001 mit Evas Antwort 002.
-insert into public.comments (id, project_id, page_path, text) values ('10000000-0000-4000-8000-000000000003', 'test-eins', '/', 'Max allein');
+-- Max: Thread 003 mit eigener Antwort 004, Thread 005 ohne Antwort. Mia: Thread 001 mit Evas Antwort 002.
+insert into public.comments (id, project_id, page_path, text) values
+  ('10000000-0000-4000-8000-000000000003', 'test-eins', '/', 'Max allein'),
+  ('10000000-0000-4000-8000-000000000005', 'test-eins', '/', 'Max ohne Antwort');
 insert into public.comments (id, project_id, page_path, text, parent_id) values
   ('10000000-0000-4000-8000-000000000004', 'test-eins', '/', 'Max ergänzt', '10000000-0000-4000-8000-000000000003');
 delete from public.comments where id = '10000000-0000-4000-8000-000000000001';
 reset role;
 select isnt_empty($$select id from public.comments where id = '10000000-0000-4000-8000-000000000001'$$, 'Löschen: fremder Thread bleibt');
 select pg_temp.als('k-mia');
-delete from public.comments where id = '10000000-0000-4000-8000-000000000001';
+select throws_ok($$delete from public.comments where id = '10000000-0000-4000-8000-000000000001'$$,
+  '23503', null, 'Löschen: eigener Thread mit fremder Antwort abgelehnt');
 reset role;
 select results_eq($$select count(*)::int from public.comments where id in ('10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000002')$$,
-  $$values (2)$$, 'Löschen: eigener Thread mit fremder Antwort bleibt samt Antwort');
+  $$values (2)$$, 'Löschen: Thread und fremde Antwort bleiben');
 select pg_temp.als('k-max');
-delete from public.comments where id = '10000000-0000-4000-8000-000000000003';
+select throws_ok($$delete from public.comments where id = '10000000-0000-4000-8000-000000000003'$$,
+  '23503', null, 'Löschen: auch Thread mit nur eigenen Antworten abgelehnt (kein Cascade)');
+select lives_ok($$delete from public.comments where id = '10000000-0000-4000-8000-000000000004'$$, 'Löschen: eigene Antwort');
+select lives_ok($$delete from public.comments where id in ('10000000-0000-4000-8000-000000000003', '10000000-0000-4000-8000-000000000005')$$,
+  'Löschen: eigene Threads ohne Antworten');
 reset role;
-select is_empty($$select id from public.comments where id in ('10000000-0000-4000-8000-000000000003', '10000000-0000-4000-8000-000000000004')$$,
-  'Löschen: eigener Thread mit nur eigenen Antworten weg');
+select is_empty($$select id from public.comments where id in ('10000000-0000-4000-8000-000000000003', '10000000-0000-4000-8000-000000000004', '10000000-0000-4000-8000-000000000005')$$,
+  'Löschen: eigene Antwort und antwortlose Threads weg');
 
 -- ---------------------------------------------------------------- Realtime: geheimes Topic, nur mit Zugriff
 create temp table topic_alt as select realtime_topic from public.annotation_projects where id = 'test-eins';

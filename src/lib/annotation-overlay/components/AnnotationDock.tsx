@@ -57,6 +57,7 @@ import {
   formatTimestamp,
   getReplies,
   getTopLevelComments,
+  isValidName,
   measureRect,
 } from "../utils";
 
@@ -485,10 +486,9 @@ export function AnnotationDock({
   const [nameDraft, setNameDraft] = useState(author);
   const [joinName, setJoinName] = useState("");
   const trimmedJoinName = joinName.trim();
-  const canJoin = trimmedJoinName.length >= 2 && trimmedJoinName.length <= 48;
+  const canJoin = isValidName(trimmedJoinName);
   const trimmedNameDraft = nameDraft.trim();
-  const canSaveName =
-    trimmedNameDraft.length >= 2 && trimmedNameDraft.length <= 48 && trimmedNameDraft !== author;
+  const canSaveName = isValidName(trimmedNameDraft) && trimmedNameDraft !== author;
   const [bulkCopyState, setBulkCopyState] = useCopyState();
 
   const [refContainer, { height, width }] = useMeasure();

@@ -145,8 +145,8 @@ function ComposerPopover({
       )
     : [];
 
-  // Löschen nur eigene Threads ohne Antworten anderer; sonst bleibt nur Erledigen.
-  const canRemoveThread = threadComments.every((comment) => comment.author_id === personId);
+  // Löschen nur eigene Threads ohne Antworten; sonst bleibt nur Erledigen.
+  const canRemoveThread = threadComments.length === 1 && parentComment?.author_id === personId;
 
   const handleToggleResolved = () => {
     if (parentComment) {

@@ -12,7 +12,8 @@ create extension if not exists pgcrypto with schema extensions;
 
 -- ---------------------------------------------------------------------------
 -- Namen: unsichtbare Zeichen (Steuerzeichen, Tabs, Umbrüche, Zero-Width, Bidi) entfernen,
--- geschützte Leerzeichen wie Leerzeichen behandeln, Ränder trimmen. Danach 2 bis 48 Zeichen.
+-- geschützte Leerzeichen wie Leerzeichen behandeln, NFC normalisieren, Ränder trimmen.
+-- Gültig: höchstens 48 Zeichen (Codepoints, Kombinationszeichen zählen mit), mindestens 2 Buchstaben oder Ziffern.
 -- ---------------------------------------------------------------------------
 create function public.annotation_clean_name(p_name text)
 returns text
@@ -21,7 +22,7 @@ immutable
 set search_path = ''
 as $$
   select btrim(regexp_replace(
-    regexp_replace(p_name, '[\u0000-\u001F\u007F-\u009F\u00AD\u180E\u200B-\u200F\u2028-\u202F\u2060-\u206F\uFEFF]', '', 'g'),
+    regexp_replace(normalize(p_name, NFC), '[\u0000-\u001F\u007F-\u009F\u00AD\u180E\u200B-\u200F\u2028-\u202F\u2060-\u206F\uFEFF]', '', 'g'),
     '[\u00A0\u2000-\u200A\u3000]', ' ', 'g'));
 $$;
 
@@ -31,7 +32,9 @@ language sql
 immutable
 set search_path = ''
 as $$
-  select char_length(p_name) between 2 and 48 and p_name = public.annotation_clean_name(p_name);
+  select char_length(p_name) <= 48
+    and p_name ~ '[[:alnum:]].*[[:alnum:]]'
+    and p_name = public.annotation_clean_name(p_name);
 $$;
 
 -- ---------------------------------------------------------------------------
@@ -100,8 +103,8 @@ create table public.comments (
   resolved boolean not null default false,
   created_at timestamptz not null default now(),
   resolved_at timestamptz,
-  -- Löschen mit Antworten nur, wenn alle Antworten vom Autor sind (Policy unten); Cascade trifft dann nur eigene.
-  parent_id uuid references public.comments (id) on delete cascade
+  -- Ein Thread mit Antworten lässt sich nicht löschen, nur erledigen (auch bei gleichzeitigem Insert).
+  parent_id uuid references public.comments (id) on delete restrict
 );
 
 create index comments_project_created_idx on public.comments (project_id, created_at);
@@ -538,12 +541,7 @@ create policy comments_update on public.comments
   using (public.annotation_person_for(project_id) is not null)
   with check (public.annotation_person_for(project_id) is not null);
 
--- Löschen nur eigene Kommentare, und nur, solange keine Antworten anderer darunter stehen.
+-- Löschen nur eigene Kommentare; Threads mit Antworten lehnt der Fremdschlüssel ab (on delete restrict).
 create policy comments_delete on public.comments
   for delete to anon
-  using (
-    author_id = public.annotation_person_for(project_id)
-    and not exists (
-      select 1 from public.comments r where r.parent_id = comments.id and r.author_id <> comments.author_id
-    )
-  );
+  using (author_id = public.annotation_person_for(project_id));
