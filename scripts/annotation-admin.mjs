@@ -56,6 +56,12 @@ const client = createClient(url, serviceKey, { auth: { persistSession: false } }
 
 async function rpc(fn, args) {
   const { data, error } = await client.rpc(fn, args);
+  if (error?.code === "23505" && fn === "annotation_set_project") {
+    const domain = /\(host\)=\((.*)\)/.exec(error.details ?? "")?.[1];
+    fail(
+      `Domain${domain ? ` ${domain}` : ""} already belongs to another project; remove it there first.`,
+    );
+  }
   if (error) fail(`${fn}: ${error.message}`);
   return data;
 }
