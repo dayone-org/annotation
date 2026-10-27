@@ -16,8 +16,8 @@ const steps = [
     title: "Database",
     description:
       "Apply supabase/migrations once to the central database. Projects, domains and links are managed with scripts/annotation-admin.mjs.",
-    code: `node scripts/annotation-admin.mjs projekt --id marketing-site --name "Marketing site" --domain example.com
-node scripts/annotation-admin.mjs projekt-link --id marketing-site --url https://example.com`,
+    code: `node scripts/annotation-admin.mjs project --id marketing-site --name "Marketing site" --domain example.com
+node scripts/annotation-admin.mjs project-link --id marketing-site --url https://example.com`,
   },
   {
     title: "Environment",
@@ -194,7 +194,7 @@ function ContentPage({
   );
 }
 
-// Playground: ?project=… überschreibt das Projekt der Domain, damit sich die Trennung lokal prüfen lässt.
+// Playground: ?project=… overrides the domain's project so project isolation can be checked locally.
 const demoProjectId = new URLSearchParams(window.location.search).get("project") ?? undefined;
 
 function App() {

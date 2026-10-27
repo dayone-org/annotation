@@ -457,6 +457,7 @@ export function AnnotationDock({
     currentPath,
     errorMessage,
     isGuest,
+    isJoining,
     joinAsGuest,
     phase,
     isLoading,
@@ -606,12 +607,12 @@ export function AnnotationDock({
   }, [comments, currentPath, currentRouteOpenThreads, setBulkCopyState]);
 
   const renderDock = () => {
-    // Gast mit Projekt-Link: nur der Name, dann ist er im Projekt.
+    // Guest with a project link: only a name, then they are in the project.
     if (phase === "join") {
       return (
         <motion.form
           animate="animate"
-          className="annotation:flex annotation:items-center annotation:gap-2 annotation:p-1"
+          className="annotation:flex annotation:max-w-72 annotation:flex-wrap annotation:items-center annotation:gap-2 annotation:p-1"
           exit="exit"
           initial="initial"
           key="floating-button-join"
@@ -633,9 +634,17 @@ export function AnnotationDock({
             placeholder="What's your name?"
             value={joinName}
           />
-          <Button aria-label="Join" disabled={!canJoin} size="icon-sm" type="submit">
+          <Button aria-label="Join" disabled={!canJoin || isJoining} size="icon-sm" type="submit">
             <CheckIcon />
           </Button>
+          {errorMessage ? (
+            <p
+              className="annotation:basis-full annotation:px-1 annotation:text-xs annotation:text-primary-foreground"
+              role="alert"
+            >
+              {errorMessage}
+            </p>
+          ) : null}
         </motion.form>
       );
     }
@@ -824,7 +833,7 @@ export function AnnotationDock({
                         }
                       }}
                     >
-                      {/* Mitarbeitende tragen den Namen aus der Liste; umbenennen dürfen nur Gäste. */}
+                      {/* Staff carry the name from the list; only guests may rename themselves. */}
                       <Input
                         disabled={!isGuest}
                         id="annotation-panel-name"

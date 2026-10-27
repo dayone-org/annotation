@@ -25,7 +25,7 @@ export function writeStoredString(key: string, value: string): void {
   window.localStorage.removeItem(key);
 }
 
-// Schlüssel aus dem Link (#key=…) einmal je Seitenaufruf übernehmen und aus der Adresszeile entfernen.
+// Take the key from the link (#key=…) once per page load and remove it from the address bar.
 let linkKey: string | undefined;
 
 export function takeLinkKey(): string {
@@ -35,7 +35,12 @@ export function takeLinkKey(): string {
 
   const { hash, pathname, search } = window.location;
   const match = hash.match(/[#&]key=([^&]*)/);
-  linkKey = match ? decodeURIComponent(match[1]).trim() : "";
+  try {
+    linkKey = match ? decodeURIComponent(match[1]).trim() : "";
+  } catch {
+    // Malformed escape such as "%E0": ignore the key instead of crashing the host page.
+    linkKey = "";
+  }
   if (match) {
     const rest = hash.replace(match[0], "").replace(/^#?&?/, "");
     window.history.replaceState(

@@ -1,19 +1,19 @@
--- Zentrales DAYONE-Annotation-Schema: eine Datenbank für alle Projekte.
--- Anmeldung per Schlüssel, ohne Supabase-Auth: Der Browser schickt seinen Schlüssel bei jeder Anfrage
--- im Header x-annotation-key mit (Rolle anon), RLS prüft Person und Projektzugriff.
---   Projekte: Name und Domains (Host inkl. Port); das Overlay findet sein Projekt über location.host.
---   Mitarbeitende: DAYONE-E-Mail, Vorname, Nachname optional; persönlicher Schlüssel für alle Projekte,
---     Name fest aus der Liste.
---   Gäste: ein Link je Projekt (Projekt-Schlüssel). Beim ersten Öffnen nur Name, dabei entsteht ein
---     eigener Browser-Schlüssel. Ein neuer Projekt-Link macht den alten und alle Gäste darüber wirkungslos.
--- Gespeichert wird nur der SHA-256 jedes Schlüssels. Pflege: scripts/annotation-admin.mjs (Service Role).
+-- Central DAYONE annotation schema: one database for all projects.
+-- Access by key, without Supabase Auth: the browser sends its key with every request
+-- in the x-annotation-key header (role anon); RLS checks person and project access.
+--   Projects: name and domains (host incl. port); the overlay finds its project by location.host.
+--   Staff: DAYONE e-mail, first name, optional last name; a personal key for all projects,
+--     name fixed by the list.
+--   Guests: one link per project (project key). On first visit only a name; this creates the
+--     browser's own key. A new project link disables the old one and every guest who joined through it.
+-- Only the SHA-256 of each key is stored. Administration: scripts/annotation-admin.mjs (service role).
 
 create extension if not exists pgcrypto with schema extensions;
 
 -- ---------------------------------------------------------------------------
--- Namen: unsichtbare Zeichen (Steuerzeichen, Tabs, Umbrüche, Zero-Width, Bidi) entfernen,
--- geschützte Leerzeichen wie Leerzeichen behandeln, NFC normalisieren, Ränder trimmen.
--- Gültig: höchstens 48 Zeichen (Codepoints, Kombinationszeichen zählen mit), mindestens 2 Buchstaben oder Ziffern.
+-- Names: remove invisible characters (control characters, tabs, line breaks, zero-width, bidi),
+-- treat no-break spaces as spaces, normalise to NFC, trim.
+-- Valid: at most 48 characters (code points, combining marks count), at least 2 letters or digits.
 -- ---------------------------------------------------------------------------
 create function public.annotation_clean_name(p_name text)
 returns text
@@ -38,15 +38,15 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------------
--- Projekte und Domains: über die API unsichtbar.
+-- Projects and domains: not visible through the API.
 -- ---------------------------------------------------------------------------
 create table public.annotation_projects (
   id text primary key check (id ~ '^[a-z0-9][a-z0-9-]{1,62}$'),
   name text not null check (char_length(btrim(name)) between 1 and 120),
-  -- Projekt-Link für Gäste; jede Erneuerung erhöht key_generation und sperrt alle früheren Gäste.
+  -- Project link for guests; every renewal increments key_generation and locks out all earlier guests.
   key_hash bytea unique,
   key_generation integer not null default 0,
-  -- Geheimes Realtime-Topic: nur wer gültigen Zugriff hat, erfährt es; wird bei jedem Entzug neu gewürfelt.
+  -- Secret realtime topic: only people with valid access learn it; re-rolled on every revocation.
   realtime_topic uuid not null default gen_random_uuid(),
   created_at timestamptz not null default now()
 );
@@ -63,13 +63,13 @@ alter table public.annotation_project_domains enable row level security;
 revoke all on public.annotation_project_domains from anon, authenticated;
 
 -- ---------------------------------------------------------------------------
--- Personen
+-- People
 -- ---------------------------------------------------------------------------
 create table public.annotation_people (
   id uuid primary key default gen_random_uuid(),
-  -- null = Mitarbeitende (alle Projekte), sonst Gast in genau diesem Projekt.
+  -- null = staff (all projects), otherwise a guest in exactly this project.
   project_id text references public.annotation_projects (id) on delete cascade,
-  -- Gäste gelten nur, solange der Projekt-Link ihrer Generation aktuell ist.
+  -- Guests are valid only while the project link of their generation is current.
   key_generation integer,
   email text unique check (email = lower(btrim(email)) and email ~ '^[^@[:space:]]+@dayone\.de$'),
   first_name text check (char_length(first_name) between 1 and 48 and first_name = public.annotation_clean_name(first_name)),
@@ -86,11 +86,11 @@ create table public.annotation_people (
 
 alter table public.annotation_people enable row level security;
 revoke all on public.annotation_people from anon, authenticated;
--- Lesbar sind nur ID, Name und ob Gast; E-Mail, Projekt und key_hash nie.
+-- Readable: id, name and guest flag only; never e-mail, project or key_hash.
 grant select (id, display_name, is_guest) on public.annotation_people to anon;
 
 -- ---------------------------------------------------------------------------
--- Kommentare: author_id ist die Person; den Namen liefert annotation_people beim Lesen.
+-- Comments: author_id is the person; annotation_people supplies the name when reading.
 -- ---------------------------------------------------------------------------
 create table public.comments (
   id uuid primary key default gen_random_uuid(),
@@ -103,7 +103,7 @@ create table public.comments (
   resolved boolean not null default false,
   created_at timestamptz not null default now(),
   resolved_at timestamptz,
-  -- Ein Thread mit Antworten lässt sich nicht löschen, nur erledigen (auch bei gleichzeitigem Insert).
+  -- A thread with replies cannot be deleted, only resolved (also with a concurrent insert).
   parent_id uuid references public.comments (id) on delete restrict
 );
 
@@ -112,19 +112,19 @@ create index comments_parent_idx on public.comments (parent_id);
 create index comments_author_idx on public.comments (author_id);
 
 alter table public.comments enable row level security;
--- TRUNCATE umgeht RLS, deshalb Rechte explizit statt Supabase-Default (all).
+-- TRUNCATE bypasses RLS, so privileges are explicit instead of the Supabase default (all).
 revoke all on public.comments from anon, authenticated;
 grant select, delete on public.comments to anon;
--- Autor, Status und Zeiten setzt der Server (Trigger), der Browser schickt sie nicht.
+-- Author, status and timestamps are set by the server (trigger); the browser does not send them.
 grant insert (id, project_id, page_path, selector, rect, text, parent_id) on public.comments to anon;
--- Erledigen darf jeder im Projekt, Verschieben nur der Autor (Trigger); resolved_at setzt die DB.
+-- Anyone in the project may resolve, only the author may move (trigger); the database sets resolved_at.
 grant update (rect, selector, resolved) on public.comments to anon;
 
 -- ---------------------------------------------------------------------------
--- Zugriff
+-- Access
 -- ---------------------------------------------------------------------------
--- Person zum Schlüssel aus dem Header; null ohne, mit ungültigem oder entzogenem Schlüssel
--- und für Gäste, deren Projekt-Link erneuert wurde.
+-- Person for the key in the header; null without, with an invalid or revoked key
+-- and for guests whose project link was renewed.
 create function public.annotation_me()
 returns uuid
 language sql
@@ -141,7 +141,7 @@ as $$
     and (p.project_id is null or p.key_generation = pr.key_generation);
 $$;
 
--- Person, wenn sie Zugriff auf das (angelegte) Projekt hat: Mitarbeitende überall, Gäste im eigenen.
+-- Person, if they may access the (registered) project: staff everywhere, guests in their own.
 create function public.annotation_person_for(p_project_id text)
 returns uuid
 language sql
@@ -156,7 +156,7 @@ as $$
     and (p.project_id is null or p.project_id = p_project_id);
 $$;
 
--- Projekt zur Seite: Überschreibung durch das Overlay, sonst über die Domain.
+-- Project of the page: override from the overlay, otherwise by domain.
 create function public.annotation_resolve_project(p_host text, p_project_id text)
 returns text
 language sql
@@ -169,7 +169,7 @@ as $$
     (select d.project_id from public.annotation_project_domains d where d.host = lower(btrim(p_host))));
 $$;
 
--- Für das Overlay: wer bin ich auf dieser Seite? Leer ohne Zugriff (dann bleibt das Overlay unsichtbar).
+-- For the overlay: who am I on this page? Empty without access (the overlay then stays invisible).
 create function public.annotation_whoami(p_host text, p_project_id text default null)
 returns table (project_id text, person_id uuid, display_name text, is_guest boolean, realtime_topic uuid)
 language sql
@@ -183,7 +183,7 @@ as $$
   where pr.id = public.annotation_resolve_project(p_host, p_project_id);
 $$;
 
--- Gilt der Projekt-Link für das Projekt dieser Seite? Nur dann fragt das Overlay nach dem Namen.
+-- Is the project link valid for this page's project? Only then does the overlay ask for a name.
 create function public.annotation_project_key_ok(p_key text, p_host text, p_project_id text default null)
 returns boolean
 language sql
@@ -197,7 +197,7 @@ as $$
       and pr.id = public.annotation_resolve_project(p_host, p_project_id));
 $$;
 
--- Gast tritt mit Projekt-Link und Namen bei; liefert einmalig den eigenen Browser-Schlüssel.
+-- A guest joins with project link and name; returns the browser's own key once.
 create function public.annotation_join(p_key text, p_display_name text)
 returns text
 language plpgsql
@@ -213,7 +213,7 @@ begin
   if v_project.id is null then
     raise exception 'invalid project link' using errcode = '28000';
   end if;
-  -- Eigene Meldung statt Check-Verletzung: deren details enthielten die ganze Zeile.
+  -- Own message instead of a check violation, whose details would contain the whole row.
   if not public.annotation_name_ok(v_name) then
     raise exception 'invalid name' using errcode = '23514';
   end if;
@@ -224,7 +224,7 @@ begin
 end;
 $$;
 
--- Umbenennen nur für Gäste; Mitarbeitende tragen den Namen aus der Liste.
+-- Renaming is for guests only; staff carry the name from the list.
 create function public.annotation_rename(p_display_name text)
 returns void
 language plpgsql
@@ -252,7 +252,7 @@ $$;
 -- ---------------------------------------------------------------------------
 -- Trigger
 -- ---------------------------------------------------------------------------
--- Autor, Zeitpunkt und Status setzt der Server, nicht der Browser.
+-- Author, time and status are set by the server, not the browser.
 create function public.annotation_before_insert()
 returns trigger
 language plpgsql
@@ -266,7 +266,7 @@ begin
     raise exception 'no access to this project' using errcode = '42501';
   end if;
 
-  -- Antworten nur auf Threads im selben Projekt, keine Antwort auf Antworten.
+  -- Replies only to threads in the same project, no replies to replies.
   if new.parent_id is not null and not exists (
     select 1
     from public.comments c
@@ -288,7 +288,7 @@ create trigger annotation_before_insert
 before insert on public.comments
 for each row execute function public.annotation_before_insert();
 
--- Verschieben nur der Autor; resolved_at folgt dem Erledigt-Status.
+-- Only the author may move; resolved_at follows the resolved status.
 create function public.annotation_before_update()
 returns trigger
 language plpgsql
@@ -314,8 +314,8 @@ create trigger annotation_before_update
 before update on public.comments
 for each row execute function public.annotation_before_update();
 
--- Realtime: postgres_changes sieht den Schlüssel nicht. Stattdessen ein leerer Ping auf das geheime
--- Topic des Projekts; das Overlay lädt daraufhin mit Schlüssel neu.
+-- Realtime: postgres_changes cannot see the key. Instead an empty ping goes to the project's secret
+-- topic; the overlay then reloads with its key.
 create function public.annotation_ping(p_project_id text)
 returns void
 language sql
@@ -327,6 +327,8 @@ as $$
   where pr.id = p_project_id;
 $$;
 
+-- One ping per statement and project, not per row: "resolve all" over N threads sends one ping.
+-- Transition tables allow only one event per trigger, hence three triggers.
 create function public.annotation_notify()
 returns trigger
 language plpgsql
@@ -334,16 +336,34 @@ security definer
 set search_path = ''
 as $$
 begin
-  perform public.annotation_ping(coalesce(new.project_id, old.project_id));
+  if tg_op = 'INSERT' then
+    perform public.annotation_ping(p.project_id) from (select distinct project_id from new_rows) p;
+  elsif tg_op = 'UPDATE' then
+    perform public.annotation_ping(p.project_id)
+    from (select project_id from new_rows union select project_id from old_rows) p;
+  else
+    perform public.annotation_ping(p.project_id) from (select distinct project_id from old_rows) p;
+  end if;
   return null;
 end;
 $$;
 
-create trigger annotation_notify
-after insert or update or delete on public.comments
-for each row execute function public.annotation_notify();
+create trigger annotation_notify_insert
+after insert on public.comments
+referencing new table as new_rows
+for each statement execute function public.annotation_notify();
 
--- Umbenennung: Ping in jedes Projekt, in dem die Person kommentiert hat, damit alte Kommentare sofort umschalten.
+create trigger annotation_notify_update
+after update on public.comments
+referencing old table as old_rows new table as new_rows
+for each statement execute function public.annotation_notify();
+
+create trigger annotation_notify_delete
+after delete on public.comments
+referencing old table as old_rows
+for each statement execute function public.annotation_notify();
+
+-- Rename: ping every project the person commented in, so old comments switch immediately.
 create function public.annotation_notify_rename()
 returns trigger
 language plpgsql
@@ -362,7 +382,7 @@ after update of display_name on public.annotation_people
 for each row when (old.display_name is distinct from new.display_name)
 execute function public.annotation_notify_rename();
 
--- Entzug: letzter Ping auf das alte Topic (gültige Browser holen sich das neue), dann neu würfeln.
+-- Revocation: a last ping on the old topic (valid browsers fetch the new one), then re-roll.
 create function public.annotation_rotate_topics(p_project_id text)
 returns void
 language plpgsql
@@ -381,9 +401,9 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Admin (nur service_role, über scripts/annotation-admin.mjs). Schlüssel: 256 Bit, einmalig zurückgegeben.
+-- Admin (service_role only, via scripts/annotation-admin.mjs). Keys: 256 bit, returned once.
 -- ---------------------------------------------------------------------------
--- Projekt anlegen oder Namen und Domains ersetzen.
+-- Create a project or replace its name and domains.
 create function public.annotation_set_project(p_id text, p_name text, p_domains text[])
 returns void
 language plpgsql
@@ -400,7 +420,7 @@ begin
 end;
 $$;
 
--- Neuer Projekt-Link: alter Link und alle darüber beigetretenen Gäste sind sofort wirkungslos.
+-- New project link: the old link and every guest who joined through it stop working immediately.
 create function public.annotation_new_project_key(p_project_id text)
 returns text
 language plpgsql
@@ -423,7 +443,7 @@ begin
 end;
 $$;
 
--- Neuer persönlicher Schlüssel für Mitarbeitende; der alte ist sofort ungültig.
+-- New personal key for staff; the old one stops working immediately.
 create function public.annotation_new_key(p_person_id uuid)
 returns text
 language plpgsql
@@ -467,7 +487,7 @@ begin
 end;
 $$;
 
--- Entzug für Mitarbeitende: Schlüssel löschen. Kommentare und Name bleiben.
+-- Revocation for staff: delete the key. Comments and name remain.
 create function public.annotation_revoke_key(p_person_id uuid)
 returns void
 language plpgsql
@@ -486,7 +506,7 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- Rechte auf Funktionen (Supabase vergibt EXECUTE standardmäßig an anon und authenticated).
+-- Function privileges (Supabase grants EXECUTE to anon and authenticated by default).
 -- ---------------------------------------------------------------------------
 do $$
 declare
@@ -500,17 +520,17 @@ begin
   end loop;
 end $$;
 
--- Für Policies, Checks und Generated Columns, die als anon ausgewertet werden.
+-- For policies, checks and generated columns evaluated as anon.
 grant execute on function public.annotation_clean_name(text) to anon;
 grant execute on function public.annotation_name_ok(text) to anon;
 grant execute on function public.annotation_me() to anon;
 grant execute on function public.annotation_person_for(text) to anon;
--- Für das Overlay.
+-- For the overlay.
 grant execute on function public.annotation_whoami(text, text) to anon;
 grant execute on function public.annotation_project_key_ok(text, text, text) to anon;
 grant execute on function public.annotation_join(text, text) to anon;
 grant execute on function public.annotation_rename(text) to anon;
--- Für das Admin-Skript.
+-- For the admin script.
 grant execute on function public.annotation_set_project(text, text, text[]) to service_role;
 grant execute on function public.annotation_new_project_key(text) to service_role;
 grant execute on function public.annotation_new_key(uuid) to service_role;
@@ -518,9 +538,9 @@ grant execute on function public.annotation_add_staff(text, text, text) to servi
 grant execute on function public.annotation_revoke_key(uuid) to service_role;
 
 -- ---------------------------------------------------------------------------
--- Policies (nur anon; authenticated hat keine Rechte)
+-- Policies (anon only; authenticated has no privileges)
 -- ---------------------------------------------------------------------------
--- Sichtbar: man selbst und Autoren von Kommentaren, die man lesen darf (RLS von comments greift).
+-- Visible: yourself and authors of comments you may read (the RLS of comments applies).
 create policy people_select on public.annotation_people
   for select to anon
   using (
@@ -541,7 +561,7 @@ create policy comments_update on public.comments
   using (public.annotation_person_for(project_id) is not null)
   with check (public.annotation_person_for(project_id) is not null);
 
--- Löschen nur eigene Kommentare; Threads mit Antworten lehnt der Fremdschlüssel ab (on delete restrict).
+-- Delete own comments only; the foreign key rejects threads with replies (on delete restrict).
 create policy comments_delete on public.comments
   for delete to anon
   using (author_id = public.annotation_person_for(project_id));

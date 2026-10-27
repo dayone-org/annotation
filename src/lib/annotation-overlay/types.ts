@@ -51,11 +51,9 @@ export type AnnotationOverlayProps = {
   supabaseAnonKey: string;
   pagePath?: string;
   position?: AnnotationPosition;
-  /** Überschreibt das Projekt, das sonst über die Domain (location.host) gefunden wird. */
+  /** Overrides the project that is otherwise found by the domain (location.host). */
   projectId?: string;
   storageKeyPrefix?: string;
-  /** Kommentartabelle im zentralen Schema (Standard `comments`). */
-  tableName?: string;
 };
 
 export type AnnotationProps = AnnotationOverlayProps;

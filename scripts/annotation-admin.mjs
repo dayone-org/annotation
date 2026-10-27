@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// Projekte und Mitarbeitende pflegen (Service Role). Links mit Schlüssel werden genau einmal ausgegeben.
+// Manage projects and staff (service role). Links with a key are printed exactly once.
 //
-//   SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… node scripts/annotation-admin.mjs <befehl> …
+//   SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=… node scripts/annotation-admin.mjs <command> …
 //
-//   projekt      --id wika --name "WIKA Relaunch" --domain wika.de --domain localhost:3000
-//                (legt an oder ersetzt Name und Domains; Domain = Host inkl. Port)
-//   projekt-link --id wika --url https://wika.de   (Link für Gäste; alter Link und alle Gäste darüber gesperrt)
-//   mitarbeiter  --email a@dayone.de --vorname Anna [--nachname Muster] --url https://wika.de
-//   neuer-schluessel --person <id> --url https://wika.de   (Mitarbeitende; alter Schlüssel sofort ungültig)
-//   entziehen        --person <id>                         (Mitarbeitende; Schlüssel löschen)
+//   project      --id wika --name "WIKA relaunch" --domain wika.de --domain localhost:3000
+//                (creates the project or replaces name and domains; domain = host incl. port)
+//   project-link --id wika --url https://wika.de   (guest link; the old link and its guests stop working)
+//   staff        --email a@dayone.de --first-name Anna [--last-name Muster] --url https://wika.de
+//   new-key      --person <id> --url https://wika.de   (staff; the old key stops working)
+//   revoke       --person <id>                         (staff; deletes the key)
 import { createClient } from "@supabase/supabase-js";
 import { parseArgs } from "node:util";
 
@@ -16,8 +16,8 @@ const { positionals, values } = parseArgs({
   allowPositionals: true,
   options: {
     email: { type: "string" },
-    vorname: { type: "string" },
-    nachname: { type: "string" },
+    "first-name": { type: "string" },
+    "last-name": { type: "string" },
     id: { type: "string" },
     name: { type: "string" },
     domain: { type: "string", multiple: true },
@@ -26,23 +26,33 @@ const { positionals, values } = parseArgs({
   },
 });
 
-const { SUPABASE_URL: url, SUPABASE_SERVICE_ROLE_KEY: serviceKey } = process.env;
-if (!url || !serviceKey) {
-  fail("SUPABASE_URL und SUPABASE_SERVICE_ROLE_KEY setzen.");
-}
-
-const client = createClient(url, serviceKey, { auth: { persistSession: false } });
-
 function fail(message) {
   console.error(message);
   process.exit(1);
 }
 
+const { SUPABASE_URL: url, SUPABASE_SERVICE_ROLE_KEY: serviceKey } = process.env;
+if (!url || !serviceKey) {
+  fail("Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.");
+}
+
 function need(...names) {
   for (const name of names) {
-    if (!String(values[name] ?? "").trim()) fail(`--${name} fehlt.`);
+    if (!String(values[name] ?? "").trim()) fail(`--${name} is missing.`);
   }
 }
+
+// Parse --url before any database call, so a typo cannot lose a key that is shown only once.
+let baseUrl = null;
+if (values.url !== undefined) {
+  try {
+    baseUrl = new URL(values.url);
+  } catch {
+    fail(`--url is not a valid URL: ${values.url}`);
+  }
+}
+
+const client = createClient(url, serviceKey, { auth: { persistSession: false } });
 
 async function rpc(fn, args) {
   const { data, error } = await client.rpc(fn, args);
@@ -51,50 +61,48 @@ async function rpc(fn, args) {
 }
 
 function link(key) {
-  const target = new URL(values.url);
+  const target = new URL(baseUrl);
   target.hash = `key=${key}`;
   return target.toString();
 }
 
 switch (positionals[0]) {
-  case "mitarbeiter": {
-    need("email", "vorname", "url");
-    const [row] = await rpc("annotation_add_staff", {
-      p_email: values.email,
-      p_first_name: values.vorname,
-      p_last_name: values.nachname ?? null,
-    });
-    console.log(`Person ${row.person_id}\n${link(row.key)}`);
-    break;
-  }
-  case "projekt": {
+  case "project": {
     need("id", "name", "domain");
     await rpc("annotation_set_project", {
       p_id: values.id,
       p_name: values.name,
       p_domains: values.domain,
     });
-    console.log(`Projekt ${values.id}: ${values.domain.join(", ")}`);
+    console.log(`Project ${values.id}: ${values.domain.join(", ")}`);
     break;
   }
-  case "projekt-link": {
+  case "project-link": {
     need("id", "url");
     console.log(link(await rpc("annotation_new_project_key", { p_project_id: values.id })));
     break;
   }
-  case "neuer-schluessel": {
+  case "staff": {
+    need("email", "first-name", "url");
+    const [row] = await rpc("annotation_add_staff", {
+      p_email: values.email,
+      p_first_name: values["first-name"],
+      p_last_name: values["last-name"] ?? null,
+    });
+    console.log(`Person ${row.person_id}\n${link(row.key)}`);
+    break;
+  }
+  case "new-key": {
     need("person", "url");
     console.log(link(await rpc("annotation_new_key", { p_person_id: values.person })));
     break;
   }
-  case "entziehen": {
+  case "revoke": {
     need("person");
     await rpc("annotation_revoke_key", { p_person_id: values.person });
-    console.log(`Schlüssel von ${values.person} gelöscht.`);
+    console.log(`Key of ${values.person} deleted.`);
     break;
   }
   default:
-    fail(
-      "Befehl: projekt | projekt-link | mitarbeiter | neuer-schluessel | entziehen (Details im Dateikopf).",
-    );
+    fail("Command: project | project-link | staff | new-key | revoke (see the file header).");
 }

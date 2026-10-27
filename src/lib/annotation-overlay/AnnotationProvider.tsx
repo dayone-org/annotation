@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type PropsWithChildren,
 } from "react";
@@ -27,8 +28,8 @@ import {
 import { getCommentMap, getThreadRootId, normalizeComment, sortComments } from "./utils";
 
 const supabaseClientCache = new Map<string, SupabaseClient>();
-const DEFAULT_TABLE_NAME = "comments";
-// Den Anzeigenamen liefert die Person beim Lesen, damit Umbenennungen auch alte Kommentare treffen.
+const TABLE = "comments";
+// The display name is joined in when reading, so a rename also changes old comments.
 const COMMENT_SELECT = "*, author:annotation_people(display_name, is_guest)";
 
 type Session = {
@@ -64,7 +65,7 @@ function getSupabaseClient(url: string, anonKey: string, accessKey: string): Sup
       persistSession: false,
       autoRefreshToken: false,
     },
-    // Die Datenbank prüft bei jeder Anfrage Person und Projektzugriff anhand dieses Schlüssels.
+    // The database checks person and project access by this key on every request.
     global: accessKey ? { headers: { "x-annotation-key": accessKey } } : undefined,
   });
 
@@ -87,12 +88,11 @@ export function AnnotationProvider({
   storageKeyPrefix = DEFAULT_STORAGE_KEY_PREFIX,
   supabaseAnonKey,
   supabaseUrl,
-  tableName = DEFAULT_TABLE_NAME,
 }: PropsWithChildren<AnnotationOverlayProps>) {
   const keyStorageKey = getStorageKey(storageKeyPrefix, "key");
   const [linkKey] = useState(takeLinkKey);
   const [accessKey, setAccessKey] = useState(() => readStoredString(keyStorageKey));
-  // Projekt-Link eines Gasts, der noch keinen Namen eingegeben hat.
+  // Project link of a guest who has not entered a name yet.
   const [pendingProjectKey, setPendingProjectKey] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [sessionCheck, setSessionCheck] = useState(0);
@@ -124,7 +124,10 @@ export function AnnotationProvider({
   const commentMap = useMemo(() => getCommentMap(comments), [comments]);
   const canWriteComments = useCallback(() => Boolean(session), [session]);
 
+  const loadSequence = useRef(0);
   const loadComments = useCallback(async () => {
+    // Only the newest request may write state; an older, slower response must not overwrite it.
+    const sequence = ++loadSequence.current;
     if (!normalizedProjectId) {
       setComments([]);
       return;
@@ -134,10 +137,14 @@ export function AnnotationProvider({
     setErrorMessage(null);
 
     const { data, error } = await client
-      .from(tableName)
+      .from(TABLE)
       .select(COMMENT_SELECT)
       .eq("project_id", normalizedProjectId)
       .order("created_at", { ascending: true });
+
+    if (sequence !== loadSequence.current) {
+      return;
+    }
 
     if (error) {
       setComments([]);
@@ -150,7 +157,7 @@ export function AnnotationProvider({
       setComments(sortComments((data ?? []).map((row) => toComment(row as CommentRow))));
       setIsLoading(false);
     });
-  }, [client, normalizedProjectId, tableName]);
+  }, [client, normalizedProjectId]);
 
   const syncPath = useCallback(() => {
     const nextPath = getActivePath(pagePath);
@@ -171,33 +178,47 @@ export function AnnotationProvider({
     }
   }, [annotationMode]);
 
-  // Wer bin ich auf dieser Seite? Reihenfolge: persönlicher Link, gespeicherter Schlüssel,
-  // Projekt-Link (dann fragt das Overlay nach dem Namen). Ohne Treffer bleibt das Overlay unsichtbar.
+  // Who am I on this page? Order: personal link, stored key, project link (then the overlay asks
+  // for a name). Without a match the overlay stays invisible.
   useEffect(() => {
     let isActive = true;
     const args = { p_host: window.location.host, p_project_id: projectOverride };
-    const whoami = async (key: string) => {
+    // undefined = request failed (keep the current state), null = no access (revoked or unknown key).
+    const whoami = async (key: string): Promise<Session | null | undefined> => {
       if (!key) {
         return null;
       }
-      const { data } = await getSupabaseClient(supabaseUrl, supabaseAnonKey, key).rpc(
+      const { data, error } = await getSupabaseClient(supabaseUrl, supabaseAnonKey, key).rpc(
         "annotation_whoami",
         args,
       );
+      if (error) {
+        if (isActive) {
+          setErrorMessage(error.message);
+          setIsLoading(false);
+        }
+        return undefined;
+      }
       return (data as Session[] | null)?.[0] ?? null;
     };
 
     void (async () => {
-      if (linkKey && linkKey !== accessKey && (await whoami(linkKey))) {
-        if (isActive) {
-          writeStoredString(keyStorageKey, linkKey);
-          setAccessKey(linkKey);
+      if (linkKey && linkKey !== accessKey) {
+        const viaLink = await whoami(linkKey);
+        if (viaLink === undefined) {
+          return;
         }
-        return;
+        if (viaLink) {
+          if (isActive) {
+            writeStoredString(keyStorageKey, linkKey);
+            setAccessKey(linkKey);
+          }
+          return;
+        }
       }
 
       const me = await whoami(accessKey);
-      if (!isActive) {
+      if (!isActive || me === undefined) {
         return;
       }
       setSession(me);
@@ -249,8 +270,8 @@ export function AnnotationProvider({
     };
   }, [pagePath, syncPath]);
 
-  // postgres_changes sieht den Schlüssel nicht. Die DB pingt ein geheimes Topic, das nur whoami mit
-  // gültigem Schlüssel verrät; nach einem Entzug wird es neu gewürfelt, deshalb auch whoami neu prüfen.
+  // postgres_changes cannot see the key. The database pings a secret topic that only whoami reveals to a
+  // valid key; it is re-rolled on revocation, so every ping also re-checks whoami.
   const realtimeTopic = session?.realtime_topic ?? null;
   useEffect(() => {
     if (!realtimeTopic) {
@@ -270,17 +291,24 @@ export function AnnotationProvider({
     };
   }, [client, loadComments, realtimeTopic]);
 
+  // A ref, not only state: a fast second Enter arrives before the disabled button is rendered.
+  const joiningRef = useRef(false);
+  const [isJoining, setIsJoining] = useState(false);
   const joinAsGuest = useCallback(
     async (name: string) => {
-      if (!pendingProjectKey) {
+      if (!pendingProjectKey || joiningRef.current) {
         return false;
       }
 
+      joiningRef.current = true;
+      setIsJoining(true);
       setErrorMessage(null);
       const { data, error } = await getSupabaseClient(supabaseUrl, supabaseAnonKey, "").rpc(
         "annotation_join",
         { p_key: pendingProjectKey, p_display_name: name },
       );
+      joiningRef.current = false;
+      setIsJoining(false);
 
       if (error || typeof data !== "string") {
         setErrorMessage(error?.message ?? "Joining failed.");
@@ -379,7 +407,7 @@ export function AnnotationProvider({
 
       const threadId = getThreadRootId(commentId, commentMap);
       const target = commentMap.get(threadId);
-      // Verschieben darf nur der Autor; die DB prüft das ebenfalls.
+      // Only the author may move a thread; the database enforces this too.
       if (!target || target.author_id !== personId) {
         return false;
       }
@@ -397,10 +425,7 @@ export function AnnotationProvider({
         );
       });
 
-      let query = client
-        .from(tableName)
-        .update({ rect, selector: nextSelector })
-        .eq("id", threadId);
+      let query = client.from(TABLE).update({ rect, selector: nextSelector }).eq("id", threadId);
       if (normalizedProjectId) {
         query = query.eq("project_id", normalizedProjectId);
       }
@@ -423,7 +448,7 @@ export function AnnotationProvider({
 
       return true;
     },
-    [canWriteComments, client, commentMap, normalizedProjectId, personId, tableName],
+    [canWriteComments, client, commentMap, normalizedProjectId, personId],
   );
 
   const scrollToComment = useCallback(
@@ -516,7 +541,7 @@ export function AnnotationProvider({
       };
 
       const { data, error } = await client
-        .from(tableName)
+        .from(TABLE)
         .insert(payload)
         .select(COMMENT_SELECT)
         .single();
@@ -538,7 +563,7 @@ export function AnnotationProvider({
       );
       return true;
     },
-    [canWriteComments, client, commentMap, composer, currentPath, normalizedProjectId, tableName],
+    [canWriteComments, client, commentMap, composer, currentPath, normalizedProjectId],
   );
 
   const removeThread = useCallback(
@@ -555,16 +580,16 @@ export function AnnotationProvider({
 
       setErrorMessage(null);
 
-      // Antworten fallen per Cascade mit; RLS löscht nur eigene Threads.
+      // RLS deletes only own comments; the database rejects threads with replies (on delete restrict).
       const { data, error } = await client
-        .from(tableName)
+        .from(TABLE)
         .delete()
         .eq("id", threadId)
         .eq("project_id", normalizedProjectId ?? "")
         .select("id");
 
       if (error || !data?.length) {
-        // 23503: inzwischen hängt eine Antwort dran; die DB lehnt das Löschen ab (on delete restrict).
+        // 23503: a reply arrived in the meantime.
         setErrorMessage(
           error?.code === "23503"
             ? "This thread has replies and can only be resolved."
@@ -574,9 +599,7 @@ export function AnnotationProvider({
       }
 
       startTransition(() => {
-        setComments((previous) =>
-          previous.filter((comment) => comment.id !== threadId && comment.parent_id !== threadId),
-        );
+        setComments((previous) => previous.filter((comment) => comment.id !== threadId));
       });
 
       if (composer?.parentId === threadId) {
@@ -587,7 +610,7 @@ export function AnnotationProvider({
       setActiveThreadId((previous) => (previous === threadId ? null : previous));
       return true;
     },
-    [canWriteComments, client, closeComposer, commentMap, composer, normalizedProjectId, tableName],
+    [canWriteComments, client, closeComposer, commentMap, composer, normalizedProjectId],
   );
 
   const resolveAllComments = useCallback(async () => {
@@ -606,7 +629,7 @@ export function AnnotationProvider({
     setErrorMessage(null);
 
     const resolvedAt = new Date().toISOString();
-    let query = client.from(tableName).update({ resolved: true }).in("id", openThreadIds);
+    let query = client.from(TABLE).update({ resolved: true }).in("id", openThreadIds);
     if (normalizedProjectId) {
       query = query.eq("project_id", normalizedProjectId);
     }
@@ -643,7 +666,7 @@ export function AnnotationProvider({
       previous && resolvedThreadIds.has(previous) ? null : previous,
     );
     return true;
-  }, [canWriteComments, client, closeComposer, comments, composer, normalizedProjectId, tableName]);
+  }, [canWriteComments, client, closeComposer, comments, composer, normalizedProjectId]);
 
   const toggleResolved = useCallback(
     async (commentId: string) => {
@@ -659,7 +682,7 @@ export function AnnotationProvider({
 
       const nextResolved = !target.resolved;
       const resolvedAt = nextResolved ? new Date().toISOString() : null;
-      let query = client.from(tableName).update({ resolved: nextResolved }).eq("id", threadId);
+      let query = client.from(TABLE).update({ resolved: nextResolved }).eq("id", threadId);
       if (normalizedProjectId) {
         query = query.eq("project_id", normalizedProjectId);
       }
@@ -691,10 +714,15 @@ export function AnnotationProvider({
 
       setActiveThreadId(threadId);
     },
-    [canWriteComments, client, closeComposer, commentMap, composer, normalizedProjectId, tableName],
+    [canWriteComments, client, closeComposer, commentMap, composer, normalizedProjectId],
   );
 
+  // Shortcuts only with access; otherwise "c" and Escape belong to the host page.
   useEffect(() => {
+    if (!session) {
+      return;
+    }
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) {
         return;
@@ -738,6 +766,7 @@ export function AnnotationProvider({
     annotationMode,
     cancelAnnotationMode,
     composer,
+    session,
     startAnnotationMode,
     toggleResolved,
   ]);
@@ -750,6 +779,7 @@ export function AnnotationProvider({
       cancelAnnotationMode,
       comments,
       isGuest: session?.is_guest ?? false,
+      isJoining,
       joinAsGuest,
       personId,
       phase,
@@ -780,6 +810,7 @@ export function AnnotationProvider({
       author,
       cancelAnnotationMode,
       comments,
+      isJoining,
       joinAsGuest,
       personId,
       phase,

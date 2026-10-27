@@ -145,7 +145,7 @@ function ComposerPopover({
       )
     : [];
 
-  // Löschen nur eigene Threads ohne Antworten; sonst bleibt nur Erledigen.
+  // Remove only own threads without replies; otherwise only resolving remains.
   const canRemoveThread = threadComments.length === 1 && parentComment?.author_id === personId;
 
   const handleToggleResolved = () => {
@@ -241,7 +241,7 @@ function AnnotationOverlayScene({
 }) {
   const { phase } = useAnnotation();
 
-  // Ohne gültigen Schlüssel ist das Overlay komplett unsichtbar.
+  // Without a valid key the overlay is not rendered at all.
   if (phase === "hidden") {
     return null;
   }

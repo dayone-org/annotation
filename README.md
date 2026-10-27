@@ -47,16 +47,16 @@ Links carry the key in the fragment (`#key=…`). The overlay removes it from th
 its key in `localStorage` and sends it with every request (`x-annotation-key` header). Keys are
 stored hashed; row level security checks person and project. Without a valid key the overlay is
 not rendered at all. Display names are resolved when reading, so a rename also changes old
-comments. Threads with replies from others can be resolved but not removed; only the author can
+comments. Threads with any reply can be resolved but not removed; only the author can
 move a thread.
 
 ```bash
 export SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=…
-node scripts/annotation-admin.mjs projekt --id marketing-site --name "Marketing site" --domain example.com
-node scripts/annotation-admin.mjs projekt-link --id marketing-site --url https://example.com
-node scripts/annotation-admin.mjs mitarbeiter --email anna@dayone.de --vorname Anna --url https://example.com
-node scripts/annotation-admin.mjs neuer-schluessel --person <id> --url https://example.com
-node scripts/annotation-admin.mjs entziehen --person <id>
+node scripts/annotation-admin.mjs project --id marketing-site --name "Marketing site" --domain example.com
+node scripts/annotation-admin.mjs project-link --id marketing-site --url https://example.com
+node scripts/annotation-admin.mjs staff --email anna@dayone.de --first-name Anna --url https://example.com
+node scripts/annotation-admin.mjs new-key --person <id> --url https://example.com
+node scripts/annotation-admin.mjs revoke --person <id>
 ```
 
 Each link is printed once.
@@ -79,4 +79,7 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=
 - Dock positioning in all four corners
 - Personal and per-project access keys, project isolation and server-side authors via row level security
 - Guests rename themselves in the settings; the new name applies to all of their comments
-- Optional `pagePath`, `position`, `storageKeyPrefix`, and `tableName` props for advanced integration
+- Optional `projectId`, `pagePath`, `position`, and `storageKeyPrefix` props for advanced integration
+
+**Breaking change:** the `tableName` prop is gone. The overlay always uses the `comments` table of
+the central schema.

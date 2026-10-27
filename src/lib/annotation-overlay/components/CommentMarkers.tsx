@@ -293,7 +293,7 @@ export function CommentMarkers() {
       }
 
       const comment = topLevelCommentMapRef.current.get(threadId);
-      // Verschieben darf nur der Autor; für alle anderen bleibt der Marker ein Klickziel.
+      // Only the author may move a thread; for everyone else the marker stays a click target.
       if (comment?.author_id !== personId) {
         return;
       }

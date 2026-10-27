@@ -96,7 +96,7 @@ export function normalizeComment(
   };
 }
 
-// Wie die DB: höchstens 48 Zeichen, mindestens 2 Buchstaben oder Ziffern (die DB entfernt zusätzlich unsichtbare Zeichen).
+// Same rule as the database: at most 48 characters, at least 2 letters or digits (the database also strips invisible characters).
 export function isValidName(name: string): boolean {
   const value = name.trim().normalize("NFC");
   return [...value].length <= 48 && (value.match(/[\p{L}\p{N}]/gu)?.length ?? 0) >= 2;

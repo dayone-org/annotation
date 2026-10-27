@@ -11,8 +11,9 @@ export type AnnotationContextValue = {
   errorMessage: string | null;
   isLoading: boolean;
   isGuest: boolean;
+  isJoining: boolean;
   joinAsGuest: (name: string) => Promise<boolean>;
-  /** hidden: kein gültiger Schlüssel, Overlay unsichtbar; join: Gast mit Projekt-Link gibt Namen ein. */
+  /** hidden: no valid key, overlay invisible; join: guest with a project link enters a name. */
   phase: "hidden" | "join" | "ready";
   isMarkerHovered: boolean;
   personId: string | null;
