@@ -64,6 +64,9 @@ function getSupabaseClient(url: string, anonKey: string, accessKey: string): Sup
     auth: {
       persistSession: false,
       autoRefreshToken: false,
+      // One client per key (the key is a global header). Own storage key, else GoTrue warns about
+      // several instances sharing one; nothing is stored since persistSession is off.
+      storageKey: `annotation-overlay-${supabaseClientCache.size}`,
     },
     // The database checks person and project access by this key on every request.
     global: accessKey ? { headers: { "x-annotation-key": accessKey } } : undefined,
@@ -228,7 +231,8 @@ export function AnnotationProvider({
       if (!isActive || me === undefined) {
         return;
       }
-      setSession(me);
+      // Every ping re-checks whoami; keep the old object if nothing changed, so consumers do not re-render.
+      setSession((previous) => (JSON.stringify(previous) === JSON.stringify(me) ? previous : me));
       if (me) {
         setPendingProjectKey(null);
         return;
