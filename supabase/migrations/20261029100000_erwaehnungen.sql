@@ -8,40 +8,44 @@
 -- as read takes the time of the newest entry the overlay has loaded, so later entries stay unread.
 -- Guests get "For you" only for their own project, without domain, and read no mentions.
 -- Mention errors: SQLSTATE AN001 with a readable message.
+-- Idempotent, so a database that already has it can run it again.
 
 -- Both tables use a surrogate key: with a composite primary key of two foreign keys PostgREST treats them
 -- as junction tables between comments and annotation_people, and the overlay's embed
 -- author:annotation_people(...) fails as ambiguous (PGRST201).
-create table public.annotation_mentions (
+create table if not exists public.annotation_mentions (
   id bigint generated always as identity primary key,
   comment_id uuid not null references public.comments (id) on delete cascade,
   person_id uuid not null references public.annotation_people (id) on delete cascade,
   unique (comment_id, person_id)
 );
 
-create index annotation_mentions_person_idx on public.annotation_mentions (person_id);
+create index if not exists annotation_mentions_person_idx on public.annotation_mentions (person_id);
 
 alter table public.annotation_mentions enable row level security;
 revoke all on public.annotation_mentions from anon, authenticated;
 -- Readable for the overlay's comment query (embedded per comment); written only by annotation_add_comment().
 grant select on public.annotation_mentions to anon;
 
--- Staff only (guests see no highlighting), and only for comments the key may read. Both sub-selects
--- use the policies of their tables and are built once per query.
+-- Staff only (guests see no highlighting). Staff read the comments of every project
+-- (annotation_my_projects), so no check per comment is needed. The sub-select is built once per query.
+drop policy if exists mentions_select on public.annotation_mentions;
 create policy mentions_select on public.annotation_mentions
   for select to anon
   using (
     exists (select 1 from public.annotation_people me where me.id = (select public.annotation_me()) and not me.is_guest)
-    and comment_id in (select c.id from public.comments c)
   );
 
-create table public.annotation_reads (
+create table if not exists public.annotation_reads (
   id bigint generated always as identity primary key,
   person_id uuid not null references public.annotation_people (id) on delete cascade,
   thread_id uuid not null references public.comments (id) on delete cascade,
   read_at timestamptz not null default now(),
   unique (person_id, thread_id)
 );
+
+-- Deleting a thread cascades here; without an index on thread_id that scans the whole table.
+create index if not exists annotation_reads_thread_idx on public.annotation_reads (thread_id);
 
 alter table public.annotation_reads enable row level security;
 revoke all on public.annotation_reads from anon, authenticated;
@@ -50,7 +54,7 @@ revoke all on public.annotation_reads from anon, authenticated;
 -- Staff who can be mentioned: not a guest and with a current key.
 -- ---------------------------------------------------------------------------
 -- For the mention picker: ID and name of all staff, only for a staff key. Guests and invalid keys get nothing.
-create function public.annotation_staff_directory()
+create or replace function public.annotation_staff_directory()
 returns table (person_id uuid, display_name text)
 language sql
 stable
@@ -68,7 +72,7 @@ $$;
 -- Create a comment or reply, optionally with mentions. Author, access and parent are checked by the
 -- comments trigger as for a direct insert; mentions are checked here. Any error leaves nothing behind.
 -- Returns the new row, so PostgREST can embed author and mentions like in the overlay's comment query.
-create function public.annotation_add_comment(
+create or replace function public.annotation_add_comment(
   p_project_id text,
   p_page_path text,
   p_text text,
@@ -121,7 +125,7 @@ $$;
 -- My own comments never create entries. project_domain: first domain in alphabetical order (null without,
 -- and always null for guests, who never jump to another project). text_start: the first 140 characters of
 -- the comment that created the entry.
-create function public.annotation_for_you()
+create or replace function public.annotation_for_you()
 returns table (
   project_id text,
   project_name text,
@@ -179,20 +183,10 @@ as $$
   order by c.created_at desc, c.id;
 $$;
 
-create function public.annotation_for_you_unread()
-returns integer
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select count(*)::integer from public.annotation_for_you() f where not f.is_read;
-$$;
-
 -- Opening a thread: its entries up to p_until (created_at of the newest comment the overlay has loaded
 -- in it) are read for me; later ones stay unread, also from a transaction still open. Never in the future,
 -- never backwards. Threads I may not access are ignored.
-create function public.annotation_mark_read(p_thread_id uuid, p_until timestamptz)
+create or replace function public.annotation_mark_read(p_thread_id uuid, p_until timestamptz)
 returns void
 language plpgsql
 security definer
@@ -219,7 +213,7 @@ end;
 $$;
 
 -- "Mark all as read": my unread entries up to p_until (created_at of the newest loaded entry), same rules.
-create function public.annotation_mark_all_read(p_until timestamptz)
+create or replace function public.annotation_mark_all_read(p_until timestamptz)
 returns void
 language plpgsql
 security definer
@@ -247,13 +241,11 @@ $$;
 revoke all on function public.annotation_staff_directory() from public, anon, authenticated;
 revoke all on function public.annotation_add_comment(text, text, text, text, jsonb, uuid, uuid[]) from public, anon, authenticated;
 revoke all on function public.annotation_for_you() from public, anon, authenticated;
-revoke all on function public.annotation_for_you_unread() from public, anon, authenticated;
 revoke all on function public.annotation_mark_read(uuid, timestamptz) from public, anon, authenticated;
 revoke all on function public.annotation_mark_all_read(timestamptz) from public, anon, authenticated;
 
 grant execute on function public.annotation_staff_directory() to anon;
 grant execute on function public.annotation_add_comment(text, text, text, text, jsonb, uuid, uuid[]) to anon;
 grant execute on function public.annotation_for_you() to anon;
-grant execute on function public.annotation_for_you_unread() to anon;
 grant execute on function public.annotation_mark_read(uuid, timestamptz) to anon;
 grant execute on function public.annotation_mark_all_read(timestamptz) to anon;
