@@ -252,6 +252,8 @@ function AdminCard() {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [guestLink, setGuestLink] = useState("");
+  // null: never asked; false: asked and closed, so "New link" takes the focus back.
+  const [confirmingLink, setConfirmingLink] = useState<boolean | null>(null);
   const [staffLink, setStaffLink] = useState("");
   const [project, setProject] = useState({
     id: projectId ?? "",
@@ -297,6 +299,7 @@ function AdminCard() {
 
   const createGuestLink = () =>
     run(async () => {
+      setConfirmingLink(false);
       setGuestLink("");
       const { data, error } = await callAdmin("annotation_admin_new_project_key", {
         p_project_id: projectId,
@@ -338,6 +341,7 @@ function AdminCard() {
               key={option.value}
               onClick={() => {
                 setTab(option.value);
+                setConfirmingLink(null);
                 setError(null);
                 setSaved(false);
               }}
@@ -398,19 +402,58 @@ function AdminCard() {
           <FieldGroup className="annotation:gap-3">
             <div className="annotation:flex annotation:flex-col annotation:items-start annotation:gap-2">
               <Badge variant="secondary">{projectId}</Badge>
-              <p className="annotation:text-xs annotation:text-muted-foreground">
-                The old link and its guests stop working.
-              </p>
             </div>
             {guestLink ? <OneTimeLink url={guestLink} /> : null}
-            <Button
-              disabled={isBusy}
-              onClick={() => void createGuestLink()}
-              size="sm"
-              type="button"
-            >
-              New link
-            </Button>
+            {confirmingLink ? (
+              <div
+                className="annotation:flex annotation:flex-col annotation:gap-2"
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setConfirmingLink(false);
+                  }
+                }}
+                aria-describedby="annotation-admin-link-confirm"
+                role="group"
+              >
+                <p
+                  className="annotation:text-sm annotation:text-muted-foreground"
+                  id="annotation-admin-link-confirm"
+                >
+                  The current link and every guest who joined through it lose access right away.
+                </p>
+                <div className="annotation:grid annotation:grid-cols-2 annotation:gap-2">
+                  <Button
+                    autoFocus
+                    onClick={() => setConfirmingLink(false)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    disabled={isBusy}
+                    onClick={() => void createGuestLink()}
+                    size="sm"
+                    type="button"
+                    variant="destructive"
+                  >
+                    Confirm
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                autoFocus={confirmingLink === false}
+                disabled={isBusy}
+                onClick={() => setConfirmingLink(true)}
+                size="sm"
+                type="button"
+              >
+                New link
+              </Button>
+            )}
           </FieldGroup>
         ) : null}
         {tab === "staff" ? (
