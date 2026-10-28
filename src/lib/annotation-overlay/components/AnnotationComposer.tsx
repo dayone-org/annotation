@@ -5,6 +5,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { StaffMember } from "../types";
+import { splitMentions } from "../utils";
 
 type AnnotationComposerProps = {
   /** Staff for the mention picker; empty (guests) means "@" is plain text. */
@@ -78,6 +79,8 @@ export function AnnotationComposer({
         ? previous
         : [...previous, person],
     );
+    // Closed until the next keystroke: "@Anna " would still match "Anna Muster".
+    setDismissedAt(mention.start);
     pendingCaret.current = nextCaret;
   };
 
@@ -91,8 +94,17 @@ export function AnnotationComposer({
         }
 
         setIsSubmitting(true);
+        // Same matching as the highlighting: whole names only, the longest name wins.
+        const mentioned = new Set(
+          splitMentions(
+            value,
+            picked.map((person) => person.display_name),
+          )
+            .filter((part) => part.mention)
+            .map((part) => part.text.slice(1)),
+        );
         const mentionIds = picked
-          .filter((person) => value.includes(`@${person.display_name}`))
+          .filter((person) => mentioned.has(person.display_name))
           .map((person) => person.person_id);
         const didSave = await onSubmit(value, mentionIds);
         if (didSave) {
@@ -125,7 +137,11 @@ export function AnnotationComposer({
               );
               return;
             }
-            if ((event.key === "Enter" || event.key === "Tab") && !event.nativeEvent.isComposing) {
+            if (
+              (event.key === "Enter" || event.key === "Tab") &&
+              !event.shiftKey &&
+              !event.nativeEvent.isComposing
+            ) {
               event.preventDefault();
               pick(activeOption);
               return;

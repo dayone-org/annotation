@@ -2,7 +2,8 @@ import { useAnnotation } from "../useAnnotation";
 import { splitMentions } from "../utils";
 
 // Comment text with "@Name" highlighted for each mentioned person. Names come from the staff
-// directory, so guests (no directory) see plain text.
+// directory, so guests (no directory) see plain text, and mentions of a person whose key was
+// revoked (no longer in the directory) lose their highlighting.
 export function MentionText({ mentions, text }: { mentions: string[]; text: string }) {
   const { directory } = useAnnotation();
   const names = mentions.length

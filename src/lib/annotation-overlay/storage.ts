@@ -34,8 +34,7 @@ export function takeLinkKey(): string {
     return "";
   }
 
-  const { hash, pathname, search } = window.location;
-  const match = hash.match(/[#&]key=([^&]*)/);
+  const match = window.location.hash.match(/[#&]key=([^&]*)/);
   if (!match && linkKey !== undefined) {
     return linkKey;
   }
@@ -43,25 +42,31 @@ export function takeLinkKey(): string {
   // here instead of failing later as a request header.
   linkKey = match && /^[0-9a-f]{64}$/.test(match[1]) ? match[1] : "";
   if (match) {
-    // Remove every key= part, so "#key=A&key=B" leaves nothing behind.
-    const rest = hash
-      .slice(1)
-      .split("&")
-      .filter((part) => !part.startsWith("key="))
-      .join("&");
-    // replaceState throws when the pathname reads as another origin (//host); the key is taken anyway.
-    try {
-      window.history.replaceState(
-        window.history.state,
-        "",
-        `${pathname}${search}${rest ? `#${rest}` : ""}`,
-      );
-    } catch {
-      // The key stays in the address bar; it is still used only for this site.
-    }
+    dropHashParts("key=");
   }
 
   return linkKey;
+}
+
+// Removes every part of the hash that starts with prefix, so "#key=A&key=B" leaves nothing behind.
+function dropHashParts(prefix: string): void {
+  const { hash, pathname, search } = window.location;
+  const rest = hash
+    .slice(1)
+    .split("&")
+    .filter((part) => !part.startsWith(prefix))
+    .join("&");
+  // replaceState throws when the pathname reads as another origin (//host); the part stays in the
+  // address bar, the overlay has read it anyway.
+  try {
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${pathname}${search}${rest ? `#${rest}` : ""}`,
+    );
+  } catch {
+    // Nothing else to do.
+  }
 }
 
 export function readStoredBoolean(key: string, fallback: boolean): boolean {
@@ -99,24 +104,8 @@ export function readLinkThread(): string {
   return match ? match[1].toLowerCase() : "";
 }
 
-// Removes every annotation-thread= part from the address, like takeLinkKey does with key=.
 export function dropLinkThread(): void {
-  const { hash, pathname, search } = window.location;
-  if (!/[#&]annotation-thread=/.test(hash)) {
-    return;
-  }
-  const rest = hash
-    .slice(1)
-    .split("&")
-    .filter((part) => !part.startsWith("annotation-thread="))
-    .join("&");
-  try {
-    window.history.replaceState(
-      window.history.state,
-      "",
-      `${pathname}${search}${rest ? `#${rest}` : ""}`,
-    );
-  } catch {
-    // The host page may block history changes; the thread still opens.
+  if (/[#&]annotation-thread=/.test(window.location.hash)) {
+    dropHashParts("annotation-thread=");
   }
 }

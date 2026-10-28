@@ -240,7 +240,8 @@ function ComposerPopover({
         ) : null}
         <div className={cn("annotation:p-2", !parentComment && "annotation:bg-background")}>
           <AnnotationComposer
-            directory={directory}
+            // Nobody mentions themselves; the highlighting still knows the own name.
+            directory={directory.filter((person) => person.person_id !== personId)}
             errorMessage={errorMessage}
             onSubmit={submitComment}
           />

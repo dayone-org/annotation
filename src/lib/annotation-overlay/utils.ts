@@ -310,6 +310,20 @@ export function formatTimestamp(value: string): string {
   return parsed.fromNow();
 }
 
+export const MARKER_SIZE = 32;
+
+// The marker button of a thread (centered on its position), the same anchor a click on the marker gives.
+export function getMarkerAnchorRect(position: MarkerPosition): AnnotationRect {
+  return measureRect(
+    new DOMRect(
+      position.x - window.scrollX - MARKER_SIZE / 2,
+      position.y - window.scrollY - MARKER_SIZE / 2,
+      MARKER_SIZE,
+      MARKER_SIZE,
+    ),
+  );
+}
+
 export function getMarkerPagePosition(
   rect: AnnotationRect | null,
   target?: HTMLElement | null,
@@ -357,8 +371,9 @@ export function markerPositionsEqual(
   );
 }
 
-// Splits a comment text into plain parts and "@Name" parts of the mentioned people (longest name first,
-// so "@Anna Muster" wins over "@Anna"). Names that are not in the text are simply not found.
+// Splits a comment text into plain parts and "@Name" parts of the given people. A name counts only as a
+// whole (followed by the end, whitespace or punctuation, so "@Ana" is not found in "@Anabel"), and the
+// longest name wins ("@Anna Muster" over "@Anna").
 export function splitMentions(
   text: string,
   names: string[],
@@ -366,36 +381,29 @@ export function splitMentions(
   const tokens = [...new Set(names)]
     .filter(Boolean)
     .sort((left, right) => right.length - left.length)
-    .map((name) => `@${name}`);
+    .map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   const parts: Array<{ text: string; mention: boolean }> = [];
-  let rest = text;
-  while (tokens.length > 0 && rest) {
-    let best = -1;
-    let token = "";
-    for (const candidate of tokens) {
-      const index = rest.indexOf(candidate);
-      if (index !== -1 && (best === -1 || index < best)) {
-        best = index;
-        token = candidate;
+  let last = 0;
+  if (tokens.length > 0) {
+    for (const match of text.matchAll(
+      new RegExp(`@(?:${tokens.join("|")})(?=$|[\\s\\p{P}])`, "gu"),
+    )) {
+      if (match.index > last) {
+        parts.push({ text: text.slice(last, match.index), mention: false });
       }
+      parts.push({ text: match[0], mention: true });
+      last = match.index + match[0].length;
     }
-    if (best === -1) {
-      break;
-    }
-    if (best > 0) {
-      parts.push({ text: rest.slice(0, best), mention: false });
-    }
-    parts.push({ text: token, mention: true });
-    rest = rest.slice(best + token.length);
   }
-  if (rest) {
-    parts.push({ text: rest, mention: false });
+  if (last < text.length) {
+    parts.push({ text: text.slice(last), mention: false });
   }
   return parts;
 }
 
-// Newest created_at as the database wrote it (UTC, microseconds), so the bound loses no precision.
-// The strings share one format, so comparing them as text orders them by time.
+// Newest created_at as the database wrote it (microseconds), so the bound loses no precision.
+// PostgreSQL drops trailing zeros of the fraction ("…:05.5+00:00", "…:05+00:00"); comparing as text still
+// orders by time only because the session writes UTC ("+00:00") and "+" sorts before "." and the digits.
 export function newestCreatedAt(items: Array<{ created_at: string }>): string | null {
   return items.reduce<string | null>(
     (newest, item) => (newest === null || item.created_at > newest ? item.created_at : newest),
@@ -416,7 +424,7 @@ export function getForYouHref(
   const host = domain.replace(/:\d+$/, "");
   const isLocal = host === "localhost" || host === "127.0.0.1" || host.endsWith(".localhost");
   const url = pageUrlOn(pagePath, `${isLocal ? "http" : "https"}://${domain}`);
-  if (!url || url.host !== domain || url.username || url.password) {
+  if (!url || url.host !== domain) {
     return null;
   }
   url.hash = `annotation-thread=${threadId}`;

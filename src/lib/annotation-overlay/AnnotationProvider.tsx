@@ -36,19 +36,21 @@ import {
 } from "./storage";
 import {
   getCommentMap,
+  getMarkerAnchorRect,
+  getMarkerPagePosition,
   getThreadRootId,
   isSameSitePath,
-  measureRect,
   newestCreatedAt,
   normalizeComment,
   sortComments,
 } from "./utils";
 
 const supabaseClientCache = new Map<string, SupabaseClient>();
+const NO_ENTRIES: ForYouEntry[] = [];
 const TABLE = "comments";
 // The display name is joined in when reading, so a rename also changes old comments.
-const COMMENT_SELECT =
-  "*, author:annotation_people(display_name, is_guest), mentions:annotation_mentions(person_id)";
+const AUTHOR_SELECT = "*, author:annotation_people(display_name, is_guest)";
+const COMMENT_SELECT = `${AUTHOR_SELECT}, mentions:annotation_mentions(person_id)`;
 
 type Session = {
   project_id: string;
@@ -145,7 +147,8 @@ export function AnnotationProvider({
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [directory, setDirectory] = useState<StaffMember[]>([]);
-  const [forYou, setForYou] = useState<ForYouEntry[]>([]);
+  // null until the first load: opening a thread before that still marks it read.
+  const [forYou, setForYou] = useState<ForYouEntry[] | null>(null);
   // Thread to open from a "For you" jump (#annotation-thread=…), once the comments are loaded.
   const [linkThread, setLinkThread] = useState(readLinkThread);
   const isStaff = session ? !session.is_guest : false;
@@ -188,14 +191,17 @@ export function AnnotationProvider({
   }, [client, normalizedProjectId]);
 
   const forYouSequence = useRef(0);
+  // Open mark_read writes: a list loaded meanwhile may predate the write and would undo the optimistic
+  // "read"; the load after the write brings the result.
+  const pendingReads = useRef(0);
   const loadForYou = useCallback(async () => {
     const sequence = ++forYouSequence.current;
     if (!personId) {
-      setForYou((previous) => (previous.length ? [] : previous));
+      setForYou((previous) => (previous?.length === 0 ? previous : []));
       return;
     }
     const { data, error } = await client.rpc("annotation_for_you");
-    if (sequence !== forYouSequence.current) {
+    if (sequence !== forYouSequence.current || pendingReads.current > 0) {
       return;
     }
     if (error) {
@@ -207,9 +213,11 @@ export function AnnotationProvider({
     setForYou((previous) => (JSON.stringify(previous) === JSON.stringify(next) ? previous : next));
   }, [client, personId]);
 
-  // When the overlay loads and every time it opens.
+  // Every time the overlay opens (the list and its counter show only then).
   useEffect(() => {
-    void loadForYou();
+    if (annotationMode) {
+      void loadForYou();
+    }
   }, [annotationMode, loadForYou]);
 
   // Mention picker: staff only; guests get no list (the database returns none either).
@@ -514,27 +522,32 @@ export function AnnotationProvider({
       }
       const isCovered = (entry: ForYouEntry) =>
         entry.thread_id === threadId && !entry.is_read && entry.created_at <= until;
-      setForYou((previous) =>
-        previous.some(isCovered)
-          ? previous.map((entry) => (isCovered(entry) ? { ...entry, is_read: true } : entry))
-          : previous,
+      // Nothing unread in this thread: no write, no reload.
+      if (forYou && !forYou.some(isCovered)) {
+        return;
+      }
+      setForYou(
+        (previous) =>
+          previous?.map((entry) => (isCovered(entry) ? { ...entry, is_read: true } : entry)) ??
+          null,
       );
+      pendingReads.current += 1;
       const { error } = await client.rpc("annotation_mark_read", {
         p_thread_id: threadId,
         p_until: until,
       });
+      pendingReads.current -= 1;
       if (error) {
         setErrorMessage(error.message);
       }
-      // A load that started before the write (e.g. when the overlay opens) may bring the old state.
       void loadForYou();
     },
-    [client, comments, loadForYou],
+    [client, comments, forYou, loadForYou],
   );
 
   // Up to the newest loaded entry: an entry that arrives meanwhile stays unread.
   const markAllRead = useCallback(async () => {
-    const until = newestCreatedAt(forYou);
+    const until = newestCreatedAt(forYou ?? []);
     if (!until) {
       return;
     }
@@ -703,7 +716,6 @@ export function AnnotationProvider({
 
       setErrorMessage(null);
 
-      const mentions = [...new Set(mentionIds)];
       const { data, error } = await client
         .rpc("annotation_add_comment", {
           p_project_id: normalizedProjectId,
@@ -712,9 +724,10 @@ export function AnnotationProvider({
           p_selector: composer.parentId ? null : composer.selector,
           p_rect: composer.parentId ? null : composer.rect,
           p_parent_id: composer.parentId,
-          p_mentions: mentions,
+          p_mentions: mentionIds,
         })
-        .select(COMMENT_SELECT)
+        // The function's row has no mentions yet; they are added below, the next ping loads them.
+        .select(AUTHOR_SELECT)
         .single();
 
       if (error) {
@@ -722,8 +735,7 @@ export function AnnotationProvider({
         return false;
       }
 
-      // The function returns the row before its mentions exist; the next ping loads them from the database.
-      const inserted = { ...toComment(data as CommentRow), mentions };
+      const inserted = { ...toComment(data as CommentRow), mentions: mentionIds };
       startTransition(() => {
         setComments((previous) => sortComments([...previous, inserted]));
       });
@@ -833,12 +845,11 @@ export function AnnotationProvider({
       return true;
     }
 
-    void loadForYou();
     setActiveThreadId((previous) =>
       previous && resolvedThreadIds.has(previous) ? null : previous,
     );
     return true;
-  }, [client, closeComposer, comments, composer, loadForYou, normalizedProjectId]);
+  }, [client, closeComposer, comments, composer, normalizedProjectId]);
 
   const toggleResolved = useCallback(
     async (commentId: string) => {
@@ -878,8 +889,6 @@ export function AnnotationProvider({
           ),
         );
       });
-      // A resolved thread leaves "For you"; a reopened one comes back.
-      void loadForYou();
       if (nextResolved && composer?.parentId === threadId) {
         closeComposer();
         return;
@@ -887,7 +896,7 @@ export function AnnotationProvider({
 
       setActiveThreadId(threadId);
     },
-    [client, closeComposer, commentMap, composer, loadForYou, normalizedProjectId],
+    [client, closeComposer, commentMap, composer, normalizedProjectId],
   );
 
   // From the list, "For you" or a jump link: go to the thread (switching the page if needed) and open it.
@@ -900,10 +909,10 @@ export function AnnotationProvider({
       }
       setAnnotationMode(true);
       scrollToComment(threadId);
-      const marker = document.querySelector<HTMLElement>(`[data-thread-id="${threadId}"]`);
-      const rect = marker ? measureRect(marker) : thread.rect;
-      if (rect) {
-        openThreadComposer(threadId, rect);
+      // Where the marker is (or will be, while the overlay is still closed), not where the thread was created.
+      const position = getMarkerPagePosition(thread.rect, querySelectorSafely(thread.selector));
+      if (position) {
+        openThreadComposer(threadId, getMarkerAnchorRect(position));
       }
     },
     [commentMap, openThreadComposer, scrollToComment],
@@ -982,7 +991,7 @@ export function AnnotationProvider({
       cancelAnnotationMode,
       comments,
       directory,
-      forYou,
+      forYou: forYou ?? NO_ENTRIES,
       isAdmin,
       isGuest: session?.is_guest ?? false,
       isJoining,

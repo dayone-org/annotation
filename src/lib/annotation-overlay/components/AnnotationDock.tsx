@@ -1118,7 +1118,9 @@ export function AnnotationDock({
         </Button>
         <Button
           aria-expanded={isPanelOpen}
-          aria-label="Annotations panel"
+          aria-label={
+            unreadCount > 0 ? `Annotations panel, ${unreadCount} unread` : "Annotations panel"
+          }
           onClick={toggleAnnotationsPanel}
           size={unreadCount > 0 ? "sm" : "icon-sm"}
         >
@@ -1223,20 +1225,25 @@ export function AnnotationDock({
                     type="scroll"
                   >
                     <div className="annotation:flex annotation:flex-col annotation:gap-2 annotation:p-2">
-                      {isLoading ? (
+                      {/* "For you" has its own data; the comments' loading state does not apply. */}
+                      {showForYou && forYou.length === 0 ? (
+                        <p className="annotation:p-2 annotation:text-center annotation:text-sm annotation:text-muted-foreground">
+                          No mentions or replies
+                        </p>
+                      ) : null}
+                      {showForYou
+                        ? forYou.map((entry) => <ForYouCard entry={entry} key={entry.comment_id} />)
+                        : null}
+                      {!showForYou && isLoading ? (
                         <p className="annotation:p-2 annotation:text-center annotation:text-sm annotation:text-muted-foreground">
                           Loading annotations…
                         </p>
                       ) : null}
-                      {!isLoading &&
-                      (showForYou ? forYou.length === 0 : visibleThreads.length === 0) ? (
+                      {!showForYou && !isLoading && visibleThreads.length === 0 ? (
                         <p className="annotation:p-2 annotation:text-center annotation:text-sm annotation:text-muted-foreground">
                           No annotations
                         </p>
                       ) : null}
-                      {!isLoading && showForYou
-                        ? forYou.map((entry) => <ForYouCard entry={entry} key={entry.comment_id} />)
-                        : null}
                       {!isLoading && !showForYou
                         ? visibleThreads.map((comment) => (
                             <ThreadCard

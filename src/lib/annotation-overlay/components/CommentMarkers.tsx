@@ -20,13 +20,13 @@ import {
   getInitials,
   getThreadCount,
   getTopLevelComments,
+  MARKER_SIZE,
   markerPositionsEqual,
   measurePoint,
   measureRect,
 } from "../utils";
 import { AnnotationHighlight } from "./AnnotationHighlight";
 
-const MARKER_SIZE = 32;
 const MARKER_OFFSET_X = -(MARKER_SIZE / 2);
 const MARKER_OFFSET_Y = -(MARKER_SIZE / 2);
 const DRAG_DISTANCE_THRESHOLD = 4;
