@@ -18,6 +18,7 @@ import { AnnotationContext, type AnnotationContextValue } from "./annotation-con
 import { querySelectorSafely } from "./selector";
 import {
   DEFAULT_STORAGE_KEY_PREFIX,
+  forgetLinkKey,
   getStorageKey,
   readStoredBoolean,
   readStoredString,
@@ -219,6 +220,7 @@ export function AnnotationProvider({
           if (isActive) {
             writeStoredString(keyStorageKey, linkKey);
             setAccessKey(linkKey);
+            forgetLinkKey();
             setLinkKey("");
           }
           return;
@@ -327,6 +329,7 @@ export function AnnotationProvider({
       writeStoredString(keyStorageKey, data);
       setAccessKey(data);
       // The project link is used up; later checks need only the own key.
+      forgetLinkKey();
       setLinkKey("");
       return true;
     },

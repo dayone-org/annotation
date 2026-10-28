@@ -79,3 +79,8 @@ export function writeStoredBoolean(key: string, value: boolean): void {
 
   window.localStorage.setItem(key, value ? "true" : "false");
 }
+
+// The key was taken over or used to join: a later hash change without a key brings nothing back.
+export function forgetLinkKey(): void {
+  linkKey = "";
+}
