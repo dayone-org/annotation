@@ -60,7 +60,7 @@ One central Supabase database serves all projects. Apply `supabase/migrations/` 
 
 Links carry the key in the fragment (`#key=…`). The overlay removes it from the address bar, keeps
 its key in `localStorage` and sends it with every request (`x-annotation-key` header). Keys are
-stored hashed; row level security checks person and project. Without a valid key the overlay is
+stored hashed (the current guest link also in plain text, readable only by admins); row level security checks person and project. Without a valid key the overlay is
 not rendered at all. Display names are resolved when reading, so a rename also changes old
 comments. Threads with any reply can be resolved but not removed; only the author can
 move a thread.
@@ -75,11 +75,12 @@ node scripts/annotation-admin.mjs revoke --person <id>
 node scripts/annotation-admin.mjs admin --person <id>
 ```
 
-Each link is printed once.
+Each link is printed once; admins can show the current guest link again in the admin tile.
 
 **Admins** are staff members flagged with `admin --person <id>` (service role only). Their overlay
-shows an admin tile in the dock that can create or change the project of the page, create a new
-guest link for it and add staff members, each link shown once. The database checks the key on
+shows an admin tile in the dock that can create or change the project of the page (it loads the
+stored name and domains), show or renew its guest link and add staff members (their link is shown
+once). Guest links created before the plain text was stored cannot be shown, only renewed. The database checks the key on
 every call; the flag cannot be read or set through the overlay. On a page without a project the
 overlay shows admins only this tile, so they can register the page.
 
