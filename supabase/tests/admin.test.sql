@@ -2,9 +2,9 @@
 -- readable nor writable through the API. Run like PostgREST (role anon, key in the x-annotation-key header).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(94);
+select plan(105);
 
-create function pg_temp.als(p_key text) returns void language plpgsql as $$
+create function pg_temp.as_key(p_key text) returns void language plpgsql as $$
 begin
   reset role;
   perform set_config('request.headers',
@@ -16,7 +16,7 @@ create function pg_temp.details(p_sql text) returns text language plpgsql as $$
 declare v text;
 begin
   execute p_sql;
-  return 'kein Fehler';
+  return 'no error';
 exception when others then
   get stacked diagnostics v = pg_exception_detail;
   return coalesce(nullif(v, ''), '');
@@ -33,43 +33,43 @@ insert into public.annotation_people (id, email, first_name, display_name, key_h
   ('30000000-0000-4000-8000-000000000002', 'max.adm@dayone.de', 'Max', 'Max', extensions.digest('k-max-adm', 'sha256'), false),
   ('30000000-0000-4000-8000-000000000003', 'rita.adm@dayone.de', 'Rita', 'Rita', extensions.digest('k-rita', 'sha256'), true);
 
-create temp table schluessel (name text primary key, k text);
-grant select, insert on schluessel to anon, service_role;
+create temp table keys (name text primary key, k text);
+grant select, insert on keys to anon, service_role;
 
-select pg_temp.als(null);
-insert into schluessel values ('gast', public.annotation_join('pk-adm', 'Gesa Gast'));
+select pg_temp.as_key(null);
+insert into keys values ('guest', public.annotation_join('pk-adm', 'Gesa Gast'));
 
 reset role;
 set local role service_role;
 select public.annotation_revoke_key('30000000-0000-4000-8000-000000000003');
 
 -- ---------------------------------------------------------------- Everyone but an admin is refused
-create function pg_temp.verweigert(p_wer text) returns setof text language plpgsql as $$
+create function pg_temp.refused(p_who text) returns setof text language plpgsql as $$
 begin
-  return next ok(not public.annotation_admin_me(), p_wer || ': admin_me false');
+  return next ok(not public.annotation_admin_me(), p_who || ': admin_me false');
   return next throws_ok($q$select public.annotation_admin_set_project('dieb.test', 'adm-dieb', 'Dieb', array['dieb.test'])$q$,
-    '42501', 'admins only', p_wer || ': set_project refused');
+    '42501', 'admins only', p_who || ': set_project refused');
   return next throws_ok($q$select public.annotation_admin_new_project_key('adm-eins')$q$,
-    '42501', 'admins only', p_wer || ': new_project_key refused');
+    '42501', 'admins only', p_who || ': new_project_key refused');
   return next throws_ok($q$select * from public.annotation_admin_add_staff('dieb@dayone.de', 'Dieb')$q$,
-    '42501', 'admins only', p_wer || ': add_staff refused');
+    '42501', 'admins only', p_who || ': add_staff refused');
   return next throws_ok($q$select * from public.annotation_admin_project('adm-eins')$q$,
-    '42501', 'admins only', p_wer || ': admin_project refused');
+    '42501', 'admins only', p_who || ': admin_project refused');
   return next throws_ok($q$select link_key from public.annotation_projects$q$,
-    '42501', null, p_wer || ': guest link not readable from the table');
+    '42501', null, p_who || ': guest link not readable from the table');
 end $$;
-grant execute on function pg_temp.verweigert(text) to anon;
+grant execute on function pg_temp.refused(text) to anon;
 
-select pg_temp.als(null);
-select * from pg_temp.verweigert('no key');
-select pg_temp.als('k-falsch');
-select * from pg_temp.verweigert('wrong key');
-select pg_temp.als((select k from schluessel where name = 'gast'));
-select * from pg_temp.verweigert('guest');
-select pg_temp.als('k-max-adm');
-select * from pg_temp.verweigert('staff without flag');
-select pg_temp.als('k-rita');
-select * from pg_temp.verweigert('admin with revoked key');
+select pg_temp.as_key(null);
+select * from pg_temp.refused('no key');
+select pg_temp.as_key('k-falsch');
+select * from pg_temp.refused('wrong key');
+select pg_temp.as_key((select k from keys where name = 'guest'));
+select * from pg_temp.refused('guest');
+select pg_temp.as_key('k-max-adm');
+select * from pg_temp.refused('staff without flag');
+select pg_temp.as_key('k-rita');
+select * from pg_temp.refused('admin with revoked key');
 
 reset role;
 select results_eq($$select count(*)::int from public.annotation_projects where id = 'adm-dieb'$$, $$values (0)$$,
@@ -80,7 +80,7 @@ select results_eq($$select count(*)::int from public.annotation_people where ema
   'refused: no staff member created');
 
 -- ---------------------------------------------------------------- Admin
-select pg_temp.als('k-ada');
+select pg_temp.as_key('k-ada');
 select ok(public.annotation_admin_me(), 'admin: admin_me true');
 select is_empty($$select * from public.annotation_whoami('adm-neu.test')$$, 'admin: unregistered domain has no project yet');
 select lives_ok($$select public.annotation_admin_set_project('adm-neu.test', 'adm-neu', 'Adm Neu', array['ADM-neu.test', 'adm-neu.test:5194'])$$,
@@ -91,19 +91,22 @@ select results_eq($$select id, name, domains, link_key from public.annotation_ad
 select is_empty($$select * from public.annotation_admin_project('adm-gibts-nicht')$$, 'admin: unknown project is empty');
 select results_eq($$select project_id, display_name from public.annotation_whoami('adm-neu.test:5194')$$,
   $$values ('adm-neu'::text, 'Ada Ärger'::text)$$, 'admin: overlay finds the new project by domain');
-select lives_ok($$select public.annotation_admin_set_project('adm-neu.test:5194', 'adm-neu', 'Adm Neu Zwei', array['adm-neu.test'])$$,
+select throws_ok($$select public.annotation_admin_set_project('adm-neu.test:5194', 'adm-neu', 'Adm Neu Zwei', array['adm-neu.test'])$$,
+  '23514', 'Keep adm-neu.test:5194 in the domains; it is the domain of this page.',
+  'admin: the page''s own domain cannot be removed from its project');
+select lives_ok($$select public.annotation_admin_set_project('adm-neu.test', 'adm-neu', 'Adm Neu Zwei', array['adm-neu.test'])$$,
   'admin: changes name and domains of the page''s own project');
 select is_empty($$select * from public.annotation_whoami('adm-neu.test:5194')$$, 'admin: removed domain no longer resolves');
 
 -- Taking over another project by its ID: refused from its own page only.
 select throws_ok($$select public.annotation_admin_set_project('adm-neu.test', 'adm-eins', 'Gekapert', array['adm-neu.test'])$$,
-  '42501', 'ID already in use by another project', 'admin: ID of another project refused on a page of a different project');
+  '23505', 'ID already in use by another project', 'admin: ID of another project refused on a page of a different project');
 select throws_ok($$select public.annotation_admin_set_project('niemand.test', 'adm-eins', 'Gekapert', array['niemand.test'])$$,
-  '42501', 'ID already in use by another project', 'admin: ID of another project refused on a page without project');
+  '23505', 'ID already in use by another project', 'admin: ID of another project refused on a page without project');
 select throws_ok($$select public.annotation_admin_set_project('', 'adm-eins', 'Gekapert', array['niemand.test'])$$,
-  '42501', 'ID already in use by another project', 'admin: ID of another project refused without host');
+  '23505', 'ID already in use by another project', 'admin: ID of another project refused without host');
 select throws_ok($$select public.annotation_admin_set_project('adm-eins.test', 'adm-neu', 'Gekapert', array['adm-eins.test'])$$,
-  '42501', 'ID already in use by another project', 'admin: the host of one project is no pretext to change another');
+  '23505', 'ID already in use by another project', 'admin: the host of one project is no pretext to change another');
 select results_eq($$select id, name, domains from public.annotation_admin_project('adm-eins') union all
     select id, name, domains from public.annotation_admin_project('adm-neu')$$,
   $$values ('adm-eins'::text, 'Adm Eins'::text, array['adm-eins.test']), ('adm-neu', 'Adm Neu Zwei', array['adm-neu.test'])$$,
@@ -116,31 +119,46 @@ select lives_ok($$select public.annotation_admin_set_project('adm-eins.test', 'a
 select hasnt_function('public', 'annotation_admin_set_project', array['text', 'text', 'text[]'],
   'admin: the old set_project without host is gone');
 select throws_ok($$select public.annotation_admin_set_project('adm-dup.test', 'adm-dup', 'Dup', array['adm-eins.test'])$$,
-  '23505', null, 'admin: domain of another project rejected');
-select ok(pg_temp.details($$select public.annotation_admin_set_project('adm-dup.test', 'adm-dup', 'Dup', array['adm-eins.test'])$$)
-  like '%(host)=(adm-eins.test)%', 'admin: error names the domain');
+  '23505', 'Domain adm-eins.test already belongs to another project; remove it there first.',
+  'admin: domain of another project rejected, the error names the domain');
+select is(pg_temp.details($$select public.annotation_admin_set_project('adm-dup.test', 'adm-dup', 'Dup', array['adm-eins.test'])$$), '',
+  'admin: domain collision without row details');
+select lives_ok($$select public.annotation_admin_set_project('adm-zwei.test', 'adm-zwei', 'Adm Zwei', array['adm-zwei.test', 'ADM-zwei.test'])$$,
+  'admin: the same domain twice in one call counts once');
+select results_eq($$select domains from public.annotation_admin_project('adm-zwei')$$, $$values (array['adm-zwei.test'])$$,
+  'admin: duplicate domain stored once');
+select throws_ok($$select public.annotation_admin_set_project('adm-x.test', 'Marketing Site', 'X', array['adm-x.test'])$$,
+  '23514', 'Invalid ID: 2 to 63 lowercase letters, digits or hyphens, starting with a letter or digit.', 'admin: invalid ID refused, readable');
+select throws_ok($$select public.annotation_admin_set_project('adm-x.test', 'adm-x', 'X', array['https://adm-x.test'])$$,
+  '23514', 'Invalid domain: https://adm-x.test. Use the host with an optional port, e.g. example.com or localhost:3000.',
+  'admin: invalid domain refused, readable');
+select is(pg_temp.details($$select public.annotation_admin_set_project('adm-x.test', 'adm-x', 'X', array['https://adm-x.test'])$$), '',
+  'admin: invalid domain without row details');
+select is_empty($$select * from public.annotation_admin_project('adm-x')$$, 'admin: refused calls create no project');
+select is_empty($$select * from public.annotation_admin_project(null)$$,
+  'admin: project probe without a project is empty, not refused (tile on pages without a project)');
 
 select is((select link_key from public.annotation_admin_project('adm-eins')), null,
   'admin: link from before the plain text has none');
-insert into schluessel values ('neu-link', public.annotation_admin_new_project_key('adm-eins'));
-select is((select link_key from public.annotation_admin_project('adm-eins')), (select k from schluessel where name = 'neu-link'),
+insert into keys values ('neu-link', public.annotation_admin_new_project_key('adm-eins'));
+select is((select link_key from public.annotation_admin_project('adm-eins')), (select k from keys where name = 'neu-link'),
   'admin: reads the current guest link');
-select is((select length(k) from schluessel where name = 'neu-link'), 64, 'admin: new project link (256 bit)');
-select ok(public.annotation_project_key_ok((select k from schluessel where name = 'neu-link'), 'adm-eins.test'),
+select is((select length(k) from keys where name = 'neu-link'), 64, 'admin: new project link (256 bit)');
+select ok(public.annotation_project_key_ok((select k from keys where name = 'neu-link'), 'adm-eins.test'),
   'admin: new project link valid');
 select ok(not public.annotation_project_key_ok('pk-adm', 'adm-eins.test'), 'admin: old project link invalid');
 select throws_ok($$select public.annotation_admin_new_project_key('adm-gibts-nicht')$$, 'P0002', 'unknown project',
   'admin: link for an unknown project rejected');
 
-insert into schluessel select 'staff', key from public.annotation_admin_add_staff(' Neu.Adm@DAYONE.de ', 'Nele', 'Nürnberg');
-select is((select length(k) from schluessel where name = 'staff'), 64, 'admin: staff key (256 bit)');
+insert into keys select 'staff', key from public.annotation_admin_add_staff(' Neu.Adm@DAYONE.de ', 'Nele', 'Nürnberg');
+select is((select length(k) from keys where name = 'staff'), 64, 'admin: staff key (256 bit)');
 select throws_ok($$select * from public.annotation_admin_add_staff('fremd@example.com', 'Fred')$$, '23514', null,
   'admin: DAYONE e-mail only');
 
-select pg_temp.als((select k from schluessel where name = 'gast'));
+select pg_temp.as_key((select k from keys where name = 'guest'));
 select is_empty($$select * from public.annotation_whoami('adm-eins.test')$$, 'admin: guest of the old link locked out');
 
-select pg_temp.als((select k from schluessel where name = 'staff'));
+select pg_temp.as_key((select k from keys where name = 'staff'));
 select results_eq($$select display_name, is_guest from public.annotation_whoami('adm-eins.test')$$,
   $$values ('Nele Nürnberg'::text, false)$$, 'admin: new staff member recognised by key');
 select ok(not public.annotation_admin_me(), 'admin: new staff member is not an admin');
@@ -152,12 +170,12 @@ select results_eq($$select email, is_admin from public.annotation_people where e
   $$values ('neu.adm@dayone.de'::text, false)$$, 'admin: staff member stored without flag');
 
 -- ---------------------------------------------------------------- The flag: not readable or writable through the API
-select pg_temp.als('k-ada');
+select pg_temp.as_key('k-ada');
 select throws_ok($$select is_admin from public.annotation_people$$, '42501', null, 'flag: not readable, even for an admin');
 select throws_ok($$update public.annotation_people set is_admin = true$$, '42501', null, 'flag: not writable');
 select throws_ok($$select public.annotation_set_admin('30000000-0000-4000-8000-000000000002')$$, '42501', null,
   'flag: set_admin not callable by anon');
-select pg_temp.als('k-max-adm');
+select pg_temp.as_key('k-max-adm');
 select throws_ok($$update public.annotation_people set is_admin = true where id = '30000000-0000-4000-8000-000000000002'$$,
   '42501', null, 'flag: staff cannot make themselves admin');
 select throws_ok($$select public.annotation_set_admin('30000000-0000-4000-8000-000000000002')$$, '42501', null,
@@ -175,6 +193,12 @@ select function_privs_are('public', 'annotation_admin_set_project', array['text'
   'admin_set_project: not for authenticated');
 select function_privs_are('public', 'annotation_admin_add_staff', array['text', 'text', 'text'], 'authenticated', array[]::text[],
   'admin_add_staff: not for authenticated');
+select function_privs_are('public', 'annotation_admin_me', array[]::text[], 'authenticated', array[]::text[],
+  'admin_me: not for authenticated');
+select function_privs_are('public', 'annotation_admin_new_project_key', array['text'], 'authenticated', array[]::text[],
+  'admin_new_project_key: not for authenticated');
+select function_privs_are('public', 'annotation_require_admin', array[]::text[], 'anon', array[]::text[],
+  'require_admin: not for anon');
 
 select column_privs_are('public', 'annotation_projects', 'link_key', 'anon', array[]::text[], 'projects.link_key: anon without privileges');
 select column_privs_are('public', 'annotation_projects', 'link_key', 'authenticated', array[]::text[],
@@ -190,12 +214,12 @@ select is((select array_agg(proname::text order by proname) from pg_proc
 
 -- ---------------------------------------------------------------- Script (service role): link is stored too
 set local role service_role;
-insert into schluessel values ('script-link', public.annotation_new_project_key('adm-eins'));
+insert into keys values ('script-link', public.annotation_new_project_key('adm-eins'));
 reset role;
-select pg_temp.als('k-ada');
-select is((select link_key from public.annotation_admin_project('adm-eins')), (select k from schluessel where name = 'script-link'),
+select pg_temp.as_key('k-ada');
+select is((select link_key from public.annotation_admin_project('adm-eins')), (select k from keys where name = 'script-link'),
   'script: admin sees the link from the script');
-select ok(not public.annotation_project_key_ok((select k from schluessel where name = 'neu-link'), 'adm-eins.test'),
+select ok(not public.annotation_project_key_ok((select k from keys where name = 'neu-link'), 'adm-eins.test'),
   'script: the link shown before is locked');
 reset role;
 
@@ -211,9 +235,9 @@ select results_eq($$select name from public.annotation_projects where id = 'adm-
 select results_eq($$select is_admin, key_hash is null from public.annotation_people where email = 'rita.adm@dayone.de'$$,
   $$values (false, true)$$, 'revoke: admin flag removed with the key');
 set local role service_role;
-insert into schluessel values ('rita-neu', public.annotation_new_key('30000000-0000-4000-8000-000000000003'));
+insert into keys values ('rita-neu', public.annotation_new_key('30000000-0000-4000-8000-000000000003'));
 reset role;
-select pg_temp.als((select k from schluessel where name = 'rita-neu'));
+select pg_temp.as_key((select k from keys where name = 'rita-neu'));
 select ok(not public.annotation_admin_me(), 'revoke: a new key after revoke is no admin key');
 select ok(exists (select 1 from public.annotation_whoami('adm-eins.test')), 'revoke: the new key still works as staff');
 reset role;
@@ -226,7 +250,7 @@ select throws_ok($$select public.annotation_set_admin((select id from public.ann
 reset role;
 select throws_ok($$update public.annotation_people set is_admin = true where is_guest$$, '23514', null,
   'constraint: guests are never admins');
-select pg_temp.als('k-max-adm');
+select pg_temp.as_key('k-max-adm');
 select ok(public.annotation_admin_me(), 'service: Max is admin now');
 
 select * from finish();
