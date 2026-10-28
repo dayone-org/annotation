@@ -113,7 +113,7 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=
   Only staff can mention and be mentioned; for guests `@` is plain text
 - "For you" filter in the comment list: mentions of you and replies in threads you started, from
   all projects your key can access (guests: their project only). The unread count also shows on
-  the list button. Opening a thread marks its entries read; "Mark all as read" clears the rest;
+  the list button. Each entry shows the start of the comment (first 140 characters). Opening a thread marks its entries read; "Mark all as read" clears the rest;
   entries that arrive meanwhile stay unread; resolved threads drop out. An entry from another project links to its first domain and opens the
   thread there (`#annotation-thread=<id>`), provided the key is stored on that domain too
 - Optional `projectId`, `pagePath`, `position`, and `storageKeyPrefix` props for advanced integration
