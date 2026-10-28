@@ -125,7 +125,6 @@ export function AnnotationProvider({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const commentMap = useMemo(() => getCommentMap(comments), [comments]);
-  const canWriteComments = useCallback(() => Boolean(session), [session]);
 
   const loadSequence = useRef(0);
   const loadComments = useCallback(async () => {
@@ -220,6 +219,7 @@ export function AnnotationProvider({
           if (isActive) {
             writeStoredString(keyStorageKey, linkKey);
             setAccessKey(linkKey);
+            setLinkKey("");
           }
           return;
         }
@@ -326,6 +326,8 @@ export function AnnotationProvider({
 
       writeStoredString(keyStorageKey, data);
       setAccessKey(data);
+      // The project link is used up; later checks need only the own key.
+      setLinkKey("");
       return true;
     },
     [keyStorageKey, pendingProjectKey, supabaseAnonKey, supabaseUrl],
@@ -410,7 +412,7 @@ export function AnnotationProvider({
 
   const updateThreadRect = useCallback(
     async (commentId: string, rect: AnnotationRect, selector?: string | null) => {
-      if (!canWriteComments()) {
+      if (!normalizedProjectId) {
         return false;
       }
 
@@ -434,12 +436,11 @@ export function AnnotationProvider({
         );
       });
 
-      let query = client.from(TABLE).update({ rect, selector: nextSelector }).eq("id", threadId);
-      if (normalizedProjectId) {
-        query = query.eq("project_id", normalizedProjectId);
-      }
-
-      const { error } = await query;
+      const { error } = await client
+        .from(TABLE)
+        .update({ rect, selector: nextSelector })
+        .eq("id", threadId)
+        .eq("project_id", normalizedProjectId);
 
       if (error) {
         setErrorMessage(error.message);
@@ -457,7 +458,7 @@ export function AnnotationProvider({
 
       return true;
     },
-    [canWriteComments, client, commentMap, normalizedProjectId, personId],
+    [client, commentMap, normalizedProjectId, personId],
   );
 
   const scrollToComment = useCallback(
@@ -525,7 +526,7 @@ export function AnnotationProvider({
 
   const submitComment = useCallback(
     async (text: string) => {
-      if (!canWriteComments()) {
+      if (!normalizedProjectId) {
         return false;
       }
 
@@ -572,12 +573,12 @@ export function AnnotationProvider({
       );
       return true;
     },
-    [canWriteComments, client, commentMap, composer, currentPath, normalizedProjectId],
+    [client, commentMap, composer, currentPath, normalizedProjectId],
   );
 
   const removeThread = useCallback(
     async (commentId: string) => {
-      if (!canWriteComments()) {
+      if (!normalizedProjectId) {
         return false;
       }
 
@@ -594,7 +595,7 @@ export function AnnotationProvider({
         .from(TABLE)
         .delete()
         .eq("id", threadId)
-        .eq("project_id", normalizedProjectId ?? "")
+        .eq("project_id", normalizedProjectId)
         .select("id");
 
       if (error || !data?.length) {
@@ -619,11 +620,11 @@ export function AnnotationProvider({
       setActiveThreadId((previous) => (previous === threadId ? null : previous));
       return true;
     },
-    [canWriteComments, client, closeComposer, commentMap, composer, normalizedProjectId],
+    [client, closeComposer, commentMap, composer, normalizedProjectId],
   );
 
   const resolveAllComments = useCallback(async () => {
-    if (!canWriteComments()) {
+    if (!normalizedProjectId) {
       return false;
     }
 
@@ -638,12 +639,11 @@ export function AnnotationProvider({
     setErrorMessage(null);
 
     const resolvedAt = new Date().toISOString();
-    let query = client.from(TABLE).update({ resolved: true }).in("id", openThreadIds);
-    if (normalizedProjectId) {
-      query = query.eq("project_id", normalizedProjectId);
-    }
-
-    const { error } = await query;
+    const { error } = await client
+      .from(TABLE)
+      .update({ resolved: true })
+      .in("id", openThreadIds)
+      .eq("project_id", normalizedProjectId);
 
     if (error) {
       setErrorMessage(error.message);
@@ -675,11 +675,11 @@ export function AnnotationProvider({
       previous && resolvedThreadIds.has(previous) ? null : previous,
     );
     return true;
-  }, [canWriteComments, client, closeComposer, comments, composer, normalizedProjectId]);
+  }, [client, closeComposer, comments, composer, normalizedProjectId]);
 
   const toggleResolved = useCallback(
     async (commentId: string) => {
-      if (!canWriteComments()) {
+      if (!normalizedProjectId) {
         return;
       }
 
@@ -691,12 +691,11 @@ export function AnnotationProvider({
 
       const nextResolved = !target.resolved;
       const resolvedAt = nextResolved ? new Date().toISOString() : null;
-      let query = client.from(TABLE).update({ resolved: nextResolved }).eq("id", threadId);
-      if (normalizedProjectId) {
-        query = query.eq("project_id", normalizedProjectId);
-      }
-
-      const { error } = await query;
+      const { error } = await client
+        .from(TABLE)
+        .update({ resolved: nextResolved })
+        .eq("id", threadId)
+        .eq("project_id", normalizedProjectId);
 
       if (error) {
         setErrorMessage(error.message);
@@ -723,7 +722,7 @@ export function AnnotationProvider({
 
       setActiveThreadId(threadId);
     },
-    [canWriteComments, client, closeComposer, commentMap, composer, normalizedProjectId],
+    [client, closeComposer, commentMap, composer, normalizedProjectId],
   );
 
   // Shortcuts only with access; otherwise "c" and Escape belong to the host page.

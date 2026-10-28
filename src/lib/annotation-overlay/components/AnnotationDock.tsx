@@ -71,7 +71,6 @@ type ResolveAllSliderProps = {
 
 type ThreadCardProps = {
   activeThreadId: string | null;
-  canManage: boolean;
   comment: AnnotationComment;
   comments: AnnotationComment[];
   currentPath: string;
@@ -215,13 +214,7 @@ function AnimatedCopyStateIcon({ state }: { state: CopyState }) {
   return <AnimatedIconTransition renderIcon={getCopyActionIcon} state={state} />;
 }
 
-function ThreadCard({
-  activeThreadId,
-  canManage,
-  comment,
-  comments,
-  currentPath,
-}: ThreadCardProps) {
+function ThreadCard({ activeThreadId, comment, comments, currentPath }: ThreadCardProps) {
   const { openThreadComposer, scrollToComment, toggleResolved } = useAnnotation();
   const [copyState, setCopyState] = useCopyState();
   const replies = getReplies(comments, comment.id);
@@ -273,20 +266,18 @@ function ThreadCard({
           >
             <AnimatedCopyStateIcon state={copyState} />
           </Button>
-          {canManage ? (
-            <Button
-              aria-label={comment.resolved ? "Mark annotation as open" : "Resolve annotation"}
-              onClick={(event) => {
-                stopItemClick(event);
-                void toggleResolved(comment.id);
-              }}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              {comment.resolved ? <CheckCircleIcon weight="fill" /> : <CheckCircleIcon />}
-            </Button>
-          ) : null}
+          <Button
+            aria-label={comment.resolved ? "Mark annotation as open" : "Resolve annotation"}
+            onClick={(event) => {
+              stopItemClick(event);
+              void toggleResolved(comment.id);
+            }}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            {comment.resolved ? <CheckCircleIcon weight="fill" /> : <CheckCircleIcon />}
+          </Button>
         </div>
       </ItemHeader>
       <ItemContent className="annotation:flex annotation:flex-col annotation:gap-2 annotation:text-sm">
@@ -507,7 +498,6 @@ export function AnnotationDock({
     (comment) => comment.page_path === currentPath && !comment.resolved,
   );
   const unresolvedThreadCount = topLevelComments.filter((comment) => !comment.resolved).length;
-  const hasAuthor = Boolean(author);
   const positionConfig = useMemo(() => getPositionConfig(position), [position]);
 
   const variantsButton = useMemo(
@@ -782,7 +772,6 @@ export function AnnotationDock({
                         ? visibleThreads.map((comment) => (
                             <ThreadCard
                               activeThreadId={activeThreadId}
-                              canManage={hasAuthor}
                               comment={comment}
                               comments={comments}
                               currentPath={currentPath}
