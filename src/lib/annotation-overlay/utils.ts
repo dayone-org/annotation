@@ -394,16 +394,35 @@ export function splitMentions(
   return parts;
 }
 
-// Page of a "For you" entry in another project; http for local hosts. Null without a domain.
+// Newest created_at as the database wrote it (UTC, microseconds), so the bound loses no precision.
+// The strings share one format, so comparing them as text orders them by time.
+export function newestCreatedAt(items: Array<{ created_at: string }>): string | null {
+  return items.reduce<string | null>(
+    (newest, item) => (newest === null || item.created_at > newest ? item.created_at : newest),
+    null,
+  );
+}
+
+// Page of a "For you" entry in another project; http for local hosts. Null (no link) without a domain,
+// for a page path that is not plain, or when the URL would not land exactly on that domain.
 export function getForYouHref(
   domain: string | null,
   pagePath: string,
   threadId: string,
 ): string | null {
-  if (!domain) {
+  if (!domain || !isPlainPagePath(pagePath)) {
     return null;
   }
   const host = domain.replace(/:\d+$/, "");
   const isLocal = host === "localhost" || host === "127.0.0.1" || host.endsWith(".localhost");
-  return `${isLocal ? "http" : "https"}://${domain}${pagePath}#annotation-thread=${threadId}`;
+  try {
+    const url = new URL(pagePath, `${isLocal ? "http" : "https"}://${domain}`);
+    if (!/^https?:$/.test(url.protocol) || url.host !== domain || url.username || url.password) {
+      return null;
+    }
+    url.hash = `annotation-thread=${threadId}`;
+    return url.href;
+  } catch {
+    return null;
+  }
 }

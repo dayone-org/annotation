@@ -39,6 +39,7 @@ import {
   getThreadRootId,
   isSameSitePath,
   measureRect,
+  newestCreatedAt,
   normalizeComment,
   sortComments,
 } from "./utils";
@@ -502,34 +503,48 @@ export function AnnotationProvider({
     setActiveThreadId(null);
   }, []);
 
-  // Opening a thread reads all its "For you" entries.
+  // Opening a thread reads its "For you" entries up to the newest comment loaded in it; later ones stay unread.
   const markRead = useCallback(
     async (threadId: string) => {
+      const until = newestCreatedAt(
+        comments.filter((comment) => comment.id === threadId || comment.parent_id === threadId),
+      );
+      if (!until) {
+        return;
+      }
+      const isCovered = (entry: ForYouEntry) =>
+        entry.thread_id === threadId && !entry.is_read && entry.created_at <= until;
       setForYou((previous) =>
-        previous.some((entry) => entry.thread_id === threadId && !entry.is_read)
-          ? previous.map((entry) =>
-              entry.thread_id === threadId ? { ...entry, is_read: true } : entry,
-            )
+        previous.some(isCovered)
+          ? previous.map((entry) => (isCovered(entry) ? { ...entry, is_read: true } : entry))
           : previous,
       );
-      const { error } = await client.rpc("annotation_mark_read", { p_thread_id: threadId });
+      const { error } = await client.rpc("annotation_mark_read", {
+        p_thread_id: threadId,
+        p_until: until,
+      });
       if (error) {
         setErrorMessage(error.message);
       }
       // A load that started before the write (e.g. when the overlay opens) may bring the old state.
       void loadForYou();
     },
-    [client, loadForYou],
+    [client, comments, loadForYou],
   );
 
+  // Up to the newest loaded entry: an entry that arrives meanwhile stays unread.
   const markAllRead = useCallback(async () => {
+    const until = newestCreatedAt(forYou);
+    if (!until) {
+      return;
+    }
     setErrorMessage(null);
-    const { error } = await client.rpc("annotation_mark_all_read");
+    const { error } = await client.rpc("annotation_mark_all_read", { p_until: until });
     if (error) {
       setErrorMessage(error.message);
     }
     void loadForYou();
-  }, [client, loadForYou]);
+  }, [client, forYou, loadForYou]);
 
   const openThreadComposer = useCallback(
     (threadId: string, rect: AnnotationRect) => {
@@ -879,7 +894,8 @@ export function AnnotationProvider({
   const openThread = useCallback(
     (threadId: string) => {
       const thread = commentMap.get(threadId);
-      if (!thread) {
+      // A thread on a path that would leave the site (older rows) is not opened.
+      if (!thread || !isSameSitePath(thread.page_path)) {
         return;
       }
       setAnnotationMode(true);

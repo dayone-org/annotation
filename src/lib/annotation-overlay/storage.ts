@@ -110,9 +110,13 @@ export function dropLinkThread(): void {
     .split("&")
     .filter((part) => !part.startsWith("annotation-thread="))
     .join("&");
-  window.history.replaceState(
-    window.history.state,
-    "",
-    `${pathname}${search}${rest ? `#${rest}` : ""}`,
-  );
+  try {
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${pathname}${search}${rest ? `#${rest}` : ""}`,
+    );
+  } catch {
+    // The host page may block history changes; the thread still opens.
+  }
 }
