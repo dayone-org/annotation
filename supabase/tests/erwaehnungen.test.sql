@@ -3,7 +3,7 @@
 -- Run like PostgREST (role anon, key in the x-annotation-key header).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(71);
+select plan(83);
 
 create function pg_temp.as_key(p_key text) returns void language plpgsql as $$
 begin
@@ -56,12 +56,12 @@ select results_eq(
 select set_eq(
   $$select r, f from unnest(array['anon', 'authenticated']) r,
       unnest(array['public.annotation_staff_directory()', 'public.annotation_add_comment(text, text, text, text, jsonb, uuid, uuid[])',
-        'public.annotation_for_you()', 'public.annotation_for_you_unread()', 'public.annotation_mark_read(uuid)',
-        'public.annotation_mark_all_read()']) f
+        'public.annotation_for_you()', 'public.annotation_for_you_unread()', 'public.annotation_mark_read(uuid, timestamptz)',
+        'public.annotation_mark_all_read(timestamptz)']) f
     where has_function_privilege(r, f, 'execute')$$,
   $$values ('anon', 'public.annotation_add_comment(text, text, text, text, jsonb, uuid, uuid[])'),
       ('anon', 'public.annotation_for_you()'), ('anon', 'public.annotation_for_you_unread()'),
-      ('anon', 'public.annotation_mark_all_read()'), ('anon', 'public.annotation_mark_read(uuid)'),
+      ('anon', 'public.annotation_mark_all_read(timestamptz)'), ('anon', 'public.annotation_mark_read(uuid, timestamptz)'),
       ('anon', 'public.annotation_staff_directory()')$$,
   'grants: the new functions for anon only');
 select results_eq($$select proargnames from pg_proc where proname = 'annotation_staff_directory'$$,
@@ -192,6 +192,9 @@ select results_eq($$select person_id from public.annotation_mentions where comme
 select pg_temp.as_key((select k from keys where name = 'g2'));
 select is_empty($$select * from public.annotation_mentions where comment_id = pg_temp.id('c1')$$,
   'mentions: guest reads no mentions of another project');
+select pg_temp.as_key((select k from keys where name = 'g1'));
+select is_empty($$select * from public.annotation_mentions where comment_id = pg_temp.id('c1')$$,
+  'mentions: guest reads no mentions in their own project either');
 select pg_temp.as_key(null);
 select is_empty($$select * from public.annotation_mentions$$, 'mentions: nothing without key');
 
@@ -218,6 +221,8 @@ select pg_temp.as_key((select k from keys where name = 'g1'));
 select results_eq($$select project_id, page_path, thread_id, comment_id, kind, actor_name, is_read from public.annotation_for_you()$$,
   $$values ('mn-eins'::text, '/gast'::text, pg_temp.id('t3'), pg_temp.id('r_g1'), 'reply'::text, 'Bo Brandt'::text, false)$$,
   'for you: guest sees replies by others in own thread only in own project');
+select results_eq($$select project_domain from public.annotation_for_you()$$, $$values (null::text)$$,
+  'for you: no domain for guests (the project has domains)');
 select results_eq($$select public.annotation_for_you_unread()$$, $$values (1)$$, 'for you: guest unread count');
 select pg_temp.as_key((select k from keys where name = 'g2'));
 select results_eq($$select project_id, thread_id, comment_id, kind from public.annotation_for_you()$$,
@@ -234,44 +239,75 @@ select is_empty($$select * from public.annotation_for_you()$$, 'for you: nothing
 
 -- ---------------------------------------------------------------- Read state
 select pg_temp.as_key(null);
-select throws_ok($$select public.annotation_mark_read(pg_temp.id('c1'))$$, '28000', 'invalid key', 'mark_read: refused without key');
-select throws_ok($$select public.annotation_mark_all_read()$$, '28000', 'invalid key', 'mark_all_read: refused without key');
+select throws_ok($$select public.annotation_mark_read(pg_temp.id('c1'), now())$$, '28000', 'invalid key', 'mark_read: refused without key');
+select throws_ok($$select public.annotation_mark_all_read(now())$$, '28000', 'invalid key', 'mark_all_read: refused without key');
 
 select pg_temp.as_key('k-bo');
-select lives_ok($$select public.annotation_mark_read(pg_temp.id('c1'))$$, 'mark_read: Bo opens thread T1');
+select lives_ok($$select public.annotation_mark_read(pg_temp.id('c1'), now())$$, 'mark_read: Bo opens thread T1');
 select results_eq($$select comment_id, is_read from public.annotation_for_you()$$,
   $$values (pg_temp.id('t2'), false), (pg_temp.id('c1'), true)$$, 'mark_read: only this thread is read');
 select results_eq($$select public.annotation_for_you_unread()$$, $$values (1)$$, 'mark_read: unread count drops by one');
 select pg_temp.as_key('k-ana');
 select results_eq($$select public.annotation_for_you_unread()$$, $$values (2)$$, 'mark_read: other people stay unread');
 select pg_temp.as_key('k-bo');
-select lives_ok($$select public.annotation_mark_read(pg_temp.id('r1'))$$, 'mark_read: a reply ID is ignored');
-select lives_ok($$select public.annotation_mark_read('49999999-0000-4000-8000-000000000000')$$, 'mark_read: an unknown ID is ignored');
+select lives_ok($$select public.annotation_mark_read(pg_temp.id('r1'), now())$$, 'mark_read: a reply ID is ignored');
+select lives_ok($$select public.annotation_mark_read('49999999-0000-4000-8000-000000000000', now())$$, 'mark_read: an unknown ID is ignored');
 
 select pg_temp.as_key((select k from keys where name = 'g1'));
-select lives_ok($$select public.annotation_mark_read(pg_temp.id('t4'))$$, 'mark_read: guest calls it for a thread of another project');
+select lives_ok($$select public.annotation_mark_read(pg_temp.id('t4'), now())$$, 'mark_read: guest calls it for a thread of another project');
 reset role;
 select results_eq($$select count(*)::int from public.annotation_reads where person_id = pg_temp.id('g1')$$, $$values (0)$$,
   'mark_read: no read state for threads without access');
 select results_eq($$select count(*)::int from public.annotation_reads where person_id = '40000000-0000-4000-8000-000000000002'$$,
   $$values (1)$$, 'mark_read: reply and unknown IDs store nothing');
 
--- Time passes: Bo read T1 an hour ago, then Cleo mentions him in a new reply in T1.
+-- Time passes: Bo read T1 an hour ago, then Cleo mentions him in a new reply in T1 (ten minutes ago).
 update public.annotation_reads set read_at = now() - interval '1 hour' where person_id = '40000000-0000-4000-8000-000000000002';
 select pg_temp.as_key('k-cleo');
 insert into ids select 'r4', id from public.annotation_add_comment('mn-eins', '/start', 'Noch was @Bo Brandt', null, null, pg_temp.id('c1'),
   array['40000000-0000-4000-8000-000000000002']::uuid[]);
+reset role;
+update public.comments set created_at = now() - interval '10 minutes' where id = pg_temp.id('r4');
 select pg_temp.as_key('k-bo');
 select results_eq($$select comment_id, is_read from public.annotation_for_you()$$,
   $$values (pg_temp.id('r4'), false), (pg_temp.id('t2'), false), (pg_temp.id('c1'), true)$$,
   'read state: a new event after reading is unread again, older entries stay read');
 select results_eq($$select public.annotation_for_you_unread()$$, $$values (2)$$, 'read state: unread count includes the new event');
 
-select lives_ok($$select public.annotation_mark_all_read()$$, 'mark_all_read: Bo marks everything');
+-- Upper bound: Bo's overlay loaded T1 before r4 (newest loaded comment 30 minutes ago).
+select lives_ok($$select public.annotation_mark_read(pg_temp.id('c1'), now() - interval '30 minutes')$$, 'mark_read: up to the newest loaded comment');
+select results_eq($$select comment_id, is_read from public.annotation_for_you() where thread_id = pg_temp.id('c1')$$,
+  $$values (pg_temp.id('r4'), false), (pg_temp.id('c1'), true)$$, 'mark_read: an entry newer than the bound stays unread');
+select lives_ok($$select public.annotation_mark_read(pg_temp.id('c1'), now() - interval '3 hours')$$, 'mark_read: an older bound');
+reset role;
+select results_eq($$select read_at = now() - interval '30 minutes' from public.annotation_reads
+    where person_id = '40000000-0000-4000-8000-000000000002' and thread_id = pg_temp.id('c1')$$,
+  $$values (true)$$, 'mark_read: read state never goes backwards');
+select pg_temp.as_key('k-bo');
+select throws_ok($$select public.annotation_mark_read(pg_temp.id('c1'), null)$$, '22004', 'p_until is required', 'mark_read: bound required');
+select throws_ok($$select public.annotation_mark_all_read(null)$$, '22004', 'p_until is required', 'mark_all_read: bound required');
+
+-- Mark all with the list loaded up to r4; meanwhile Cleo mentions Bo in another project (one minute ago).
+select pg_temp.as_key('k-cleo');
+insert into ids select 'n1', id from public.annotation_add_comment('mn-zwei', '/zwei', 'Neu @Bo Brandt', null, null, null,
+  array['40000000-0000-4000-8000-000000000002']::uuid[]);
+reset role;
+update public.comments set created_at = now() - interval '1 minute' where id = pg_temp.id('n1');
+select pg_temp.as_key('k-bo');
+select lives_ok($$select public.annotation_mark_all_read(now() - interval '10 minutes')$$, 'mark_all_read: Bo marks everything loaded');
+select results_eq($$select comment_id, is_read from public.annotation_for_you()$$,
+  $$values (pg_temp.id('n1'), false), (pg_temp.id('r4'), true), (pg_temp.id('t2'), true), (pg_temp.id('c1'), true)$$,
+  'mark_all_read: the newer mention in another project stays unread');
+select results_eq($$select public.annotation_for_you_unread()$$, $$values (1)$$, 'mark_all_read: unread count 1');
+select lives_ok($$select public.annotation_mark_all_read(now() + interval '1 day')$$, 'mark_all_read: a bound in the future');
+reset role;
+select results_eq($$select max(read_at) = now() from public.annotation_reads where person_id = '40000000-0000-4000-8000-000000000002'$$,
+  $$values (true)$$, 'mark_all_read: read state never lies in the future');
+select pg_temp.as_key('k-bo');
 select results_eq($$select count(*)::int from public.annotation_for_you() where not is_read$$, $$values (0)$$,
   'mark_all_read: no unread entries left');
 select results_eq($$select public.annotation_for_you_unread()$$, $$values (0)$$, 'mark_all_read: unread count 0');
-select results_eq($$select count(*)::int from public.annotation_for_you()$$, $$values (3)$$, 'mark_all_read: entries stay in the list');
+select results_eq($$select count(*)::int from public.annotation_for_you()$$, $$values (4)$$, 'mark_all_read: entries stay in the list');
 select pg_temp.as_key('k-ana');
 -- Ana: replies r1, r4 and mention r2 in her thread T1.
 select results_eq($$select public.annotation_for_you_unread()$$, $$values (3)$$, 'mark_all_read: only for the own person');
@@ -290,7 +326,7 @@ select pg_temp.as_key('k-bo');
 select is_empty($$select * from public.annotation_for_you()$$, 'revoked: no entries');
 select results_eq($$select public.annotation_for_you_unread()$$, $$values (0)$$, 'revoked: no unread count');
 select is_empty($$select * from public.annotation_staff_directory()$$, 'revoked: no directory');
-select throws_ok($$select public.annotation_mark_all_read()$$, '28000', 'invalid key', 'revoked: mark_all_read refused');
+select throws_ok($$select public.annotation_mark_all_read(now())$$, '28000', 'invalid key', 'revoked: mark_all_read refused');
 select is_empty($$select * from public.annotation_mentions$$, 'revoked: no mentions readable');
 select pg_temp.as_key('k-ana');
 select is_empty($$select * from public.annotation_staff_directory() where person_id = '40000000-0000-4000-8000-000000000002'$$,

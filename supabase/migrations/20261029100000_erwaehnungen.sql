@@ -4,7 +4,9 @@
 -- comment otherwise. Guests mention nobody and cannot be mentioned.
 -- "For you" is a query, not stored notifications: mentions of me and replies by others in threads I
 -- started, in every project my key may access (staff all, guests their own), without resolved threads.
--- Read state per person and thread: an entry is unread if its comment is newer than read_at.
+-- Read state per person and thread: an entry is unread if its comment is newer than read_at. Marking
+-- as read takes the time of the newest entry the overlay has loaded, so later entries stay unread.
+-- Guests get "For you" only for their own project, without domain, and read no mentions.
 -- Mention errors: SQLSTATE AN001 with a readable message.
 
 -- Both tables use a surrogate key: with a composite primary key of two foreign keys PostgREST treats them
@@ -24,10 +26,14 @@ revoke all on public.annotation_mentions from anon, authenticated;
 -- Readable for the overlay's comment query (embedded per comment); written only by annotation_add_comment().
 grant select on public.annotation_mentions to anon;
 
--- Same visibility as the comment; the sub-select uses the comments policy and is built once per query.
+-- Staff only (guests see no highlighting), and only for comments the key may read. Both sub-selects
+-- use the policies of their tables and are built once per query.
 create policy mentions_select on public.annotation_mentions
   for select to anon
-  using (comment_id in (select c.id from public.comments c));
+  using (
+    exists (select 1 from public.annotation_people me where me.id = (select public.annotation_me()) and not me.is_guest)
+    and comment_id in (select c.id from public.comments c)
+  );
 
 create table public.annotation_reads (
   id bigint generated always as identity primary key,
@@ -112,7 +118,8 @@ $$;
 -- For you
 -- ---------------------------------------------------------------------------
 -- Entries of the key's person, newest first. A reply that also mentions me is one entry (mention).
--- My own comments never create entries. project_domain: first domain in alphabetical order (null without).
+-- My own comments never create entries. project_domain: first domain in alphabetical order (null without,
+-- and always null for guests, who never jump to another project).
 create function public.annotation_for_you()
 returns table (
   project_id text,
@@ -132,7 +139,9 @@ security definer
 set search_path = ''
 as $$
   with me as (
-    select public.annotation_me() as id, public.annotation_my_projects() as projects
+    select p.id, p.is_guest, public.annotation_my_projects() as projects
+    from public.annotation_people p
+    where p.id = public.annotation_me()
   ),
   events as (
     select distinct on (e.comment_id) e.comment_id, e.kind
@@ -150,7 +159,8 @@ as $$
     order by e.comment_id, e.kind  -- 'mention' before 'reply'
   )
   select c.project_id, pr.name,
-    (select min(d.host) from public.annotation_project_domains d where d.project_id = c.project_id),
+    case when not me.is_guest then
+      (select min(d.host) from public.annotation_project_domains d where d.project_id = c.project_id) end,
     t.page_path, t.id, c.id, e.kind, a.display_name, c.created_at,
     exists (
       select 1 from public.annotation_reads rd
@@ -177,8 +187,10 @@ as $$
   select count(*)::integer from public.annotation_for_you() f where not f.is_read;
 $$;
 
--- Opening a thread: all its entries are read for me. Threads I may not access are ignored.
-create function public.annotation_mark_read(p_thread_id uuid)
+-- Opening a thread: its entries up to p_until (created_at of the newest comment the overlay has loaded
+-- in it) are read for me; later ones stay unread, also from a transaction still open. Never in the future,
+-- never backwards. Threads I may not access are ignored.
+create function public.annotation_mark_read(p_thread_id uuid, p_until timestamptz)
 returns void
 language plpgsql
 security definer
@@ -190,19 +202,22 @@ begin
   if v_me is null then
     raise exception 'invalid key' using errcode = '28000';
   end if;
+  if p_until is null then
+    raise exception 'p_until is required' using errcode = '22004';
+  end if;
 
-  insert into public.annotation_reads (person_id, thread_id, read_at)
-  select v_me, t.id, now()
+  insert into public.annotation_reads as r (person_id, thread_id, read_at)
+  select v_me, t.id, least(p_until, now())
   from public.comments t
   where t.id = p_thread_id
     and t.parent_id is null
     and t.project_id = any (public.annotation_my_projects())
-  on conflict (person_id, thread_id) do update set read_at = excluded.read_at;
+  on conflict (person_id, thread_id) do update set read_at = greatest(r.read_at, excluded.read_at);
 end;
 $$;
 
--- "Mark all as read": every thread that has an unread entry for me.
-create function public.annotation_mark_all_read()
+-- "Mark all as read": my unread entries up to p_until (created_at of the newest loaded entry), same rules.
+create function public.annotation_mark_all_read(p_until timestamptz)
 returns void
 language plpgsql
 security definer
@@ -214,12 +229,15 @@ begin
   if v_me is null then
     raise exception 'invalid key' using errcode = '28000';
   end if;
+  if p_until is null then
+    raise exception 'p_until is required' using errcode = '22004';
+  end if;
 
-  insert into public.annotation_reads (person_id, thread_id, read_at)
-  select distinct v_me, f.thread_id, now()
+  insert into public.annotation_reads as r (person_id, thread_id, read_at)
+  select distinct v_me, f.thread_id, least(p_until, now())
   from public.annotation_for_you() f
   where not f.is_read
-  on conflict (person_id, thread_id) do update set read_at = excluded.read_at;
+  on conflict (person_id, thread_id) do update set read_at = greatest(r.read_at, excluded.read_at);
 end;
 $$;
 
@@ -228,12 +246,12 @@ revoke all on function public.annotation_staff_directory() from public, anon, au
 revoke all on function public.annotation_add_comment(text, text, text, text, jsonb, uuid, uuid[]) from public, anon, authenticated;
 revoke all on function public.annotation_for_you() from public, anon, authenticated;
 revoke all on function public.annotation_for_you_unread() from public, anon, authenticated;
-revoke all on function public.annotation_mark_read(uuid) from public, anon, authenticated;
-revoke all on function public.annotation_mark_all_read() from public, anon, authenticated;
+revoke all on function public.annotation_mark_read(uuid, timestamptz) from public, anon, authenticated;
+revoke all on function public.annotation_mark_all_read(timestamptz) from public, anon, authenticated;
 
 grant execute on function public.annotation_staff_directory() to anon;
 grant execute on function public.annotation_add_comment(text, text, text, text, jsonb, uuid, uuid[]) to anon;
 grant execute on function public.annotation_for_you() to anon;
 grant execute on function public.annotation_for_you_unread() to anon;
-grant execute on function public.annotation_mark_read(uuid) to anon;
-grant execute on function public.annotation_mark_all_read() to anon;
+grant execute on function public.annotation_mark_read(uuid, timestamptz) to anon;
+grant execute on function public.annotation_mark_all_read(timestamptz) to anon;
