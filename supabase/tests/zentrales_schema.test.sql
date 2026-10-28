@@ -2,7 +2,7 @@
 -- (role anon, key in the x-annotation-key header). Independent of the seed, all in one transaction.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(114);
+select plan(121);
 
 -- Switch browser: role anon, key in the header (null = no header).
 create function pg_temp.als(p_key text) returns void language plpgsql as $$
@@ -86,6 +86,10 @@ select pg_temp.als(null);
 select ok(public.annotation_project_key_ok('pk-eins', 'eins.test'), 'project link: valid on its domain');
 select ok(not public.annotation_project_key_ok('pk-eins', 'zwei.test'), 'project link: not valid on another domain');
 select ok(not public.annotation_project_key_ok('pk-falsch', 'eins.test'), 'project link: wrong link invalid');
+select ok(not public.annotation_project_key_ok(null, 'eins.test'), 'project link: no link invalid');
+select ok(not public.annotation_project_key_ok('pk-eins', 'eins.test', 'test-zwei'),
+  'project link: override to another project invalid, a guest cannot join a foreign project');
+select ok(public.annotation_project_key_ok('pk-eins', 'zwei.test', 'test-eins'), 'project link: override to its own project valid');
 select throws_ok($$select public.annotation_join('pk-falsch', 'Eva')$$, '28000', 'invalid project link', 'join: wrong link rejected');
 insert into gast values ('eva', public.annotation_join('pk-eins', '  Eva Extern  '));
 insert into gast values ('ole', public.annotation_join('pk-zwei', 'Ole'));
@@ -96,6 +100,7 @@ select results_eq($$select project_id, display_name, is_guest from public.annota
   $$values ('test-eins'::text, 'Eva Extern'::text, true)$$, 'guest: recognised without link, flagged as guest, name trimmed');
 select is_empty($$select * from public.annotation_whoami('zwei.test')$$, 'guest: no access on another domain');
 select is_empty($$select * from public.annotation_whoami('eins.test', 'test-zwei')$$, 'guest: no access to another project via override');
+select is_empty($$select * from public.annotation_whoami('zwei.test', 'test-zwei')$$, 'guest: no access to another project via override on its domain');
 select results_eq($$select id from public.comments$$,
   $$values ('10000000-0000-4000-8000-000000000001'::uuid)$$, 'guest: reads only comments of own project');
 select throws_ok($$insert into public.comments (project_id, page_path, text) values ('test-zwei', '/', 'x')$$,
@@ -293,6 +298,7 @@ select throws_ok($$select public.annotation_rename('Eva Wieder')$$, '28000', 'in
 select pg_temp.als(null);
 select throws_ok($$select public.annotation_join('pk-eins', 'Eva')$$, '28000', 'invalid project link', 'new project link: old link has no effect');
 select ok(public.annotation_project_key_ok((select k from pk_neu), 'eins.test'), 'new project link: new link is valid');
+select ok(not public.annotation_project_key_ok('pk-eins', 'eins.test'), 'new project link: old link invalid');
 select pg_temp.als((select k from gast where name = 'ole'));
 select results_eq($$select display_name from public.annotation_whoami('zwei.test')$$, $$values ('Ole'::text)$$,
   'new project link: guests of other projects unaffected');
@@ -331,11 +337,15 @@ reset role;
 set local role service_role;
 select lives_ok($$select public.annotation_set_project('test-drei', ' Test Drei ', array['Drei.Test', 'drei.test:8080'])$$, 'admin: project created');
 select lives_ok($$select public.annotation_set_project('test-drei', 'Test Drei', array['neu.test'])$$, 'admin: domains replaced');
+select throws_ok($$select public.annotation_set_project('test-drei', 'Test Drei', array['andere.test', 'ZWEI.test'])$$,
+  '23505', null, 'admin: domain of another project rejected');
 create temp table mitarbeiter as select * from public.annotation_add_staff(' Neu@DAYONE.de ', e' Nina\u200B ', ' ');
 select throws_ok($$select public.annotation_add_staff('fremd@example.com', 'Fred')$$, '23514', null, 'admin: DAYONE e-mail only');
 reset role;
 select results_eq($$select host from public.annotation_project_domains where project_id = 'test-drei'$$,
-  $$values ('neu.test'::text)$$, 'admin: only the new domains apply');
+  $$values ('neu.test'::text)$$, 'admin: only the new domains apply, a rejected call changes nothing');
+select results_eq($$select project_id from public.annotation_project_domains where host = 'zwei.test'$$,
+  $$values ('test-zwei'::text)$$, 'admin: domain collision leaves the domain with its project');
 select results_eq(
   $$select p.email, p.first_name, p.last_name, p.display_name, p.key_hash = extensions.digest(m.key, 'sha256')
     from mitarbeiter m join public.annotation_people p on p.id = m.person_id$$,
