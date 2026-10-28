@@ -12,7 +12,9 @@ import type {
   AnnotationComment,
   AnnotationOverlayProps,
   AnnotationRect,
+  ForYouEntry,
   PendingAnnotation,
+  StaffMember,
 } from "./types";
 import {
   AnnotationContext,
@@ -22,8 +24,10 @@ import {
 import { querySelectorSafely } from "./selector";
 import {
   DEFAULT_STORAGE_KEY_PREFIX,
+  dropLinkThread,
   forgetLinkKey,
   getStorageKey,
+  readLinkThread,
   readStoredBoolean,
   readStoredString,
   takeLinkKey,
@@ -34,6 +38,7 @@ import {
   getCommentMap,
   getThreadRootId,
   isSameSitePath,
+  measureRect,
   normalizeComment,
   sortComments,
 } from "./utils";
@@ -41,7 +46,8 @@ import {
 const supabaseClientCache = new Map<string, SupabaseClient>();
 const TABLE = "comments";
 // The display name is joined in when reading, so a rename also changes old comments.
-const COMMENT_SELECT = "*, author:annotation_people(display_name, is_guest)";
+const COMMENT_SELECT =
+  "*, author:annotation_people(display_name, is_guest), mentions:annotation_mentions(person_id)";
 
 type Session = {
   project_id: string;
@@ -51,16 +57,18 @@ type Session = {
   realtime_topic: string;
 };
 
-type CommentRow = Omit<Partial<AnnotationComment>, "author"> & {
+type CommentRow = Omit<Partial<AnnotationComment>, "author" | "mentions"> & {
   id: string;
   author?: { display_name: string; is_guest: boolean } | null;
+  mentions?: Array<{ person_id: string }> | null;
 };
 
-function toComment({ author, ...row }: CommentRow): AnnotationComment {
+function toComment({ author, mentions, ...row }: CommentRow): AnnotationComment {
   return normalizeComment({
     ...row,
     author: author?.display_name,
     author_is_guest: author?.is_guest ?? false,
+    mentions: mentions?.map((mention) => mention.person_id),
   });
 }
 
@@ -135,6 +143,11 @@ export function AnnotationProvider({
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [directory, setDirectory] = useState<StaffMember[]>([]);
+  const [forYou, setForYou] = useState<ForYouEntry[]>([]);
+  // Thread to open from a "For you" jump (#annotation-thread=…), once the comments are loaded.
+  const [linkThread, setLinkThread] = useState(readLinkThread);
+  const isStaff = session ? !session.is_guest : false;
 
   const commentMap = useMemo(() => getCommentMap(comments), [comments]);
 
@@ -173,6 +186,53 @@ export function AnnotationProvider({
     });
   }, [client, normalizedProjectId]);
 
+  const forYouSequence = useRef(0);
+  const loadForYou = useCallback(async () => {
+    const sequence = ++forYouSequence.current;
+    if (!personId) {
+      setForYou((previous) => (previous.length ? [] : previous));
+      return;
+    }
+    const { data, error } = await client.rpc("annotation_for_you");
+    if (sequence !== forYouSequence.current) {
+      return;
+    }
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+    const next = (data ?? []) as ForYouEntry[];
+    // Pings arrive often; keep the old array when nothing changed, so the counter does not re-render.
+    setForYou((previous) => (JSON.stringify(previous) === JSON.stringify(next) ? previous : next));
+  }, [client, personId]);
+
+  // When the overlay loads and every time it opens.
+  useEffect(() => {
+    void loadForYou();
+  }, [annotationMode, loadForYou]);
+
+  // Mention picker: staff only; guests get no list (the database returns none either).
+  useEffect(() => {
+    let isActive = true;
+    if (!isStaff) {
+      setDirectory((previous) => (previous.length ? [] : previous));
+      return;
+    }
+    void client.rpc("annotation_staff_directory").then(({ data, error }) => {
+      if (!isActive) {
+        return;
+      }
+      if (error) {
+        setErrorMessage(error.message);
+        return;
+      }
+      setDirectory((data ?? []) as StaffMember[]);
+    });
+    return () => {
+      isActive = false;
+    };
+  }, [client, isStaff, personId]);
+
   const syncPath = useCallback(() => {
     const nextPath = getActivePath(pagePath);
     setCurrentPath((previous) => (previous === nextPath ? previous : nextPath));
@@ -194,7 +254,13 @@ export function AnnotationProvider({
 
   // A link opened in the already open tab only changes the hash; take its key like on page load.
   useEffect(() => {
-    const onHashChange = () => setLinkKey(takeLinkKey());
+    const onHashChange = () => {
+      setLinkKey(takeLinkKey());
+      const thread = readLinkThread();
+      if (thread) {
+        setLinkThread(thread);
+      }
+    };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
@@ -319,13 +385,14 @@ export function AnnotationProvider({
       .on("broadcast", { event: "changed" }, () => {
         setSessionCheck((value) => value + 1);
         void loadComments();
+        void loadForYou();
       })
       .subscribe();
 
     return () => {
       void client.removeChannel(channel);
     };
-  }, [client, loadComments, realtimeTopic]);
+  }, [client, loadComments, loadForYou, realtimeTopic]);
 
   // A ref, not only state: a fast second Enter arrives before the disabled button is rendered.
   const joiningRef = useRef(false);
@@ -435,12 +502,42 @@ export function AnnotationProvider({
     setActiveThreadId(null);
   }, []);
 
+  // Opening a thread reads all its "For you" entries.
+  const markRead = useCallback(
+    async (threadId: string) => {
+      setForYou((previous) =>
+        previous.some((entry) => entry.thread_id === threadId && !entry.is_read)
+          ? previous.map((entry) =>
+              entry.thread_id === threadId ? { ...entry, is_read: true } : entry,
+            )
+          : previous,
+      );
+      const { error } = await client.rpc("annotation_mark_read", { p_thread_id: threadId });
+      if (error) {
+        setErrorMessage(error.message);
+      }
+      // A load that started before the write (e.g. when the overlay opens) may bring the old state.
+      void loadForYou();
+    },
+    [client, loadForYou],
+  );
+
+  const markAllRead = useCallback(async () => {
+    setErrorMessage(null);
+    const { error } = await client.rpc("annotation_mark_all_read");
+    if (error) {
+      setErrorMessage(error.message);
+    }
+    void loadForYou();
+  }, [client, loadForYou]);
+
   const openThreadComposer = useCallback(
     (threadId: string, rect: AnnotationRect) => {
       if (!session) {
         return;
       }
 
+      void markRead(threadId);
       const target = commentMap.get(threadId);
       setComposer({
         parentId: threadId,
@@ -449,7 +546,7 @@ export function AnnotationProvider({
       });
       setActiveThreadId(threadId);
     },
-    [commentMap, session],
+    [commentMap, markRead, session],
   );
 
   const updateThreadRect = useCallback(
@@ -575,7 +672,7 @@ export function AnnotationProvider({
   );
 
   const submitComment = useCallback(
-    async (text: string) => {
+    async (text: string, mentionIds: string[] = []) => {
       if (!normalizedProjectId) {
         return false;
       }
@@ -591,18 +688,17 @@ export function AnnotationProvider({
 
       setErrorMessage(null);
 
-      const payload = {
-        page_path: currentPath,
-        selector: composer.parentId ? null : composer.selector,
-        rect: composer.parentId ? null : composer.rect,
-        text: nextText,
-        parent_id: composer.parentId,
-        project_id: normalizedProjectId,
-      };
-
+      const mentions = [...new Set(mentionIds)];
       const { data, error } = await client
-        .from(TABLE)
-        .insert(payload)
+        .rpc("annotation_add_comment", {
+          p_project_id: normalizedProjectId,
+          p_page_path: currentPath,
+          p_text: nextText,
+          p_selector: composer.parentId ? null : composer.selector,
+          p_rect: composer.parentId ? null : composer.rect,
+          p_parent_id: composer.parentId,
+          p_mentions: mentions,
+        })
         .select(COMMENT_SELECT)
         .single();
 
@@ -611,7 +707,8 @@ export function AnnotationProvider({
         return false;
       }
 
-      const inserted = toComment(data as CommentRow);
+      // The function returns the row before its mentions exist; the next ping loads them from the database.
+      const inserted = { ...toComment(data as CommentRow), mentions };
       startTransition(() => {
         setComments((previous) => sortComments([...previous, inserted]));
       });
@@ -721,11 +818,12 @@ export function AnnotationProvider({
       return true;
     }
 
+    void loadForYou();
     setActiveThreadId((previous) =>
       previous && resolvedThreadIds.has(previous) ? null : previous,
     );
     return true;
-  }, [client, closeComposer, comments, composer, normalizedProjectId]);
+  }, [client, closeComposer, comments, composer, loadForYou, normalizedProjectId]);
 
   const toggleResolved = useCallback(
     async (commentId: string) => {
@@ -765,6 +863,8 @@ export function AnnotationProvider({
           ),
         );
       });
+      // A resolved thread leaves "For you"; a reopened one comes back.
+      void loadForYou();
       if (nextResolved && composer?.parentId === threadId) {
         closeComposer();
         return;
@@ -772,8 +872,36 @@ export function AnnotationProvider({
 
       setActiveThreadId(threadId);
     },
-    [client, closeComposer, commentMap, composer, normalizedProjectId],
+    [client, closeComposer, commentMap, composer, loadForYou, normalizedProjectId],
   );
+
+  // From the list, "For you" or a jump link: go to the thread (switching the page if needed) and open it.
+  const openThread = useCallback(
+    (threadId: string) => {
+      const thread = commentMap.get(threadId);
+      if (!thread) {
+        return;
+      }
+      setAnnotationMode(true);
+      scrollToComment(threadId);
+      const marker = document.querySelector<HTMLElement>(`[data-thread-id="${threadId}"]`);
+      const rect = marker ? measureRect(marker) : thread.rect;
+      if (rect) {
+        openThreadComposer(threadId, rect);
+      }
+    },
+    [commentMap, openThreadComposer, scrollToComment],
+  );
+
+  // Jump link: open the thread once the project's comments are loaded, then drop it from the address.
+  useEffect(() => {
+    if (!linkThread || !session || isLoading) {
+      return;
+    }
+    dropLinkThread();
+    setLinkThread("");
+    openThread(linkThread);
+  }, [isLoading, linkThread, openThread, session]);
 
   // Shortcuts only with access; otherwise "c" and Escape belong to the host page.
   useEffect(() => {
@@ -837,6 +965,8 @@ export function AnnotationProvider({
       callAdmin,
       cancelAnnotationMode,
       comments,
+      directory,
+      forYou,
       isAdmin,
       isGuest: session?.is_guest ?? false,
       isJoining,
@@ -850,7 +980,9 @@ export function AnnotationProvider({
       errorMessage,
       isLoading,
       isMarkerHovered,
+      markAllRead,
       storageKeyPrefix,
+      openThread,
       openThreadComposer,
       removeThread,
       resolveAllComments,
@@ -872,6 +1004,8 @@ export function AnnotationProvider({
       callAdmin,
       cancelAnnotationMode,
       comments,
+      directory,
+      forYou,
       isAdmin,
       isJoining,
       joinAsGuest,
@@ -885,7 +1019,9 @@ export function AnnotationProvider({
       errorMessage,
       isLoading,
       isMarkerHovered,
+      markAllRead,
       storageKeyPrefix,
+      openThread,
       openThreadComposer,
       removeThread,
       resolveAllComments,

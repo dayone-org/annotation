@@ -89,3 +89,30 @@ export function writeStoredBoolean(key: string, value: boolean): void {
 export function forgetLinkKey(): void {
   linkKey = "";
 }
+
+// Jump from "For you" in another project: #annotation-thread=<id> opens that thread once.
+export function readLinkThread(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  const match = window.location.hash.match(/[#&]annotation-thread=([0-9a-f-]{36})(?=&|$)/i);
+  return match ? match[1].toLowerCase() : "";
+}
+
+// Removes every annotation-thread= part from the address, like takeLinkKey does with key=.
+export function dropLinkThread(): void {
+  const { hash, pathname, search } = window.location;
+  if (!/[#&]annotation-thread=/.test(hash)) {
+    return;
+  }
+  const rest = hash
+    .slice(1)
+    .split("&")
+    .filter((part) => !part.startsWith("annotation-thread="))
+    .join("&");
+  window.history.replaceState(
+    window.history.state,
+    "",
+    `${pathname}${search}${rest ? `#${rest}` : ""}`,
+  );
+}

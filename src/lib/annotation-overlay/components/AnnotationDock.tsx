@@ -1,7 +1,9 @@
 import {
   ArrowDownLeftIcon,
   ArrowDownRightIcon,
+  ArrowBendUpLeftIcon,
   ArrowRightIcon,
+  AtIcon,
   ArrowUpLeftIcon,
   ArrowUpRightIcon,
   ChatsIcon,
@@ -43,7 +45,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import logo from "@/logo.svg";
-import type { AnnotationComment, AnnotationPosition } from "../types";
+import type { AnnotationComment, AnnotationPosition, ForYouEntry } from "../types";
 import {
   getStorageKey,
   readStoredBoolean,
@@ -56,11 +58,12 @@ import {
   formatAnnotationCollectionMarkdown,
   formatAnnotationThreadMarkdown,
   formatTimestamp,
+  getForYouHref,
   getReplies,
   getTopLevelComments,
   isValidName,
-  measureRect,
 } from "../utils";
+import { MentionText } from "./MentionText";
 
 type CopyState = "idle" | "copied" | "error";
 
@@ -553,25 +556,10 @@ function AdminCard() {
 }
 
 function ThreadCard({ activeThreadId, comment, comments, currentPath }: ThreadCardProps) {
-  const { openThreadComposer, scrollToComment, toggleResolved } = useAnnotation();
+  const { openThread, toggleResolved } = useAnnotation();
   const [copyState, setCopyState] = useCopyState();
   const replies = getReplies(comments, comment.id);
   const isActive = activeThreadId === comment.id;
-
-  const goToThreadAndOpenComposer = useCallback(
-    (scrollTargetId: string) => {
-      scrollToComment(scrollTargetId);
-
-      const markerNode = document.querySelector<HTMLElement>(`[data-thread-id="${comment.id}"]`);
-      const anchorRect = markerNode ? measureRect(markerNode) : comment.rect;
-      if (!anchorRect) {
-        return;
-      }
-
-      openThreadComposer(comment.id, anchorRect);
-    },
-    [comment.id, comment.rect, openThreadComposer, scrollToComment],
-  );
 
   const handleCopy = useCallback(async () => {
     const markdown = formatAnnotationThreadMarkdown(comment, comments, currentPath);
@@ -586,7 +574,7 @@ function ThreadCard({ activeThreadId, comment, comments, currentPath }: ThreadCa
         isActive && "annotation:border annotation:border-primary",
         comment.resolved && "annotation:opacity-50",
       )}
-      onClick={() => goToThreadAndOpenComposer(comment.id)}
+      onClick={() => openThread(comment.id)}
       size="xs"
       variant="outline"
     >
@@ -625,7 +613,7 @@ function ThreadCard({ activeThreadId, comment, comments, currentPath }: ThreadCa
             {comment.author_is_guest ? <Badge variant="outline">External</Badge> : null}
           </p>
           <p className="annotation:whitespace-pre-wrap annotation:text-muted-foreground">
-            {comment.text}
+            <MentionText mentions={comment.mentions} text={comment.text} />
           </p>
         </div>
         <div className="annotation:flex annotation:justify-between annotation:gap-2 annotation:text-xs annotation:text-muted-foreground">
@@ -636,6 +624,75 @@ function ThreadCard({ activeThreadId, comment, comments, currentPath }: ThreadCa
           <span>{formatTimestamp(comment.created_at)}</span>
         </div>
       </ItemContent>
+    </Item>
+  );
+}
+
+// Same project: open the thread here. Other project: link to its page, which opens the thread there.
+// Without a domain the entry only names the project.
+function ForYouCard({ entry }: { entry: ForYouEntry }) {
+  const { openThread, projectId } = useAnnotation();
+  const isHere = entry.project_id === projectId;
+  const href = isHere
+    ? null
+    : getForYouHref(entry.project_domain, entry.page_path, entry.thread_id);
+  const body = (
+    <>
+      <ItemHeader className="annotation:justify-start annotation:gap-1">
+        {isHere ? null : <Badge variant="outline">{entry.project_name}</Badge>}
+        <Badge variant="secondary">{entry.page_path}</Badge>
+      </ItemHeader>
+      <ItemContent className="annotation:flex-row annotation:flex-wrap annotation:items-center annotation:justify-between annotation:gap-x-2 annotation:text-sm">
+        <span className="annotation:flex annotation:items-center annotation:gap-1.5">
+          {entry.is_read ? null : (
+            <span
+              aria-label="Unread"
+              className="annotation:size-2 annotation:shrink-0 annotation:rounded-full annotation:bg-primary-foreground"
+              role="img"
+            />
+          )}
+          <span className="annotation:font-medium">{entry.actor_name}</span>
+          {entry.kind === "mention" ? (
+            <AtIcon
+              aria-label="Mentioned you"
+              className="annotation:shrink-0 annotation:text-muted-foreground"
+            />
+          ) : (
+            <ArrowBendUpLeftIcon
+              aria-label="Replied"
+              className="annotation:shrink-0 annotation:text-muted-foreground"
+            />
+          )}
+        </span>
+        <span className="annotation:shrink-0 annotation:text-xs annotation:text-muted-foreground">
+          {formatTimestamp(entry.created_at)}
+        </span>
+      </ItemContent>
+    </>
+  );
+  // Links keep the card look; host pages may style <a>.
+  const className =
+    "annotation:bg-background annotation:text-left annotation:text-foreground annotation:no-underline";
+
+  if (isHere) {
+    return (
+      <Item asChild className={className} size="xs" variant="outline">
+        <button onClick={() => openThread(entry.thread_id)} type="button">
+          {body}
+        </button>
+      </Item>
+    );
+  }
+  if (href) {
+    return (
+      <Item asChild className={className} size="xs" variant="outline">
+        <a href={href}>{body}</a>
+      </Item>
+    );
+  }
+  return (
+    <Item className={className} size="xs" variant="outline">
+      {body}
     </Item>
   );
 }
@@ -785,10 +842,12 @@ export function AnnotationDock({
     composer,
     currentPath,
     errorMessage,
+    forYou,
     isAdmin,
     isGuest,
     isJoining,
     joinAsGuest,
+    markAllRead,
     phase,
     isLoading,
     renameSelf,
@@ -813,6 +872,8 @@ export function AnnotationDock({
     readStoredPosition(positionKey, defaultPosition),
   );
   const [isPanelOpen, setPanelOpen] = useState(false);
+  const [showForYou, setShowForYou] = useState(false);
+  const unreadCount = forYou.filter((entry) => !entry.is_read).length;
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState(author);
@@ -1055,9 +1116,10 @@ export function AnnotationDock({
           aria-expanded={isPanelOpen}
           aria-label="Annotations panel"
           onClick={toggleAnnotationsPanel}
-          size="icon-sm"
+          size={unreadCount > 0 ? "sm" : "icon-sm"}
         >
           <ChatsIcon />
+          {unreadCount > 0 ? unreadCount : null}
         </Button>
         <Button
           aria-expanded={isSettingsOpen}
@@ -1104,26 +1166,50 @@ export function AnnotationDock({
               <CardHeader>
                 <FieldGroup>
                   <Field orientation="horizontal">
-                    <FieldLabel htmlFor="annotation-panel-show-resolved">
-                      Resolved comments
+                    <FieldLabel htmlFor="annotation-panel-for-you">
+                      For you · {unreadCount}
                     </FieldLabel>
                     <Switch
-                      checked={showResolved}
-                      id="annotation-panel-show-resolved"
-                      onCheckedChange={setShowResolved}
+                      checked={showForYou}
+                      id="annotation-panel-for-you"
+                      onCheckedChange={setShowForYou}
                     />
                   </Field>
-                  <Field orientation="horizontal">
-                    <FieldLabel htmlFor="annotation-panel-show-all">All pages</FieldLabel>
-                    <Switch
-                      checked={showAllPages}
-                      id="annotation-panel-show-all"
-                      onCheckedChange={(checked) => {
-                        writeStoredBoolean(onlyCurrentPageKey, !checked);
-                        setShowOnlyCurrentPage(!checked);
-                      }}
-                    />
-                  </Field>
+                  {showForYou ? (
+                    <Button
+                      disabled={unreadCount === 0}
+                      onClick={() => void markAllRead()}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      Mark all as read
+                    </Button>
+                  ) : (
+                    <>
+                      <Field orientation="horizontal">
+                        <FieldLabel htmlFor="annotation-panel-show-resolved">
+                          Resolved comments
+                        </FieldLabel>
+                        <Switch
+                          checked={showResolved}
+                          id="annotation-panel-show-resolved"
+                          onCheckedChange={setShowResolved}
+                        />
+                      </Field>
+                      <Field orientation="horizontal">
+                        <FieldLabel htmlFor="annotation-panel-show-all">All pages</FieldLabel>
+                        <Switch
+                          checked={showAllPages}
+                          id="annotation-panel-show-all"
+                          onCheckedChange={(checked) => {
+                            writeStoredBoolean(onlyCurrentPageKey, !checked);
+                            setShowOnlyCurrentPage(!checked);
+                          }}
+                        />
+                      </Field>
+                    </>
+                  )}
                 </FieldGroup>
               </CardHeader>
               <CardContent className="annotation:flex annotation:flex-col annotation:gap-0 annotation:border-t annotation:p-0">
@@ -1138,12 +1224,16 @@ export function AnnotationDock({
                           Loading annotations…
                         </p>
                       ) : null}
-                      {!isLoading && visibleThreads.length === 0 ? (
+                      {!isLoading &&
+                      (showForYou ? forYou.length === 0 : visibleThreads.length === 0) ? (
                         <p className="annotation:p-2 annotation:text-center annotation:text-sm annotation:text-muted-foreground">
                           No annotations
                         </p>
                       ) : null}
-                      {!isLoading
+                      {!isLoading && showForYou
+                        ? forYou.map((entry) => <ForYouCard entry={entry} key={entry.comment_id} />)
+                        : null}
+                      {!isLoading && !showForYou
                         ? visibleThreads.map((comment) => (
                             <ThreadCard
                               activeThreadId={activeThreadId}

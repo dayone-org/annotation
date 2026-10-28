@@ -93,6 +93,7 @@ export function normalizeComment(
     created_at: row.created_at ?? new Date(0).toISOString(),
     resolved_at: row.resolved_at ?? null,
     parent_id: row.parent_id ?? null,
+    mentions: row.mentions ?? [],
   };
 }
 
@@ -354,4 +355,55 @@ export function markerPositionsEqual(
     left.width === right.width &&
     left.height === right.height
   );
+}
+
+// Splits a comment text into plain parts and "@Name" parts of the mentioned people (longest name first,
+// so "@Anna Muster" wins over "@Anna"). Names that are not in the text are simply not found.
+export function splitMentions(
+  text: string,
+  names: string[],
+): Array<{ text: string; mention: boolean }> {
+  const tokens = [...new Set(names)]
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length)
+    .map((name) => `@${name}`);
+  const parts: Array<{ text: string; mention: boolean }> = [];
+  let rest = text;
+  while (tokens.length > 0 && rest) {
+    let best = -1;
+    let token = "";
+    for (const candidate of tokens) {
+      const index = rest.indexOf(candidate);
+      if (index !== -1 && (best === -1 || index < best)) {
+        best = index;
+        token = candidate;
+      }
+    }
+    if (best === -1) {
+      break;
+    }
+    if (best > 0) {
+      parts.push({ text: rest.slice(0, best), mention: false });
+    }
+    parts.push({ text: token, mention: true });
+    rest = rest.slice(best + token.length);
+  }
+  if (rest) {
+    parts.push({ text: rest, mention: false });
+  }
+  return parts;
+}
+
+// Page of a "For you" entry in another project; http for local hosts. Null without a domain.
+export function getForYouHref(
+  domain: string | null,
+  pagePath: string,
+  threadId: string,
+): string | null {
+  if (!domain) {
+    return null;
+  }
+  const host = domain.replace(/:\d+$/, "");
+  const isLocal = host === "localhost" || host === "127.0.0.1" || host.endsWith(".localhost");
+  return `${isLocal ? "http" : "https"}://${domain}${pagePath}#annotation-thread=${threadId}`;
 }
