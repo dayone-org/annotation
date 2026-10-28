@@ -2,7 +2,7 @@
 -- (role anon, key in the x-annotation-key header). Independent of the seed, all in one transaction.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(144);
+select plan(152);
 
 -- Switch browser: role anon, key in the header (null = no header).
 create function pg_temp.as_key(p_key text) returns void language plpgsql as $$
@@ -167,7 +167,12 @@ $f$;
 grant execute on function pg_temp.path_insert(text) to anon;
 select throws_ok(pg_temp.path_insert('evil.example/x'), '23514', null, 'page_path: without leading slash rejected');
 select throws_ok(pg_temp.path_insert('//evil.example/x'), '23514', null, 'page_path: // (other host) rejected');
-select throws_ok(pg_temp.path_insert('/a@evil.example'), '23514', null, 'page_path: @ rejected');
+select throws_ok(pg_temp.path_insert('/.//evil.example'), '23514', null, 'page_path: . segment before // rejected');
+select throws_ok(pg_temp.path_insert('/%2e//evil.example'), '23514', null, 'page_path: %2e segment rejected');
+select throws_ok(pg_temp.path_insert('/%2E%2e//evil.example'), '23514', null, 'page_path: %2E%2e segment rejected, any case');
+select throws_ok(pg_temp.path_insert('/../..//evil.example'), '23514', null, 'page_path: .. segments rejected');
+select throws_ok(pg_temp.path_insert('/a/./b'), '23514', null, 'page_path: . segment in the middle rejected');
+select throws_ok(pg_temp.path_insert('/a/..'), '23514', null, 'page_path: .. segment at the end rejected');
 select throws_ok(pg_temp.path_insert('/#key=abc&'), '23514', null, 'page_path: # rejected');
 select throws_ok(pg_temp.path_insert('/a?b=1'), '23514', null, 'page_path: ? rejected');
 select throws_ok(pg_temp.path_insert(e'/\\evil.example'), '23514', null, 'page_path: backslash rejected');
@@ -177,6 +182,9 @@ select throws_ok(pg_temp.path_insert(e'/a\x01b'), '23514', null, 'page_path: con
 select lives_ok(pg_temp.path_insert('/'), 'page_path: / allowed');
 select lives_ok(pg_temp.path_insert('/produkte/a-b_c.html'), 'page_path: /produkte/a-b_c.html allowed');
 select lives_ok(pg_temp.path_insert('/a//b/%40'), 'page_path: // after the first segment and percent signs allowed');
+select lives_ok(pg_temp.path_insert('/@handle'), 'page_path: /@handle allowed');
+select lives_ok(pg_temp.path_insert('/package/@types/node'), 'page_path: /package/@types/node allowed');
+select lives_ok(pg_temp.path_insert('/.well-known/x/..b/c.'), 'page_path: dots inside a segment allowed');
 reset role;
 delete from public.comments where text = 'path test';
 

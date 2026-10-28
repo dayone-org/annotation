@@ -96,22 +96,35 @@ export function normalizeComment(
   };
 }
 
-// Same rule as the database (comments_page_path_plain): one leading slash but not two, no @ # ? or
-// backslash, no whitespace or control characters. Older rows may break it, so check before using a path.
+// Same rule as the database (comments_page_path_plain): one leading slash but not two, no # ? or
+// backslash, no whitespace or control characters, no . or .. segment (also as %2e). Older rows may
+// break it, so check before using a path.
 export function isPlainPagePath(path: string): boolean {
-  return path.length <= 512 && /^\/(?:[^/@#?\\\s\p{Cc}][^@#?\\\s\p{Cc}]*)?$/u.test(path);
+  return (
+    path.length <= 512 &&
+    /^\/(?:[^/#?\\\s\p{Cc}][^#?\\\s\p{Cc}]*)?$/u.test(path) &&
+    !/(?:^|\/)(?:\.|%2e){1,2}(?:\/|$)/i.test(path)
+  );
 }
 
-// A page path the overlay may navigate to: plain and resolving to this site.
-export function isSameSitePath(path: string): boolean {
+// The URL of a page path on `origin`, or null when the path is not plain or the browser would not keep
+// it exactly as written there (another origin, a normalized path, a query or hash).
+export function pageUrlOn(path: string, origin: string): URL | null {
   if (!isPlainPagePath(path)) {
-    return false;
+    return null;
   }
   try {
-    return new URL(path, window.location.origin).origin === window.location.origin;
+    const url = new URL(path, origin);
+    const asWritten = url.pathname === path && !url.search && !url.hash;
+    return asWritten && url.origin === new URL(origin).origin ? url : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+// A page path the overlay may navigate to: plain and staying on this site exactly as written.
+export function isSameSitePath(path: string): boolean {
+  return pageUrlOn(path, window.location.origin) !== null;
 }
 
 // Same rule as the database: at most 48 characters, at least 2 letters or digits (the database also strips invisible characters).

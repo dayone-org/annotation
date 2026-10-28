@@ -49,11 +49,16 @@ export function takeLinkKey(): string {
       .split("&")
       .filter((part) => !part.startsWith("key="))
       .join("&");
-    window.history.replaceState(
-      window.history.state,
-      "",
-      `${pathname}${search}${rest ? `#${rest}` : ""}`,
-    );
+    // replaceState throws when the pathname reads as another origin (//host); the key is taken anyway.
+    try {
+      window.history.replaceState(
+        window.history.state,
+        "",
+        `${pathname}${search}${rest ? `#${rest}` : ""}`,
+      );
+    } catch {
+      // The key stays in the address bar; it is still used only for this site.
+    }
   }
 
   return linkKey;

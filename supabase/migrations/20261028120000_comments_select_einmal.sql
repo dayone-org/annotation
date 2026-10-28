@@ -62,13 +62,17 @@ create policy people_select on public.annotation_people
 
 -- ---------------------------------------------------------------------------
 -- Page paths: the overlay navigates and links by page_path, so it must stay a plain path on the same
--- site. One leading slash (not //), no @ # ? or backslash, no whitespace or control characters.
+-- site. One leading slash (not //), no # ? or backslash, no whitespace or control characters, and no
+-- . or .. segment, also percent-encoded in any case: the browser resolves /.//host to //host, another site.
 -- Added as not valid and validated right after; a database with older rows that break the rule keeps
 -- them unvalidated (new rows are checked either way, the overlay ignores such paths).
 -- ---------------------------------------------------------------------------
 alter table public.comments drop constraint if exists comments_page_path_plain;
 alter table public.comments add constraint comments_page_path_plain
-  check (page_path ~ '^/([^/@#?\\[:space:][:cntrl:]][^@#?\\[:space:][:cntrl:]]*)?$') not valid;
+  check (
+    page_path ~ '^/([^/#?\\[:space:][:cntrl:]][^#?\\[:space:][:cntrl:]]*)?$'
+    and page_path !~* '(^|/)(\.|%2e){1,2}(/|$)'
+  ) not valid;
 
 do $$
 begin
