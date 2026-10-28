@@ -96,6 +96,24 @@ export function normalizeComment(
   };
 }
 
+// Same rule as the database (comments_page_path_plain): one leading slash but not two, no @ # ? or
+// backslash, no whitespace or control characters. Older rows may break it, so check before using a path.
+export function isPlainPagePath(path: string): boolean {
+  return path.length <= 512 && /^\/(?:[^/@#?\\\s\p{Cc}][^@#?\\\s\p{Cc}]*)?$/u.test(path);
+}
+
+// A page path the overlay may navigate to: plain and resolving to this site.
+export function isSameSitePath(path: string): boolean {
+  if (!isPlainPagePath(path)) {
+    return false;
+  }
+  try {
+    return new URL(path, window.location.origin).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 // Same rule as the database: at most 48 characters, at least 2 letters or digits (the database also strips invisible characters).
 export function isValidName(name: string): boolean {
   const value = name.trim().normalize("NFC");

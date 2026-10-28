@@ -26,7 +26,13 @@ import {
   writeStoredBoolean,
   writeStoredString,
 } from "./storage";
-import { getCommentMap, getThreadRootId, normalizeComment, sortComments } from "./utils";
+import {
+  getCommentMap,
+  getThreadRootId,
+  isSameSitePath,
+  normalizeComment,
+  sortComments,
+} from "./utils";
 
 const supabaseClientCache = new Map<string, SupabaseClient>();
 const TABLE = "comments";
@@ -501,8 +507,16 @@ export function AnnotationProvider({
       };
 
       if (anchorComment.page_path !== currentPath) {
+        // Never leave the site: older rows may hold other paths, and pushState throws for another origin.
+        if (!isSameSitePath(anchorComment.page_path)) {
+          return;
+        }
         if (window.location.pathname !== anchorComment.page_path) {
-          window.history.pushState({}, "", anchorComment.page_path);
+          try {
+            window.history.pushState({}, "", anchorComment.page_path);
+          } catch {
+            return;
+          }
           window.dispatchEvent(new PopStateEvent("popstate"));
         }
 

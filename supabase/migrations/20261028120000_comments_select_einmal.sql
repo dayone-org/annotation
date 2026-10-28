@@ -1,4 +1,4 @@
--- Access checks once per query instead of once per row, and readable admin errors.
+-- Access checks once per query instead of once per row, readable admin errors, plain page paths.
 -- Reading comments checked the key once per row (annotation_person_for per row): about 0.9 s for
 -- 5000 comments. The policies now ask once per query which projects the key may access.
 -- Same access as before: staff all projects, guests their own, nobody without a valid key.
@@ -59,6 +59,23 @@ drop policy if exists people_select on public.annotation_people;
 create policy people_select on public.annotation_people
   for select to anon
   using (id = (select public.annotation_me()) or id in (select c.author_id from public.comments c));
+
+-- ---------------------------------------------------------------------------
+-- Page paths: the overlay navigates and links by page_path, so it must stay a plain path on the same
+-- site. One leading slash (not //), no @ # ? or backslash, no whitespace or control characters.
+-- Added as not valid and validated right after; a database with older rows that break the rule keeps
+-- them unvalidated (new rows are checked either way, the overlay ignores such paths).
+-- ---------------------------------------------------------------------------
+alter table public.comments drop constraint if exists comments_page_path_plain;
+alter table public.comments add constraint comments_page_path_plain
+  check (page_path ~ '^/([^/@#?\\[:space:][:cntrl:]][^@#?\\[:space:][:cntrl:]]*)?$') not valid;
+
+do $$
+begin
+  alter table public.comments validate constraint comments_page_path_plain;
+exception when check_violation then
+  raise notice 'comments_page_path_plain not validated: older rows have page paths that break it.';
+end $$;
 
 -- ---------------------------------------------------------------------------
 -- Admin: readable errors instead of constraint texts, which name the constraint or the whole row.

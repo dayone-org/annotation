@@ -2,7 +2,7 @@
 -- (role anon, key in the x-annotation-key header). Independent of the seed, all in one transaction.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(132);
+select plan(144);
 
 -- Switch browser: role anon, key in the header (null = no header).
 create function pg_temp.as_key(p_key text) returns void language plpgsql as $$
@@ -158,6 +158,27 @@ select results_eq(
   $$select author_id = (select id from public.annotation_people where display_name = 'Eva Extern'), resolved, created_at = now()
     from public.comments where id = '10000000-0000-4000-8000-000000000002'$$,
   $$values (true, false, true)$$, 'insert: author and time come from the server');
+
+-- ---------------------------------------------------------------- Page path: plain path on the same site
+select pg_temp.as_key((select k from guest where name = 'eva'));
+create function pg_temp.path_insert(p_path text) returns text language sql as $f$
+  select format('insert into public.comments (project_id, page_path, text) values (%L, %L, %L)', 'test-eins', p_path, 'path test')
+$f$;
+grant execute on function pg_temp.path_insert(text) to anon;
+select throws_ok(pg_temp.path_insert('evil.example/x'), '23514', null, 'page_path: without leading slash rejected');
+select throws_ok(pg_temp.path_insert('//evil.example/x'), '23514', null, 'page_path: // (other host) rejected');
+select throws_ok(pg_temp.path_insert('/a@evil.example'), '23514', null, 'page_path: @ rejected');
+select throws_ok(pg_temp.path_insert('/#key=abc&'), '23514', null, 'page_path: # rejected');
+select throws_ok(pg_temp.path_insert('/a?b=1'), '23514', null, 'page_path: ? rejected');
+select throws_ok(pg_temp.path_insert(e'/\\evil.example'), '23514', null, 'page_path: backslash rejected');
+select throws_ok(pg_temp.path_insert('/a b'), '23514', null, 'page_path: space rejected');
+select throws_ok(pg_temp.path_insert(e'/a\tb'), '23514', null, 'page_path: tab rejected');
+select throws_ok(pg_temp.path_insert(e'/a\x01b'), '23514', null, 'page_path: control character rejected');
+select lives_ok(pg_temp.path_insert('/'), 'page_path: / allowed');
+select lives_ok(pg_temp.path_insert('/produkte/a-b_c.html'), 'page_path: /produkte/a-b_c.html allowed');
+select lives_ok(pg_temp.path_insert('/a//b/%40'), 'page_path: // after the first segment and percent signs allowed');
+reset role;
+delete from public.comments where text = 'path test';
 
 -- ---------------------------------------------------------------- Names when reading, guest flag
 select pg_temp.as_key((select k from guest where name = 'eva'));
