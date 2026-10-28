@@ -9,6 +9,7 @@ import {
   CheckIcon,
   CopySimpleIcon,
   GearSixIcon,
+  ShieldCheckIcon,
   XIcon,
 } from "@phosphor-icons/react";
 import {
@@ -212,6 +213,343 @@ function AnimatedIconTransition<T extends string>({
 
 function AnimatedCopyStateIcon({ state }: { state: CopyState }) {
   return <AnimatedIconTransition renderIcon={getCopyActionIcon} state={state} />;
+}
+
+type AdminTab = "project" | "link" | "staff";
+
+const ADMIN_TABS: Array<{ label: string; value: AdminTab }> = [
+  { label: "Project", value: "project" },
+  { label: "Guest link", value: "link" },
+  { label: "Staff", value: "staff" },
+];
+
+type AdminProject = { id: string; name: string; domains: string[]; link_key: string | null };
+
+// Links lead to the current page; the key goes into the fragment like in the admin script.
+function linkTo(key: string) {
+  const target = new URL(window.location.origin + window.location.pathname);
+  target.hash = `key=${key}`;
+  return target.toString();
+}
+
+function CopyLink({ url }: { url: string }) {
+  const [copyState, setCopyState] = useCopyState();
+
+  return (
+    <div className="annotation:flex annotation:gap-2">
+      <Input aria-label="Link" onFocus={(event) => event.target.select()} readOnly value={url} />
+      <Button
+        aria-label="Copy link"
+        onClick={() =>
+          void copyToClipboard(url).then((ok) => setCopyState(ok ? "copied" : "error"))
+        }
+        size="icon"
+        type="button"
+        variant="outline"
+      >
+        <AnimatedCopyStateIcon state={copyState} />
+      </Button>
+    </div>
+  );
+}
+
+function AdminCard() {
+  const { callAdmin, projectId } = useAnnotation();
+  const [tab, setTab] = useState<AdminTab>("project");
+  const [isBusy, setIsBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [guestLink, setGuestLink] = useState("");
+  // null: never asked; false: asked and closed, so "New link" takes the focus back.
+  const [confirmingLink, setConfirmingLink] = useState<boolean | null>(null);
+  const [staffLink, setStaffLink] = useState("");
+  const [project, setProject] = useState({
+    id: projectId ?? "",
+    name: "",
+    domains: window.location.host,
+  });
+  const [staff, setStaff] = useState({ email: "", firstName: "", lastName: "" });
+  // In a project, Save waits for the stored domains so it never replaces them with location.host.
+  const [loaded, setLoaded] = useState(!projectId);
+
+  // Also without a project: the call checks the admin flag when the tile opens.
+  useEffect(() => {
+    let isActive = true;
+    void callAdmin("annotation_admin_project", { p_project_id: projectId }).then(
+      ({ data, error }) => {
+        const row = (data as AdminProject[] | null)?.[0];
+        if (!isActive) {
+          return;
+        }
+        setError(error?.message ?? null);
+        if (row) {
+          setProject({ id: row.id, name: row.name, domains: row.domains.join(", ") });
+          // Links created before the key was stored have none; then only "New link" is offered.
+          setGuestLink(row.link_key ? linkTo(row.link_key) : "");
+          setLoaded(true);
+        }
+      },
+    );
+    return () => {
+      isActive = false;
+    };
+  }, [callAdmin, projectId]);
+
+  const run = async (action: () => Promise<void>) => {
+    setIsBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await action();
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const saveProject = () =>
+    run(async () => {
+      const { error } = await callAdmin("annotation_admin_set_project", {
+        p_host: window.location.host,
+        p_id: project.id.trim(),
+        p_name: project.name.trim(),
+        p_domains: project.domains.split(/[\s,]+/).filter(Boolean),
+      });
+      setError(error?.message ?? null);
+      setSaved(!error);
+    });
+
+  const createGuestLink = () =>
+    run(async () => {
+      setConfirmingLink(false);
+      const { data, error } = await callAdmin("annotation_admin_new_project_key", {
+        p_project_id: projectId,
+      });
+      setError(error?.message ?? null);
+      if (typeof data === "string") {
+        setGuestLink(linkTo(data));
+      }
+    });
+
+  const addStaff = () =>
+    run(async () => {
+      setStaffLink("");
+      const { data, error } = await callAdmin("annotation_admin_add_staff", {
+        p_email: staff.email,
+        p_first_name: staff.firstName,
+        p_last_name: staff.lastName.trim() || null,
+      });
+      setError(error?.message ?? null);
+      const key = (data as Array<{ key: string }> | null)?.[0]?.key;
+      if (key) {
+        setStaffLink(linkTo(key));
+        setStaff({ email: "", firstName: "", lastName: "" });
+      }
+    });
+
+  const canSaveProject =
+    Boolean(project.id.trim() && project.name.trim() && project.domains.trim()) &&
+    loaded &&
+    !isBusy;
+  const canAddStaff =
+    Boolean(staff.email.trim() && staff.firstName.trim()) &&
+    isValidName(`${staff.firstName} ${staff.lastName}`) &&
+    !isBusy;
+
+  return (
+    <Card className="annotation:w-72">
+      <CardHeader>
+        <div className="annotation:grid annotation:grid-cols-3 annotation:gap-1">
+          {ADMIN_TABS.map((option) => (
+            <Button
+              aria-pressed={tab === option.value}
+              disabled={option.value === "link" && !projectId}
+              key={option.value}
+              onClick={() => {
+                setTab(option.value);
+                setConfirmingLink(null);
+                setError(null);
+                setSaved(false);
+              }}
+              size="xs"
+              type="button"
+              variant={tab === option.value ? "secondary" : "outline"}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {tab === "project" ? (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (canSaveProject) {
+                void saveProject();
+              }
+            }}
+          >
+            <FieldGroup className="annotation:gap-3">
+              <Field>
+                <FieldLabel htmlFor="annotation-admin-id">ID</FieldLabel>
+                <Input
+                  id="annotation-admin-id"
+                  onChange={(event) => {
+                    setSaved(false);
+                    setProject({ ...project, id: event.target.value });
+                  }}
+                  placeholder="marketing-site"
+                  disabled={Boolean(projectId)}
+                  value={project.id}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="annotation-admin-name">Name</FieldLabel>
+                <Input
+                  id="annotation-admin-name"
+                  maxLength={120}
+                  onChange={(event) => {
+                    setSaved(false);
+                    setProject({ ...project, name: event.target.value });
+                  }}
+                  value={project.name}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="annotation-admin-domains">Domains</FieldLabel>
+                <Input
+                  id="annotation-admin-domains"
+                  onChange={(event) => {
+                    setSaved(false);
+                    setProject({ ...project, domains: event.target.value });
+                  }}
+                  value={project.domains}
+                />
+              </Field>
+              <Button disabled={!canSaveProject} size="sm" type="submit">
+                {saved ? <CheckIcon /> : null}
+                {saved ? "Saved" : "Save"}
+              </Button>
+            </FieldGroup>
+          </form>
+        ) : null}
+        {tab === "link" ? (
+          <FieldGroup className="annotation:gap-3">
+            <div className="annotation:flex annotation:flex-col annotation:items-start annotation:gap-2">
+              <Badge variant="secondary">{projectId}</Badge>
+            </div>
+            {guestLink ? <CopyLink url={guestLink} /> : null}
+            {confirmingLink ? (
+              <div
+                className="annotation:flex annotation:flex-col annotation:gap-2"
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setConfirmingLink(false);
+                  }
+                }}
+                aria-describedby="annotation-admin-link-confirm"
+                role="group"
+              >
+                <p
+                  className="annotation:text-sm annotation:text-muted-foreground"
+                  id="annotation-admin-link-confirm"
+                >
+                  The current link and every guest who joined through it lose access right away.
+                </p>
+                <div className="annotation:grid annotation:grid-cols-2 annotation:gap-2">
+                  <Button
+                    autoFocus
+                    onClick={() => setConfirmingLink(false)}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    disabled={isBusy}
+                    onClick={() => void createGuestLink()}
+                    size="sm"
+                    type="button"
+                    variant="destructive"
+                  >
+                    Confirm
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                autoFocus={confirmingLink === false}
+                disabled={isBusy}
+                onClick={() => setConfirmingLink(true)}
+                size="sm"
+                type="button"
+              >
+                New link
+              </Button>
+            )}
+          </FieldGroup>
+        ) : null}
+        {tab === "staff" ? (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (canAddStaff) {
+                void addStaff();
+              }
+            }}
+          >
+            <FieldGroup className="annotation:gap-3">
+              <Field>
+                <FieldLabel htmlFor="annotation-admin-email">Email</FieldLabel>
+                <Input
+                  id="annotation-admin-email"
+                  onChange={(event) => setStaff({ ...staff, email: event.target.value })}
+                  placeholder="name@dayone.de"
+                  type="email"
+                  value={staff.email}
+                />
+              </Field>
+              <div className="annotation:grid annotation:grid-cols-2 annotation:gap-2">
+                <Field>
+                  <FieldLabel htmlFor="annotation-admin-first-name">First name</FieldLabel>
+                  <Input
+                    id="annotation-admin-first-name"
+                    maxLength={48}
+                    onChange={(event) => setStaff({ ...staff, firstName: event.target.value })}
+                    value={staff.firstName}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="annotation-admin-last-name">Last name</FieldLabel>
+                  <Input
+                    id="annotation-admin-last-name"
+                    maxLength={48}
+                    onChange={(event) => setStaff({ ...staff, lastName: event.target.value })}
+                    placeholder="Optional"
+                    value={staff.lastName}
+                  />
+                </Field>
+              </div>
+              {staffLink ? <CopyLink url={staffLink} /> : null}
+              <Button disabled={!canAddStaff} size="sm" type="submit">
+                Add
+              </Button>
+            </FieldGroup>
+          </form>
+        ) : null}
+        {error ? (
+          <div
+            className="annotation:mt-4 annotation:rounded-xl annotation:border annotation:border-destructive/30 annotation:bg-destructive/10 annotation:px-3 annotation:py-2 annotation:text-sm annotation:text-destructive"
+            role="alert"
+          >
+            {error}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
 }
 
 function ThreadCard({ activeThreadId, comment, comments, currentPath }: ThreadCardProps) {
@@ -447,6 +785,7 @@ export function AnnotationDock({
     composer,
     currentPath,
     errorMessage,
+    isAdmin,
     isGuest,
     isJoining,
     joinAsGuest,
@@ -475,6 +814,7 @@ export function AnnotationDock({
   );
   const [isPanelOpen, setPanelOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState(author);
   const [joinName, setJoinName] = useState("");
   const trimmedJoinName = joinName.trim();
@@ -561,6 +901,7 @@ export function AnnotationDock({
     if (!annotationMode) {
       setIsSettingsOpen(false);
       setPanelOpen(false);
+      setIsAdminOpen(false);
     }
   }, [annotationMode]);
 
@@ -578,13 +919,27 @@ export function AnnotationDock({
 
   const toggleAnnotationsPanel = useCallback(() => {
     setIsSettingsOpen(false);
+    setIsAdminOpen(false);
     setPanelOpen((open) => !open);
+  }, []);
+
+  const toggleAdmin = useCallback(() => {
+    setIsSettingsOpen(false);
+    setPanelOpen(false);
+    setIsAdminOpen((open) => !open);
   }, []);
 
   const closeAnnotationDock = useCallback(() => {
     setIsSettingsOpen(false);
+    setIsAdminOpen(false);
     cancelAnnotationMode();
   }, [cancelAnnotationMode]);
+
+  const adminButton = isAdmin ? (
+    <Button aria-expanded={isAdminOpen} aria-label="Admin" onClick={toggleAdmin} size="icon-sm">
+      <ShieldCheckIcon />
+    </Button>
+  ) : null;
 
   const handleBulkCopy = useCallback(async () => {
     const markdown = formatAnnotationCollectionMarkdown(
@@ -639,11 +994,27 @@ export function AnnotationDock({
       );
     }
 
+    // Admin on a page without a project: only the admin tile, to create the project.
+    if (phase === "admin") {
+      return (
+        <motion.div
+          animate="animate"
+          className="annotation:flex annotation:items-center annotation:p-1"
+          exit="exit"
+          initial="initial"
+          key="floating-button-admin"
+          variants={variantsButton}
+        >
+          {adminButton}
+        </motion.div>
+      );
+    }
+
     if (!annotationMode) {
       return (
         <motion.div
           animate="animate"
-          className="annotation:flex annotation:items-center"
+          className="annotation:flex annotation:items-center annotation:gap-2"
           exit="exit"
           initial="initial"
           key="floating-button"
@@ -655,6 +1026,8 @@ export function AnnotationDock({
               C
             </Kbd>
           </Button>
+          {/* The tile stays open after an admin created this page's project; it closes here. */}
+          {isAdminOpen ? adminButton : null}
         </motion.div>
       );
     }
@@ -690,6 +1063,7 @@ export function AnnotationDock({
           aria-expanded={isSettingsOpen}
           aria-label="Annotation settings"
           onClick={() => {
+            setIsAdminOpen(false);
             setIsSettingsOpen((open) => {
               const next = !open;
               if (next) {
@@ -702,6 +1076,7 @@ export function AnnotationDock({
         >
           <GearSixIcon />
         </Button>
+        {adminButton}
         <Separator className="annotation:bg-primary-foreground/25" orientation="vertical" />
         <Button onClick={closeAnnotationDock} size="icon-sm">
           <XIcon />
@@ -872,6 +1247,18 @@ export function AnnotationDock({
                 ) : null}
               </CardContent>
             </Card>
+          </motion.div>
+        ) : null}
+
+        {isAdminOpen && isAdmin ? (
+          <motion.div
+            animate="animate"
+            exit="exit"
+            initial="initial"
+            key="admin"
+            variants={variantsCard}
+          >
+            <AdminCard />
           </motion.div>
         ) : null}
       </AnimatePresence>
