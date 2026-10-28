@@ -410,19 +410,15 @@ export function getForYouHref(
   pagePath: string,
   threadId: string,
 ): string | null {
-  if (!domain || !isPlainPagePath(pagePath)) {
+  if (!domain) {
     return null;
   }
   const host = domain.replace(/:\d+$/, "");
   const isLocal = host === "localhost" || host === "127.0.0.1" || host.endsWith(".localhost");
-  try {
-    const url = new URL(pagePath, `${isLocal ? "http" : "https"}://${domain}`);
-    if (!/^https?:$/.test(url.protocol) || url.host !== domain || url.username || url.password) {
-      return null;
-    }
-    url.hash = `annotation-thread=${threadId}`;
-    return url.href;
-  } catch {
+  const url = pageUrlOn(pagePath, `${isLocal ? "http" : "https"}://${domain}`);
+  if (!url || url.host !== domain || url.username || url.password) {
     return null;
   }
+  url.hash = `annotation-thread=${threadId}`;
+  return url.href;
 }
