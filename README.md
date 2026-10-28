@@ -57,9 +57,16 @@ node scripts/annotation-admin.mjs project-link --id marketing-site --url https:/
 node scripts/annotation-admin.mjs staff --email anna@dayone.de --first-name Anna --url https://example.com
 node scripts/annotation-admin.mjs new-key --person <id> --url https://example.com
 node scripts/annotation-admin.mjs revoke --person <id>
+node scripts/annotation-admin.mjs admin --person <id>
 ```
 
 Each link is printed once.
+
+**Admins** are staff members flagged with `admin --person <id>` (service role only). Their overlay
+shows an admin tile in the dock that can create or change the project of the page, create a new
+guest link for it and add staff members, each link shown once. The database checks the key on
+every call; the flag cannot be read or set through the overlay. On a page without a project the
+overlay shows admins only this tile, so they can register the page.
 
 ## Environment Variables
 
