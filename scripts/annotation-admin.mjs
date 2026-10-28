@@ -9,6 +9,7 @@
 //   staff        --email a@dayone.de --first-name Anna [--last-name Muster] --url https://wika.de
 //   new-key      --person <id> --url https://wika.de   (staff; the old key stops working)
 //   revoke       --person <id>                         (staff; deletes the key)
+//   admin        --person <id>                         (staff; may use the admin tile in the overlay)
 import { createClient } from "@supabase/supabase-js";
 import { parseArgs } from "node:util";
 
@@ -105,6 +106,14 @@ switch (positionals[0]) {
     console.log(`Key of ${values.person} deleted.`);
     break;
   }
+  case "admin": {
+    need("person");
+    await rpc("annotation_set_admin", { p_person_id: values.person });
+    console.log(`${values.person} is an admin.`);
+    break;
+  }
   default:
-    fail("Command: project | project-link | staff | new-key | revoke (see the file header).");
+    fail(
+      "Command: project | project-link | staff | new-key | revoke | admin (see the file header).",
+    );
 }

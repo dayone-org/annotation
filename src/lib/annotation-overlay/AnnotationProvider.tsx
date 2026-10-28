@@ -14,7 +14,11 @@ import type {
   AnnotationRect,
   PendingAnnotation,
 } from "./types";
-import { AnnotationContext, type AnnotationContextValue } from "./annotation-context";
+import {
+  AnnotationContext,
+  type AdminFunction,
+  type AnnotationContextValue,
+} from "./annotation-context";
 import { querySelectorSafely } from "./selector";
 import {
   DEFAULT_STORAGE_KEY_PREFIX,
@@ -105,6 +109,7 @@ export function AnnotationProvider({
   // Project link of a guest who has not entered a name yet.
   const [pendingProjectKey, setPendingProjectKey] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [sessionCheck, setSessionCheck] = useState(0);
   const client = useMemo(
     () => getSupabaseClient(supabaseUrl, supabaseAnonKey, accessKey),
@@ -118,7 +123,7 @@ export function AnnotationProvider({
   const normalizedProjectId = session?.project_id ?? null;
   const personId = session?.person_id ?? null;
   const author = session?.display_name ?? "";
-  const phase = session ? "ready" : pendingProjectKey ? "join" : "hidden";
+  const phase = session ? "ready" : pendingProjectKey ? "join" : isAdmin ? "admin" : "hidden";
   const [showResolved, setShowResolvedState] = useState(() =>
     readStoredBoolean(showResolvedStorageKey, false),
   );
@@ -217,12 +222,22 @@ export function AnnotationProvider({
       }
       return (data as Session[] | null)?.[0] ?? null;
     };
+    // The database decides, independent of the host: admins also see the tile on pages without a project.
+    const adminCheck = async (key: string) => {
+      if (!key) {
+        return false;
+      }
+      const { data } = await getSupabaseClient(supabaseUrl, supabaseAnonKey, key).rpc(
+        "annotation_admin_me",
+      );
+      return data === true;
+    };
 
     void (async () => {
       if (linkKey && linkKey !== accessKey) {
         // A failed link check falls through to the stored key, so a revocation still takes effect.
         const viaLink = await whoami(linkKey);
-        if (viaLink) {
+        if (viaLink || (await adminCheck(linkKey))) {
           if (isActive) {
             writeStoredString(keyStorageKey, linkKey);
             setAccessKey(linkKey);
@@ -233,10 +248,11 @@ export function AnnotationProvider({
         }
       }
 
-      const me = await whoami(accessKey);
+      const [me, admin] = await Promise.all([whoami(accessKey), adminCheck(accessKey)]);
       if (!isActive || me === undefined) {
         return;
       }
+      setIsAdmin(admin);
       // Every ping re-checks whoami; keep the old object if nothing changed, so consumers do not re-render.
       setSession((previous) => (JSON.stringify(previous) === JSON.stringify(me) ? previous : me));
       if (me) {
@@ -362,6 +378,18 @@ export function AnnotationProvider({
       return true;
     },
     [client, loadComments, session],
+  );
+
+  // Admin tile: the database checks the key; afterwards whoami runs again (e.g. a new project for this page).
+  const callAdmin = useCallback(
+    async (fn: AdminFunction, args: Record<string, unknown>) => {
+      const { data, error } = await client.rpc(fn, args);
+      if (!error) {
+        setSessionCheck((value) => value + 1);
+      }
+      return { data: data as unknown, error };
+    },
+    [client],
   );
 
   const setShowResolved = useCallback(
@@ -801,13 +829,16 @@ export function AnnotationProvider({
       activeThreadId,
       annotationMode,
       author,
+      callAdmin,
       cancelAnnotationMode,
       comments,
+      isAdmin,
       isGuest: session?.is_guest ?? false,
       isJoining,
       joinAsGuest,
       personId,
       phase,
+      projectId: normalizedProjectId,
       closeComposer,
       composer,
       currentPath,
@@ -833,12 +864,15 @@ export function AnnotationProvider({
       activeThreadId,
       annotationMode,
       author,
+      callAdmin,
       cancelAnnotationMode,
       comments,
+      isAdmin,
       isJoining,
       joinAsGuest,
       personId,
       phase,
+      normalizedProjectId,
       session,
       closeComposer,
       composer,
