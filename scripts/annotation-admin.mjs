@@ -8,7 +8,7 @@
 //   project-link --id wika --url https://wika.de   (guest link; the old link and its guests stop working)
 //   staff        --email a@dayone.de --first-name Anna [--last-name Muster] --url https://wika.de
 //   new-key      --person <id> --url https://wika.de   (staff; the old key stops working)
-//   revoke       --person <id>                         (staff; deletes the key)
+//   revoke       --person <id>                         (staff; deletes the key and the admin flag)
 //   admin        --person <id>                         (staff; may use the admin tile in the overlay)
 import { createClient } from "@supabase/supabase-js";
 import { parseArgs } from "node:util";
@@ -103,7 +103,7 @@ switch (positionals[0]) {
   case "revoke": {
     need("person");
     await rpc("annotation_revoke_key", { p_person_id: values.person });
-    console.log(`Key of ${values.person} deleted.`);
+    console.log(`Key and admin flag of ${values.person} deleted.`);
     break;
   }
   case "admin": {

@@ -223,14 +223,15 @@ export function AnnotationProvider({
       return (data as Session[] | null)?.[0] ?? null;
     };
     // The database decides, independent of the host: admins also see the tile on pages without a project.
-    const adminCheck = async (key: string) => {
+    // undefined = request failed, like whoami.
+    const adminCheck = async (key: string): Promise<boolean | undefined> => {
       if (!key) {
         return false;
       }
-      const { data } = await getSupabaseClient(supabaseUrl, supabaseAnonKey, key).rpc(
+      const { data, error } = await getSupabaseClient(supabaseUrl, supabaseAnonKey, key).rpc(
         "annotation_admin_me",
       );
-      return data === true;
+      return error ? undefined : data === true;
     };
 
     void (async () => {
@@ -252,7 +253,9 @@ export function AnnotationProvider({
       if (!isActive || me === undefined) {
         return;
       }
-      setIsAdmin(admin);
+      if (admin !== undefined) {
+        setIsAdmin(admin);
+      }
       // Every ping re-checks whoami; keep the old object if nothing changed, so consumers do not re-render.
       setSession((previous) => (JSON.stringify(previous) === JSON.stringify(me) ? previous : me));
       if (me) {
@@ -385,7 +388,8 @@ export function AnnotationProvider({
   const callAdmin = useCallback(
     async (fn: AdminFunction, args: Record<string, unknown>) => {
       const { data, error } = await client.rpc(fn, args);
-      if (error?.message === "admins only" || (!error && fn !== "annotation_admin_project")) {
+      // 42501: not (or no longer) an admin.
+      if (error?.code === "42501" || (!error && fn !== "annotation_admin_project")) {
         setSessionCheck((value) => value + 1);
       }
       return { data: data as unknown, error };

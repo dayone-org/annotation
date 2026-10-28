@@ -314,13 +314,6 @@ function AdminCard() {
         p_name: project.name.trim(),
         p_domains: project.domains.split(/[\s,]+/).filter(Boolean),
       });
-      if (error?.code === "23505") {
-        const domain = /\(host\)=\((.*)\)/.exec(error.details ?? "")?.[1];
-        setError(
-          `Domain${domain ? ` ${domain}` : ""} already belongs to another project; remove it there first.`,
-        );
-        return;
-      }
       setError(error?.message ?? null);
       setSaved(!error);
     });
@@ -328,7 +321,6 @@ function AdminCard() {
   const createGuestLink = () =>
     run(async () => {
       setConfirmingLink(false);
-      setGuestLink("");
       const { data, error } = await callAdmin("annotation_admin_new_project_key", {
         p_project_id: projectId,
       });
@@ -358,7 +350,10 @@ function AdminCard() {
     Boolean(project.id.trim() && project.name.trim() && project.domains.trim()) &&
     loaded &&
     !isBusy;
-  const canAddStaff = Boolean(staff.email.trim() && staff.firstName.trim()) && !isBusy;
+  const canAddStaff =
+    Boolean(staff.email.trim() && staff.firstName.trim()) &&
+    isValidName(`${staff.firstName} ${staff.lastName}`) &&
+    !isBusy;
 
   return (
     <Card className="annotation:w-72">
@@ -399,7 +394,10 @@ function AdminCard() {
                 <FieldLabel htmlFor="annotation-admin-id">ID</FieldLabel>
                 <Input
                   id="annotation-admin-id"
-                  onChange={(event) => setProject({ ...project, id: event.target.value })}
+                  onChange={(event) => {
+                    setSaved(false);
+                    setProject({ ...project, id: event.target.value });
+                  }}
                   placeholder="marketing-site"
                   disabled={Boolean(projectId)}
                   value={project.id}
@@ -410,7 +408,10 @@ function AdminCard() {
                 <Input
                   id="annotation-admin-name"
                   maxLength={120}
-                  onChange={(event) => setProject({ ...project, name: event.target.value })}
+                  onChange={(event) => {
+                    setSaved(false);
+                    setProject({ ...project, name: event.target.value });
+                  }}
                   value={project.name}
                 />
               </Field>
@@ -418,7 +419,10 @@ function AdminCard() {
                 <FieldLabel htmlFor="annotation-admin-domains">Domains</FieldLabel>
                 <Input
                   id="annotation-admin-domains"
-                  onChange={(event) => setProject({ ...project, domains: event.target.value })}
+                  onChange={(event) => {
+                    setSaved(false);
+                    setProject({ ...project, domains: event.target.value });
+                  }}
                   value={project.domains}
                 />
               </Field>
@@ -1010,7 +1014,7 @@ export function AnnotationDock({
       return (
         <motion.div
           animate="animate"
-          className="annotation:flex annotation:items-center"
+          className="annotation:flex annotation:items-center annotation:gap-2"
           exit="exit"
           initial="initial"
           key="floating-button"
@@ -1022,6 +1026,8 @@ export function AnnotationDock({
               C
             </Kbd>
           </Button>
+          {/* The tile stays open after an admin created this page's project; it closes here. */}
+          {isAdminOpen ? adminButton : null}
         </motion.div>
       );
     }
@@ -1244,7 +1250,7 @@ export function AnnotationDock({
           </motion.div>
         ) : null}
 
-        {isAdminOpen ? (
+        {isAdminOpen && isAdmin ? (
           <motion.div
             animate="animate"
             exit="exit"
