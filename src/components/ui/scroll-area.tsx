@@ -17,7 +17,8 @@ function ScrollArea({
     >
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
-        className="annotation:size-full annotation:rounded-[inherit] annotation:transition-[color,box-shadow] annotation:outline-none"
+        // max-h-[inherit]: with only max-height on the root, h-full resolves to auto and the viewport outgrows it.
+        className="annotation:size-full annotation:max-h-[inherit] annotation:rounded-[inherit] annotation:transition-[color,box-shadow] annotation:outline-none"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>

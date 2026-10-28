@@ -111,7 +111,7 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=
 - Guests rename themselves in the settings; the new name applies to all of their comments
 - Mentions: staff type `@` in a comment or reply and pick a colleague; the name is highlighted.
   Only staff can mention and be mentioned; for guests `@` is plain text
-- "For you" filter in the comment list: mentions of you and replies in threads you started, from all
+- "For you" tab in the comment list: mentions of you and replies in threads you started, from all
   projects your key can access (guests: their project only). The unread count also shows on the list
   button. Each entry shows the start of the comment (first 140 characters). Opening a thread marks
   its entries read; "Mark all as read" clears the rest; entries that arrive meanwhile stay unread;

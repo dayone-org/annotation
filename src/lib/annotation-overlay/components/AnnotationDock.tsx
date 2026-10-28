@@ -1171,16 +1171,30 @@ export function AnnotationDock({
             <Card className="annotation:w-64 annotation:pb-0">
               <CardHeader>
                 <FieldGroup>
-                  <Field orientation="horizontal">
-                    <FieldLabel htmlFor="annotation-panel-for-you">
-                      For you · {unreadCount}
-                    </FieldLabel>
-                    <Switch
-                      checked={showForYou}
+                  <div className="annotation:grid annotation:grid-cols-2 annotation:gap-1">
+                    <Button
+                      aria-pressed={!showForYou}
+                      onClick={() => setShowForYou(false)}
+                      size="xs"
+                      type="button"
+                      variant={showForYou ? "outline" : "secondary"}
+                    >
+                      All
+                    </Button>
+                    <Button
+                      aria-pressed={showForYou}
                       id="annotation-panel-for-you"
-                      onCheckedChange={setShowForYou}
-                    />
-                  </Field>
+                      onClick={() => setShowForYou(true)}
+                      size="xs"
+                      type="button"
+                      variant={showForYou ? "secondary" : "outline"}
+                    >
+                      For you
+                      {unreadCount > 0 ? (
+                        <Badge className="annotation:h-4 annotation:px-1.5">{unreadCount}</Badge>
+                      ) : null}
+                    </Button>
+                  </div>
                   {showForYou ? (
                     <Button
                       disabled={unreadCount === 0}
