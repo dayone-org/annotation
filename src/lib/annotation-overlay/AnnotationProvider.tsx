@@ -12,6 +12,7 @@ import type {
   AnnotationComment,
   AnnotationOverlayProps,
   AnnotationRect,
+  CommentListTab,
   ForYouEntry,
   PendingAnnotation,
   StaffMember,
@@ -25,13 +26,13 @@ import { querySelectorSafely } from "./selector";
 import {
   DEFAULT_STORAGE_KEY_PREFIX,
   dropLinkThread,
+  forgetHandoffCode,
   forgetLinkKey,
   getStorageKey,
   readLinkThread,
-  readStoredBoolean,
   readStoredString,
+  takeHandoffCode,
   takeLinkKey,
-  writeStoredBoolean,
   writeStoredString,
 } from "./storage";
 import {
@@ -51,6 +52,12 @@ const TABLE = "comments";
 // The display name is joined in when reading, so a rename also changes old comments.
 const AUTHOR_SELECT = "*, author:annotation_people(display_name, is_guest)";
 const COMMENT_SELECT = `${AUTHOR_SELECT}, mentions:annotation_mentions(person_id)`;
+const LIST_TABS: CommentListTab[] = ["all", "for-you", "resolved"];
+
+function readStoredListTab(key: string): CommentListTab {
+  const value = readStoredString(key);
+  return LIST_TABS.find((tab) => tab === value) ?? "all";
+}
 
 type Session = {
   project_id: string;
@@ -116,6 +123,7 @@ export function AnnotationProvider({
 }: PropsWithChildren<AnnotationOverlayProps>) {
   const keyStorageKey = getStorageKey(storageKeyPrefix, "key");
   const [linkKey, setLinkKey] = useState(takeLinkKey);
+  const [handoffCode, setHandoffCode] = useState(takeHandoffCode);
   const [accessKey, setAccessKey] = useState(() => readStoredString(keyStorageKey));
   // Project link of a guest who has not entered a name yet.
   const [pendingProjectKey, setPendingProjectKey] = useState<string | null>(null);
@@ -126,8 +134,8 @@ export function AnnotationProvider({
     () => getSupabaseClient(supabaseUrl, supabaseAnonKey, accessKey),
     [accessKey, supabaseAnonKey, supabaseUrl],
   );
-  const showResolvedStorageKey = useMemo(
-    () => getStorageKey(storageKeyPrefix, "show_resolved"),
+  const listTabStorageKey = useMemo(
+    () => getStorageKey(storageKeyPrefix, "list_tab"),
     [storageKeyPrefix],
   );
   const projectOverride = projectId?.trim() || null;
@@ -135,9 +143,7 @@ export function AnnotationProvider({
   const personId = session?.person_id ?? null;
   const author = session?.display_name ?? "";
   const phase = session ? "ready" : pendingProjectKey ? "join" : isAdmin ? "admin" : "hidden";
-  const [showResolved, setShowResolvedState] = useState(() =>
-    readStoredBoolean(showResolvedStorageKey, false),
-  );
+  const [listTab, setListTabState] = useState(() => readStoredListTab(listTabStorageKey));
   const [currentPath, setCurrentPath] = useState(() => getActivePath(pagePath));
   const [comments, setComments] = useState<AnnotationComment[]>([]);
   const [composer, setComposer] = useState<PendingAnnotation | null>(null);
@@ -248,8 +254,8 @@ export function AnnotationProvider({
   }, [pagePath]);
 
   useEffect(() => {
-    setShowResolvedState(readStoredBoolean(showResolvedStorageKey, false));
-  }, [showResolvedStorageKey]);
+    setListTabState(readStoredListTab(listTabStorageKey));
+  }, [listTabStorageKey]);
 
   useEffect(() => {
     setCurrentPath(getActivePath(pagePath));
@@ -265,6 +271,7 @@ export function AnnotationProvider({
   useEffect(() => {
     const onHashChange = () => {
       setLinkKey(takeLinkKey());
+      setHandoffCode(takeHandoffCode());
       const thread = readLinkThread();
       if (thread) {
         setLinkThread(thread);
@@ -273,6 +280,37 @@ export function AnnotationProvider({
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+
+  // Jump from "For you" with a one-time code: redeem it for the key unless a staff key already works here,
+  // then continue like a personal link. An invalid or used code changes nothing.
+  useEffect(() => {
+    if (!handoffCode) {
+      return;
+    }
+    forgetHandoffCode();
+    setHandoffCode("");
+    const args = { p_host: window.location.host, p_project_id: projectOverride };
+    void (async () => {
+      if (accessKey) {
+        const { data } = await getSupabaseClient(supabaseUrl, supabaseAnonKey, accessKey).rpc(
+          "annotation_whoami",
+          args,
+        );
+        if ((data as Session[] | null)?.[0]?.is_guest === false) {
+          return;
+        }
+      }
+      const { data } = await getSupabaseClient(supabaseUrl, supabaseAnonKey, "").rpc(
+        "annotation_handoff_redeem",
+        { ...args, p_code: handoffCode },
+      );
+      if (typeof data === "string" && /^[0-9a-f]{64}$/.test(data)) {
+        // Loading again until the new key's comments are in, so the jump's thread is not dropped too early.
+        setIsLoading(true);
+        setLinkKey(data);
+      }
+    })();
+  }, [accessKey, handoffCode, projectOverride, supabaseAnonKey, supabaseUrl]);
 
   // Who am I on this page? Order: personal link, stored key, project link (then the overlay asks
   // for a name). Without a match the overlay stays invisible.
@@ -473,12 +511,23 @@ export function AnnotationProvider({
     [client],
   );
 
-  const setShowResolved = useCallback(
-    (value: boolean) => {
-      writeStoredBoolean(showResolvedStorageKey, value);
-      setShowResolvedState(value);
+  const setListTab = useCallback(
+    (value: CommentListTab) => {
+      writeStoredString(listTabStorageKey, value);
+      setListTabState(value);
     },
-    [showResolvedStorageKey],
+    [listTabStorageKey],
+  );
+
+  // For a "For you" entry in another project: a one-time code that logs the jump in there. Null on failure.
+  const createHandoff = useCallback(
+    async (targetProjectId: string) => {
+      const { data, error } = await client.rpc("annotation_handoff_create", {
+        p_project_id: targetProjectId,
+      });
+      return !error && typeof data === "string" ? data : null;
+    },
+    [client],
   );
 
   const closeComposer = useCallback(() => {
@@ -1001,6 +1050,7 @@ export function AnnotationProvider({
       projectId: normalizedProjectId,
       closeComposer,
       composer,
+      createHandoff,
       currentPath,
       errorMessage,
       isLoading,
@@ -1015,8 +1065,8 @@ export function AnnotationProvider({
       selectElement,
       renameSelf,
       setMarkerHovered,
-      setShowResolved,
-      showResolved,
+      setListTab,
+      listTab,
       startAnnotationMode,
       submitComment,
       toggleResolved,
@@ -1040,6 +1090,7 @@ export function AnnotationProvider({
       session,
       closeComposer,
       composer,
+      createHandoff,
       currentPath,
       errorMessage,
       isLoading,
@@ -1054,8 +1105,8 @@ export function AnnotationProvider({
       selectElement,
       renameSelf,
       setMarkerHovered,
-      setShowResolved,
-      showResolved,
+      setListTab,
+      listTab,
       startAnnotationMode,
       submitComment,
       toggleResolved,

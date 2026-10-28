@@ -249,3 +249,92 @@ grant execute on function public.annotation_add_comment(text, text, text, text, 
 grant execute on function public.annotation_for_you() to anon;
 grant execute on function public.annotation_mark_read(uuid, timestamptz) to anon;
 grant execute on function public.annotation_mark_all_read(timestamptz) to anon;
+
+-- ---------------------------------------------------------------------------
+-- Handoff: one-time code for a jump from "For you" into another project
+-- ---------------------------------------------------------------------------
+-- The key lives in the browser per domain. Clicking an entry of another project asks for a code
+-- (256 bits, valid 2 minutes, staff only, bound to person and target project) and passes it in the
+-- link; the target page redeems it once and gets the key back. The plain key is never stored: the row
+-- holds the hash of the code and the key encrypted with the code, so only whoever holds the code
+-- (the link) can decrypt it, and the code itself exists only as its hash.
+create table if not exists public.annotation_handoffs (
+  code_hash bytea primary key,
+  person_id uuid not null references public.annotation_people (id) on delete cascade,
+  project_id text not null references public.annotation_projects (id) on delete cascade,
+  key_cipher bytea not null,
+  expires_at timestamptz not null
+);
+
+alter table public.annotation_handoffs enable row level security;
+revoke all on public.annotation_handoffs from anon, authenticated;
+
+-- For the key in the header (staff only): a code for p_project_id. Expired codes are removed.
+create or replace function public.annotation_handoff_create(p_project_id text)
+returns text
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_me uuid := public.annotation_me();
+  v_code text := encode(extensions.gen_random_bytes(32), 'hex');
+begin
+  if v_me is null then
+    raise exception 'invalid key' using errcode = '28000';
+  end if;
+  if exists (select 1 from public.annotation_people p where p.id = v_me and p.is_guest) then
+    raise exception 'Only staff members can jump to another project.' using errcode = '42501';
+  end if;
+  if not exists (select 1 from public.annotation_projects pr where pr.id = p_project_id) then
+    raise exception 'unknown project' using errcode = '22023';
+  end if;
+
+  delete from public.annotation_handoffs h where h.expires_at <= now();
+  insert into public.annotation_handoffs (code_hash, person_id, project_id, key_cipher, expires_at)
+  values (
+    extensions.digest(v_code, 'sha256'), v_me, p_project_id,
+    extensions.pgp_sym_encrypt(
+      current_setting('request.headers', true)::json ->> 'x-annotation-key', v_code, 'cipher-algo=aes256'),
+    now() + interval '2 minutes');
+  return v_code;
+end;
+$$;
+
+-- For the target page, without a key: the key of the code's person, if the code is current and the page
+-- (host as for whoami) belongs to its project, and the key is still that person's. Otherwise null.
+-- A code is gone after the first attempt that finds it, also a failed one; expired codes are removed.
+create or replace function public.annotation_handoff_redeem(p_code text, p_host text, p_project_id text default null)
+returns text
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_row public.annotation_handoffs;
+  v_key text;
+begin
+  delete from public.annotation_handoffs h where h.expires_at <= now();
+  delete from public.annotation_handoffs h where h.code_hash = extensions.digest(p_code, 'sha256')
+  returning * into v_row;
+  if not found or v_row.project_id is distinct from public.annotation_resolve_project(p_host, p_project_id) then
+    return null;
+  end if;
+
+  v_key := extensions.pgp_sym_decrypt(v_row.key_cipher, p_code);
+  if not exists (
+    select 1 from public.annotation_people p
+    where p.id = v_row.person_id and p.key_hash = extensions.digest(v_key, 'sha256')
+  ) then
+    return null;
+  end if;
+  return v_key;
+end;
+$$;
+
+revoke all on function public.annotation_handoff_create(text) from public, anon, authenticated;
+revoke all on function public.annotation_handoff_redeem(text, text, text) from public, anon, authenticated;
+grant execute on function public.annotation_handoff_create(text) to anon;
+grant execute on function public.annotation_handoff_redeem(text, text, text) to anon;

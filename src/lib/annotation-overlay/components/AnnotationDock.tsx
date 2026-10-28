@@ -42,17 +42,15 @@ import { Kbd } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import logo from "@/logo.svg";
-import type { AnnotationComment, AnnotationPosition, ForYouEntry } from "../types";
-import {
-  getStorageKey,
-  readStoredBoolean,
-  readStoredString,
-  writeStoredBoolean,
-  writeStoredString,
-} from "../storage";
+import type {
+  AnnotationComment,
+  AnnotationPosition,
+  CommentListTab,
+  ForYouEntry,
+} from "../types";
+import { getStorageKey, readStoredString, writeStoredString } from "../storage";
 import { useAnnotation } from "../useAnnotation";
 import {
   formatAnnotationCollectionMarkdown,
@@ -66,6 +64,12 @@ import {
 import { MentionText } from "./MentionText";
 
 type CopyState = "idle" | "copied" | "error";
+
+const LIST_TABS: Array<{ label: string; value: CommentListTab }> = [
+  { label: "All", value: "all" },
+  { label: "For you", value: "for-you" },
+  { label: "Resolved", value: "resolved" },
+];
 
 type ResolveSliderIconState = "idle" | "loading";
 
@@ -631,7 +635,8 @@ function ThreadCard({ activeThreadId, comment, comments, currentPath }: ThreadCa
 // Same project: open the thread here. Other project: link to its page, which opens the thread there.
 // Without a domain the entry only names the project.
 function ForYouCard({ entry }: { entry: ForYouEntry }) {
-  const { openThread, projectId } = useAnnotation();
+  const { createHandoff, openThread, projectId } = useAnnotation();
+  const isLeaving = useRef(false);
   const isHere = entry.project_id === projectId;
   const href = isHere
     ? null
@@ -688,9 +693,29 @@ function ForYouCard({ entry }: { entry: ForYouEntry }) {
     );
   }
   if (href) {
+    // A plain click logs the jump in on the target domain with a one-time code; a new tab or a failed
+    // request falls back to the plain link (the key must then already be stored there).
+    const jump = async (event: MouseEvent<HTMLAnchorElement>) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      event.preventDefault();
+      if (isLeaving.current) {
+        return;
+      }
+      isLeaving.current = true;
+      const code = await createHandoff(entry.project_id);
+      window.location.assign(
+        (code &&
+          getForYouHref(entry.project_domain, entry.page_path, entry.thread_id, code)) ||
+          href,
+      );
+    };
     return (
       <Item asChild className={className} size="xs" variant="outline">
-        <a href={href}>{body}</a>
+        <a href={href} onClick={(event) => void jump(event)}>
+          {body}
+        </a>
       </Item>
     );
   }
@@ -854,29 +879,22 @@ export function AnnotationDock({
     markAllRead,
     phase,
     isLoading,
+    listTab,
     renameSelf,
     resolveAllComments,
-    setShowResolved,
-    showResolved,
+    setListTab,
     startAnnotationMode,
     storageKeyPrefix,
   } = useAnnotation();
-  const onlyCurrentPageKey = useMemo(
-    () => getStorageKey(storageKeyPrefix, "only_current_page"),
-    [storageKeyPrefix],
-  );
   const positionKey = useMemo(
     () => getStorageKey(storageKeyPrefix, "position"),
     [storageKeyPrefix],
-  );
-  const [showOnlyCurrentPage, setShowOnlyCurrentPage] = useState(() =>
-    readStoredBoolean(onlyCurrentPageKey, false),
   );
   const [position, setPosition] = useState<AnnotationPosition>(() =>
     readStoredPosition(positionKey, defaultPosition),
   );
   const [isPanelOpen, setPanelOpen] = useState(false);
-  const [showForYou, setShowForYou] = useState(false);
+  const showForYou = listTab === "for-you";
   const unreadCount = forYou.filter((entry) => !entry.is_read).length;
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
@@ -894,11 +912,9 @@ export function AnnotationDock({
   const sortedThreads = [...topLevelComments].sort((left, right) =>
     right.created_at.localeCompare(left.created_at),
   );
-  const showAllPages = !showOnlyCurrentPage;
-  const pageScopedThreads = showAllPages
-    ? sortedThreads
-    : sortedThreads.filter((comment) => comment.page_path === currentPath);
-  const visibleThreads = pageScopedThreads.filter((comment) => showResolved || !comment.resolved);
+  const visibleThreads = sortedThreads.filter(
+    (comment) => comment.resolved === (listTab === "resolved"),
+  );
   const currentRouteOpenThreads = sortedThreads.filter(
     (comment) => comment.page_path === currentPath && !comment.resolved,
   );
@@ -953,10 +969,6 @@ export function AnnotationDock({
       }) satisfies Variants,
     [positionConfig.cardOffset],
   );
-
-  useEffect(() => {
-    setShowOnlyCurrentPage(readStoredBoolean(onlyCurrentPageKey, false));
-  }, [onlyCurrentPageKey]);
 
   useEffect(() => {
     setPosition(readStoredPosition(positionKey, defaultPosition));
@@ -1168,69 +1180,35 @@ export function AnnotationDock({
             key="annotations"
             variants={variantsCard}
           >
-            <Card className="annotation:w-64 annotation:pb-0">
-              <CardHeader>
-                <FieldGroup>
-                  <div className="annotation:grid annotation:grid-cols-2 annotation:gap-1">
-                    <Button
-                      aria-pressed={!showForYou}
-                      onClick={() => setShowForYou(false)}
-                      size="xs"
+            <Card className="annotation:w-64 annotation:gap-0 annotation:pt-2 annotation:pb-0">
+              <CardHeader className="annotation:px-2">
+                <div
+                  aria-label="Comments"
+                  className="annotation:flex annotation:items-end annotation:gap-1"
+                  role="tablist"
+                >
+                  {LIST_TABS.map((tab) => (
+                    <button
+                      aria-selected={listTab === tab.value}
+                      className={cn(
+                        "annotation:-mb-px annotation:inline-flex annotation:h-8 annotation:items-center annotation:gap-1 annotation:border-b-2 annotation:px-2 annotation:text-sm annotation:font-medium annotation:outline-none annotation:focus-visible:ring-2 annotation:focus-visible:ring-ring",
+                        listTab === tab.value
+                          ? "annotation:border-foreground annotation:text-foreground"
+                          : "annotation:border-transparent annotation:text-muted-foreground annotation:hover:text-foreground",
+                      )}
+                      id={`annotation-panel-tab-${tab.value}`}
+                      key={tab.value}
+                      onClick={() => setListTab(tab.value)}
+                      role="tab"
                       type="button"
-                      variant={showForYou ? "outline" : "secondary"}
                     >
-                      All
-                    </Button>
-                    <Button
-                      aria-pressed={showForYou}
-                      id="annotation-panel-for-you"
-                      onClick={() => setShowForYou(true)}
-                      size="xs"
-                      type="button"
-                      variant={showForYou ? "secondary" : "outline"}
-                    >
-                      For you
-                      {unreadCount > 0 ? (
+                      {tab.label}
+                      {tab.value === "for-you" && unreadCount > 0 ? (
                         <Badge className="annotation:h-4 annotation:px-1.5">{unreadCount}</Badge>
                       ) : null}
-                    </Button>
-                  </div>
-                  {showForYou ? (
-                    <Button
-                      disabled={unreadCount === 0}
-                      onClick={() => void markAllRead()}
-                      size="sm"
-                      type="button"
-                      variant="outline"
-                    >
-                      Mark all as read
-                    </Button>
-                  ) : (
-                    <>
-                      <Field orientation="horizontal">
-                        <FieldLabel htmlFor="annotation-panel-show-resolved">
-                          Resolved comments
-                        </FieldLabel>
-                        <Switch
-                          checked={showResolved}
-                          id="annotation-panel-show-resolved"
-                          onCheckedChange={setShowResolved}
-                        />
-                      </Field>
-                      <Field orientation="horizontal">
-                        <FieldLabel htmlFor="annotation-panel-show-all">All pages</FieldLabel>
-                        <Switch
-                          checked={showAllPages}
-                          id="annotation-panel-show-all"
-                          onCheckedChange={(checked) => {
-                            writeStoredBoolean(onlyCurrentPageKey, !checked);
-                            setShowOnlyCurrentPage(!checked);
-                          }}
-                        />
-                      </Field>
-                    </>
-                  )}
-                </FieldGroup>
+                    </button>
+                  ))}
+                </div>
               </CardHeader>
               <CardContent className="annotation:flex annotation:flex-col annotation:gap-0 annotation:border-t annotation:p-0">
                 <div className="annotation:grid annotation:h-[min(24rem,calc(100vh-8rem))] annotation:gap-0 annotation:bg-muted">
@@ -1239,6 +1217,18 @@ export function AnnotationDock({
                     type="scroll"
                   >
                     <div className="annotation:flex annotation:flex-col annotation:gap-2 annotation:p-2">
+                      {showForYou && forYou.length > 0 ? (
+                        <Button
+                          className="annotation:self-end"
+                          disabled={unreadCount === 0}
+                          onClick={() => void markAllRead()}
+                          size="xs"
+                          type="button"
+                          variant="ghost"
+                        >
+                          Mark all as read
+                        </Button>
+                      ) : null}
                       {/* "For you" has its own data; the comments' loading state does not apply. */}
                       {showForYou && forYou.length === 0 ? (
                         <p className="annotation:p-2 annotation:text-center annotation:text-sm annotation:text-muted-foreground">

@@ -3,6 +3,7 @@ import { createContext } from "react";
 import type {
   AnnotationComment,
   AnnotationRect,
+  CommentListTab,
   ForYouEntry,
   PendingAnnotation,
   StaffMember,
@@ -24,6 +25,8 @@ export type AnnotationContextValue = {
   ) => Promise<{ data: unknown; error: PostgrestError | null }>;
   comments: AnnotationComment[];
   composer: PendingAnnotation | null;
+  /** One-time code for a jump into another project, null if refused. */
+  createHandoff: (projectId: string) => Promise<string | null>;
   currentPath: string;
   /** Staff for the mention picker; empty for guests. */
   directory: StaffMember[];
@@ -49,8 +52,9 @@ export type AnnotationContextValue = {
   storageKeyPrefix: string;
   setMarkerHovered: (hovered: boolean) => void;
   renameSelf: (name: string) => Promise<boolean>;
-  setShowResolved: (value: boolean) => void;
-  showResolved: boolean;
+  /** Tab of the comment list; "resolved" also shows resolved markers on the page. */
+  listTab: CommentListTab;
+  setListTab: (value: CommentListTab) => void;
   startAnnotationMode: () => void;
   cancelAnnotationMode: () => void;
   selectElement: (selector: string, rect: AnnotationRect) => void;

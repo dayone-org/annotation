@@ -51,6 +51,8 @@ export type ForYouEntry = {
   is_read: boolean;
 };
 
+export type CommentListTab = "all" | "for-you" | "resolved";
+
 export type AnnotationPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
 export type MarkerPosition = {

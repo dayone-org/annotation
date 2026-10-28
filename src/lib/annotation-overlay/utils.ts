@@ -412,11 +412,13 @@ export function newestCreatedAt(items: Array<{ created_at: string }>): string | 
 }
 
 // Page of a "For you" entry in another project; http for local hosts. Null (no link) without a domain,
-// for a page path that is not plain, or when the URL would not land exactly on that domain.
+// for a page path that is not plain, or when the URL would not land exactly on that domain. With a
+// handoff code the target page logs in with it (one-time, see takeHandoffCode).
 export function getForYouHref(
   domain: string | null,
   pagePath: string,
   threadId: string,
+  handoffCode?: string,
 ): string | null {
   if (!domain) {
     return null;
@@ -427,6 +429,6 @@ export function getForYouHref(
   if (!url || url.host !== domain) {
     return null;
   }
-  url.hash = `annotation-thread=${threadId}`;
+  url.hash = `${handoffCode ? `annotation-handoff=${handoffCode}&` : ""}annotation-thread=${threadId}`;
   return url.href;
 }

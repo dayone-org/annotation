@@ -69,27 +69,6 @@ function dropHashParts(prefix: string): void {
   }
 }
 
-export function readStoredBoolean(key: string, fallback: boolean): boolean {
-  if (typeof window === "undefined") {
-    return fallback;
-  }
-
-  const value = window.localStorage.getItem(key);
-  if (value === null) {
-    return fallback;
-  }
-
-  return value === "true";
-}
-
-export function writeStoredBoolean(key: string, value: boolean): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(key, value ? "true" : "false");
-}
-
 // The key was taken over or used to join: a later hash change without a key brings nothing back.
 export function forgetLinkKey(): void {
   linkKey = "";
@@ -108,4 +87,25 @@ export function dropLinkThread(): void {
   if (/[#&]annotation-thread=/.test(window.location.hash)) {
     dropHashParts("annotation-thread=");
   }
+}
+
+// Jump from "For you" into another project: #annotation-handoff=<code> is a one-time code for the key.
+// Read once per page load and removed from the address at once; never stored.
+let handoffCode: string | undefined;
+
+export function takeHandoffCode(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  const match = window.location.hash.match(/[#&]annotation-handoff=([^&]*)/);
+  if (!match) {
+    return handoffCode ?? "";
+  }
+  handoffCode = /^[0-9a-f]{64}$/.test(match[1]) ? match[1] : "";
+  dropHashParts("annotation-handoff=");
+  return handoffCode;
+}
+
+export function forgetHandoffCode(): void {
+  handoffCode = "";
 }
