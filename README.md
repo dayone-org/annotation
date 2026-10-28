@@ -80,7 +80,9 @@ Each link is printed once; admins can show the current guest link again in the a
 **Admins** are staff members flagged with `admin --person <id>` (service role only). Their overlay
 shows an admin tile in the dock that can create or change the project of the page (it loads the
 stored name and domains), show or renew its guest link and add staff members (their link is shown
-once). Guest links created before the plain text was stored cannot be shown, only renewed. The database checks the key on
+once). The ID is fixed on a page that has a project; the tile cannot take over another project by
+its ID ("ID already in use by another project"), only the admin script can. `revoke` also removes
+the admin flag, so a later `new-key` gives a plain staff key. Guest links created before the plain text was stored cannot be shown, only renewed. The database checks the key on
 every call; the flag cannot be read or set through the overlay. On a page without a project the
 overlay shows admins only this tile, so they can register the page.
 
