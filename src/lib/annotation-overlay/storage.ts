@@ -25,16 +25,20 @@ export function writeStoredString(key: string, value: string): void {
   window.localStorage.removeItem(key);
 }
 
-// Take the key from the link (#key=…) once per page load and remove it from the address bar.
+// Take the key from the link (#key=…) and remove it from the address bar. Kept per page load, so a
+// second caller gets the same key; a later link in the same tab (hash change) replaces it.
 let linkKey: string | undefined;
 
 export function takeLinkKey(): string {
-  if (linkKey !== undefined || typeof window === "undefined") {
-    return linkKey ?? "";
+  if (typeof window === "undefined") {
+    return "";
   }
 
   const { hash, pathname, search } = window.location;
   const match = hash.match(/[#&]key=([^&]*)/);
+  if (!match && linkKey !== undefined) {
+    return linkKey;
+  }
   try {
     linkKey = match ? decodeURIComponent(match[1]).trim() : "";
   } catch {

@@ -90,7 +90,7 @@ export function AnnotationProvider({
   supabaseUrl,
 }: PropsWithChildren<AnnotationOverlayProps>) {
   const keyStorageKey = getStorageKey(storageKeyPrefix, "key");
-  const [linkKey] = useState(takeLinkKey);
+  const [linkKey, setLinkKey] = useState(takeLinkKey);
   const [accessKey, setAccessKey] = useState(() => readStoredString(keyStorageKey));
   // Project link of a guest who has not entered a name yet.
   const [pendingProjectKey, setPendingProjectKey] = useState<string | null>(null);
@@ -177,6 +177,13 @@ export function AnnotationProvider({
       setMarkerHovered(false);
     }
   }, [annotationMode]);
+
+  // A link opened in the already open tab only changes the hash; take its key like on page load.
+  useEffect(() => {
+    const onHashChange = () => setLinkKey(takeLinkKey());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
 
   // Who am I on this page? Order: personal link, stored key, project link (then the overlay asks
   // for a name). Without a match the overlay stays invisible.
