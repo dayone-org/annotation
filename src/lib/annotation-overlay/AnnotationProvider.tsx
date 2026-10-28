@@ -281,9 +281,9 @@ export function AnnotationProvider({
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
-  // Jump from "For you" with a one-time code: the code is always used up on landing. A key that already
-  // works here stays (a link from someone else must not replace it, guest or staff); otherwise the code's
-  // key signs in like a personal link. An invalid or used code changes nothing.
+  // Jump from "For you" with a one-time code: the code is always used up on landing. A key that is current
+  // for anyone stays, whichever project this page shows (a link from someone else must not replace it,
+  // guest or staff); otherwise the code's key signs in like a personal link. An invalid or used code changes nothing.
   useEffect(() => {
     if (!handoffCode) {
       return;
@@ -294,11 +294,10 @@ export function AnnotationProvider({
       let keepOwnKey = false;
       if (accessKey) {
         const { data, error } = await getSupabaseClient(supabaseUrl, supabaseAnonKey, accessKey).rpc(
-          "annotation_whoami",
-          { p_host: window.location.host, p_project_id: projectOverride },
+          "annotation_me",
         );
         // A failed check keeps the stored key too: unknown is not "no access".
-        keepOwnKey = Boolean(error) || Boolean((data as Session[] | null)?.[0]);
+        keepOwnKey = Boolean(error) || typeof data === "string";
       }
       const { data } = await getSupabaseClient(supabaseUrl, supabaseAnonKey, "").rpc(
         "annotation_handoff_redeem",
@@ -310,7 +309,7 @@ export function AnnotationProvider({
         setLinkKey(data);
       }
     })();
-  }, [accessKey, handoffCode, projectOverride, supabaseAnonKey, supabaseUrl]);
+  }, [accessKey, handoffCode, supabaseAnonKey, supabaseUrl]);
 
   // Who am I on this page? Order: personal link, stored key, project link (then the overlay asks
   // for a name). Without a match the overlay stays invisible.
