@@ -87,11 +87,50 @@ export function normalizeComment(
     rect: row.rect ?? null,
     text: row.text ?? "",
     author: row.author ?? "Unknown",
+    author_id: row.author_id ?? null,
+    author_is_guest: row.author_is_guest ?? false,
     resolved: Boolean(row.resolved),
     created_at: row.created_at ?? new Date(0).toISOString(),
     resolved_at: row.resolved_at ?? null,
     parent_id: row.parent_id ?? null,
   };
+}
+
+// Same rule as the database (comments_page_path_plain): one leading slash but not two, no # ? or
+// backslash, no whitespace or control characters, no . or .. segment (also as %2e). Older rows may
+// break it, so check before using a path.
+export function isPlainPagePath(path: string): boolean {
+  return (
+    path.length <= 512 &&
+    /^\/(?:[^/#?\\\s\p{Cc}][^#?\\\s\p{Cc}]*)?$/u.test(path) &&
+    !/(?:^|\/)(?:\.|%2e){1,2}(?:\/|$)/i.test(path)
+  );
+}
+
+// The URL of a page path on `origin`, or null when the path is not plain or the browser would not keep
+// it exactly as written there (another origin, a normalized path, a query or hash).
+export function pageUrlOn(path: string, origin: string): URL | null {
+  if (!isPlainPagePath(path)) {
+    return null;
+  }
+  try {
+    const url = new URL(path, origin);
+    const asWritten = url.pathname === path && !url.search && !url.hash;
+    return asWritten && url.origin === new URL(origin).origin ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+// A page path the overlay may navigate to: plain and staying on this site exactly as written.
+export function isSameSitePath(path: string): boolean {
+  return pageUrlOn(path, window.location.origin) !== null;
+}
+
+// Same rule as the database: at most 48 characters, at least 2 letters or digits (the database also strips invisible characters).
+export function isValidName(name: string): boolean {
+  const value = name.trim().normalize("NFC");
+  return [...value].length <= 48 && (value.match(/[\p{L}\p{N}]/gu)?.length ?? 0) >= 2;
 }
 
 export function sortComments(comments: AnnotationComment[]): AnnotationComment[] {

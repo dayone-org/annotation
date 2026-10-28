@@ -10,13 +10,16 @@ export type AnnotationContextValue = {
   currentPath: string;
   errorMessage: string | null;
   isLoading: boolean;
-  isAuthorGateOpen: boolean;
+  isGuest: boolean;
+  isJoining: boolean;
+  joinAsGuest: (name: string) => Promise<boolean>;
+  /** hidden: no valid key, overlay invisible; join: guest with a project link enters a name. */
+  phase: "hidden" | "join" | "ready";
   isMarkerHovered: boolean;
+  personId: string | null;
   storageKeyPrefix: string;
-  closeAuthorGate: () => void;
   setMarkerHovered: (hovered: boolean) => void;
-  setAuthor: (value: string) => void;
-  submitAuthorGate: (name: string) => void;
+  renameSelf: (name: string) => Promise<boolean>;
   setShowResolved: (value: boolean) => void;
   showResolved: boolean;
   startAnnotationMode: () => void;

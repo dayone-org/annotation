@@ -57,6 +57,7 @@ import {
   formatTimestamp,
   getReplies,
   getTopLevelComments,
+  isValidName,
   measureRect,
 } from "../utils";
 
@@ -70,7 +71,6 @@ type ResolveAllSliderProps = {
 
 type ThreadCardProps = {
   activeThreadId: string | null;
-  canManage: boolean;
   comment: AnnotationComment;
   comments: AnnotationComment[];
   currentPath: string;
@@ -214,13 +214,7 @@ function AnimatedCopyStateIcon({ state }: { state: CopyState }) {
   return <AnimatedIconTransition renderIcon={getCopyActionIcon} state={state} />;
 }
 
-function ThreadCard({
-  activeThreadId,
-  canManage,
-  comment,
-  comments,
-  currentPath,
-}: ThreadCardProps) {
+function ThreadCard({ activeThreadId, comment, comments, currentPath }: ThreadCardProps) {
   const { openThreadComposer, scrollToComment, toggleResolved } = useAnnotation();
   const [copyState, setCopyState] = useCopyState();
   const replies = getReplies(comments, comment.id);
@@ -272,25 +266,26 @@ function ThreadCard({
           >
             <AnimatedCopyStateIcon state={copyState} />
           </Button>
-          {canManage ? (
-            <Button
-              aria-label={comment.resolved ? "Mark annotation as open" : "Resolve annotation"}
-              onClick={(event) => {
-                stopItemClick(event);
-                void toggleResolved(comment.id);
-              }}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              {comment.resolved ? <CheckCircleIcon weight="fill" /> : <CheckCircleIcon />}
-            </Button>
-          ) : null}
+          <Button
+            aria-label={comment.resolved ? "Mark annotation as open" : "Resolve annotation"}
+            onClick={(event) => {
+              stopItemClick(event);
+              void toggleResolved(comment.id);
+            }}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            {comment.resolved ? <CheckCircleIcon weight="fill" /> : <CheckCircleIcon />}
+          </Button>
         </div>
       </ItemHeader>
       <ItemContent className="annotation:flex annotation:flex-col annotation:gap-2 annotation:text-sm">
         <div className="annotation:flex annotation:flex-col">
-          <p className="annotation:font-medium">{comment.author}</p>
+          <p className="annotation:flex annotation:items-center annotation:gap-1.5 annotation:font-medium">
+            {comment.author}
+            {comment.author_is_guest ? <Badge variant="outline">External</Badge> : null}
+          </p>
           <p className="annotation:whitespace-pre-wrap annotation:text-muted-foreground">
             {comment.text}
           </p>
@@ -448,20 +443,21 @@ export function AnnotationDock({
     annotationMode,
     author,
     cancelAnnotationMode,
-    closeAuthorGate,
     comments,
     composer,
     currentPath,
     errorMessage,
-    isAuthorGateOpen,
+    isGuest,
+    isJoining,
+    joinAsGuest,
+    phase,
     isLoading,
+    renameSelf,
     resolveAllComments,
-    setAuthor,
     setShowResolved,
     showResolved,
     startAnnotationMode,
     storageKeyPrefix,
-    submitAuthorGate,
   } = useAnnotation();
   const onlyCurrentPageKey = useMemo(
     () => getStorageKey(storageKeyPrefix, "only_current_page"),
@@ -479,7 +475,12 @@ export function AnnotationDock({
   );
   const [isPanelOpen, setPanelOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [authorGateInput, setAuthorGateInput] = useState("");
+  const [nameDraft, setNameDraft] = useState(author);
+  const [joinName, setJoinName] = useState("");
+  const trimmedJoinName = joinName.trim();
+  const canJoin = isValidName(trimmedJoinName);
+  const trimmedNameDraft = nameDraft.trim();
+  const canSaveName = isValidName(trimmedNameDraft) && trimmedNameDraft !== author;
   const [bulkCopyState, setBulkCopyState] = useCopyState();
 
   const [refContainer, { height, width }] = useMeasure();
@@ -497,7 +498,6 @@ export function AnnotationDock({
     (comment) => comment.page_path === currentPath && !comment.resolved,
   );
   const unresolvedThreadCount = topLevelComments.filter((comment) => !comment.resolved).length;
-  const hasAuthor = Boolean(author);
   const positionConfig = useMemo(() => getPositionConfig(position), [position]);
 
   const variantsButton = useMemo(
@@ -565,10 +565,10 @@ export function AnnotationDock({
   }, [annotationMode]);
 
   useEffect(() => {
-    if (isAuthorGateOpen) {
-      setAuthorGateInput("");
+    if (isSettingsOpen) {
+      setNameDraft(author);
     }
-  }, [isAuthorGateOpen]);
+  }, [author, isSettingsOpen]);
 
   useEffect(() => {
     if (composer && !composer.parentId) {
@@ -578,15 +578,13 @@ export function AnnotationDock({
 
   const toggleAnnotationsPanel = useCallback(() => {
     setIsSettingsOpen(false);
-    closeAuthorGate();
     setPanelOpen((open) => !open);
-  }, [closeAuthorGate]);
+  }, []);
 
   const closeAnnotationDock = useCallback(() => {
     setIsSettingsOpen(false);
-    closeAuthorGate();
     cancelAnnotationMode();
-  }, [cancelAnnotationMode, closeAuthorGate]);
+  }, [cancelAnnotationMode]);
 
   const handleBulkCopy = useCallback(async () => {
     const markdown = formatAnnotationCollectionMarkdown(
@@ -599,7 +597,49 @@ export function AnnotationDock({
   }, [comments, currentPath, currentRouteOpenThreads, setBulkCopyState]);
 
   const renderDock = () => {
-    if (!annotationMode && !isAuthorGateOpen) {
+    // Guest with a project link: only a name, then they are in the project.
+    if (phase === "join") {
+      return (
+        <motion.form
+          animate="animate"
+          className="annotation:flex annotation:max-w-72 annotation:flex-wrap annotation:items-center annotation:gap-2 annotation:p-1"
+          exit="exit"
+          initial="initial"
+          key="floating-button-join"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (canJoin) {
+              void joinAsGuest(trimmedJoinName);
+            }
+          }}
+          variants={variantsButton}
+        >
+          <Input
+            aria-label="Your name"
+            autoFocus
+            className="annotation:w-48 annotation:border-none annotation:bg-primary-foreground/10 annotation:text-primary-foreground annotation:placeholder:text-primary-foreground/50"
+            id="annotation-join-name"
+            maxLength={48}
+            onChange={(event) => setJoinName(event.target.value)}
+            placeholder="What's your name?"
+            value={joinName}
+          />
+          <Button aria-label="Join" disabled={!canJoin || isJoining} size="icon-sm" type="submit">
+            <CheckIcon />
+          </Button>
+          {errorMessage ? (
+            <p
+              className="annotation:basis-full annotation:px-1 annotation:text-xs annotation:text-primary-foreground"
+              role="alert"
+            >
+              {errorMessage}
+            </p>
+          ) : null}
+        </motion.form>
+      );
+    }
+
+    if (!annotationMode) {
       return (
         <motion.div
           animate="animate"
@@ -616,40 +656,6 @@ export function AnnotationDock({
             </Kbd>
           </Button>
         </motion.div>
-      );
-    }
-
-    if (isAuthorGateOpen) {
-      return (
-        <motion.form
-          animate="animate"
-          className="annotation:flex annotation:items-center annotation:gap-2 annotation:p-1"
-          exit="exit"
-          initial="initial"
-          key="floating-button-author-gate"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submitAuthorGate(authorGateInput);
-          }}
-          variants={variantsButton}
-        >
-          <Input
-            autoFocus
-            className="annotation:w-48 annotation:border-none annotation:bg-primary-foreground/10 annotation:text-primary-foreground annotation:placeholder:text-primary-foreground/50"
-            id="annotation-author-gate-name"
-            maxLength={48}
-            onChange={(event) => setAuthorGateInput(event.target.value)}
-            placeholder="What's your name?"
-            value={authorGateInput}
-          />
-          <Button disabled={!authorGateInput.trim()} size="icon-sm" type="submit">
-            <CheckIcon />
-          </Button>
-          <Separator className="annotation:bg-primary-black" orientation="vertical" />
-          <Button onClick={closeAuthorGate} size="icon-sm" type="button">
-            <XIcon />
-          </Button>
-        </motion.form>
       );
     }
 
@@ -688,7 +694,6 @@ export function AnnotationDock({
               const next = !open;
               if (next) {
                 setPanelOpen(false);
-                closeAuthorGate();
               }
               return next;
             });
@@ -767,7 +772,6 @@ export function AnnotationDock({
                         ? visibleThreads.map((comment) => (
                             <ThreadCard
                               activeThreadId={activeThreadId}
-                              canManage={hasAuthor}
                               comment={comment}
                               comments={comments}
                               currentPath={currentPath}
@@ -809,18 +813,30 @@ export function AnnotationDock({
                 <FieldGroup>
                   <Field>
                     <FieldLabel htmlFor="annotation-panel-name">Name</FieldLabel>
-                    <Input
-                      id="annotation-panel-name"
-                      maxLength={48}
-                      onBlur={(event) => {
-                        if (!event.currentTarget.value.trim()) {
-                          cancelAnnotationMode();
+                    <form
+                      className="annotation:flex annotation:gap-2"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (canSaveName) {
+                          void renameSelf(trimmedNameDraft);
                         }
                       }}
-                      onChange={(event) => setAuthor(event.target.value)}
-                      placeholder="Annotator"
-                      value={author}
-                    />
+                    >
+                      {/* Staff carry the name from the list; only guests may rename themselves. */}
+                      <Input
+                        disabled={!isGuest}
+                        id="annotation-panel-name"
+                        maxLength={48}
+                        minLength={2}
+                        onChange={(event) => setNameDraft(event.target.value)}
+                        value={nameDraft}
+                      />
+                      {isGuest ? (
+                        <Button disabled={!canSaveName} size="sm" type="submit">
+                          Save
+                        </Button>
+                      ) : null}
+                    </form>
                   </Field>
                   <Field>
                     <FieldLabel>Position</FieldLabel>

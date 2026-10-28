@@ -15,22 +15,9 @@ const steps = [
   {
     title: "Database",
     description:
-      "Create one comments table per project, or add project_id when one table should back multiple projects.",
-    code: `comments(
-  id uuid primary key,
-  page_path text not null,
-  selector text,
-  rect jsonb,
-  text text not null,
-  author text not null,
-  resolved boolean default false,
-  created_at timestamptz default now(),
-  resolved_at timestamptz,
-  parent_id uuid references comments(id)
-)
-
--- Shared table mode only:
-alter table comments add column project_id text not null;`,
+      "Apply supabase/migrations once to the central database. Projects, domains and links are managed with scripts/annotation-admin.mjs.",
+    code: `node scripts/annotation-admin.mjs project --id marketing-site --name "Marketing site" --domain example.com
+node scripts/annotation-admin.mjs project-link --id marketing-site --url https://example.com`,
   },
   {
     title: "Environment",
@@ -41,7 +28,7 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=your-supabase-anon-key`,
   {
     title: "Usage",
     description:
-      "Render the widget from your app layout. Add projectId only for shared table mode.",
+      "Render the widget from your app layout. The project is found by the page's domain.",
     code: `import { Annotation } from "annotation";
 
 <Annotation
@@ -207,6 +194,9 @@ function ContentPage({
   );
 }
 
+// Playground: ?project=… overrides the domain's project so project isolation can be checked locally.
+const demoProjectId = new URLSearchParams(window.location.search).get("project") ?? undefined;
+
 function App() {
   const [currentPath, setCurrentPath] = useState(() =>
     typeof window === "undefined" ? "/" : getNormalizedPath(window.location.pathname),
@@ -268,7 +258,7 @@ function App() {
           pagePath={currentPath}
           supabaseAnonKey={annotationSupabaseAnonKey}
           supabaseUrl={annotationSupabaseUrl}
-          projectId="demo"
+          projectId={demoProjectId}
         />
       </div>
     </div>

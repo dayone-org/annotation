@@ -23,6 +23,8 @@ export type AnnotationComment = {
   rect: AnnotationRect | null;
   text: string;
   author: string;
+  author_id?: string | null;
+  author_is_guest?: boolean;
   resolved: boolean;
   created_at: string;
   resolved_at: string | null;
@@ -49,9 +51,9 @@ export type AnnotationOverlayProps = {
   supabaseAnonKey: string;
   pagePath?: string;
   position?: AnnotationPosition;
+  /** Overrides the project that is otherwise found by the domain (location.host). */
   projectId?: string;
   storageKeyPrefix?: string;
-  tableName?: string;
 };
 
 export type AnnotationProps = AnnotationOverlayProps;

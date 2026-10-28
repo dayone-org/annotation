@@ -32,43 +32,34 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 ## Database
 
-```sql
-create table comments (
-  id uuid primary key default gen_random_uuid(),
-  page_path text not null,
-  selector text,
-  rect jsonb,
-  text text not null,
-  author text not null,
-  resolved boolean default false,
-  created_at timestamptz default now(),
-  resolved_at timestamptz,
-  parent_id uuid references comments(id)
-);
+One central Supabase database serves all projects. Apply `supabase/migrations/` once
+(`supabase db push`); `supabase/tests/` holds the pgTAP tests (`supabase test db`).
+
+- **Projects** have a name and one or more domains (host incl. port). The overlay finds its project
+  by `location.host`; the optional `projectId` prop overrides that.
+- **Staff** (DAYONE e-mail, first name, optional last name) get a personal link that works in every
+  project. Their name comes from the list and cannot be changed in the overlay.
+- **Guests** use one link per project. On first visit they only enter a name; the browser then gets
+  its own key and is recognised without the link. Guests are marked as external and may rename
+  themselves. A new project link disables the old link and every guest who joined through it.
+
+Links carry the key in the fragment (`#key=…`). The overlay removes it from the address bar, keeps
+its key in `localStorage` and sends it with every request (`x-annotation-key` header). Keys are
+stored hashed; row level security checks person and project. Without a valid key the overlay is
+not rendered at all. Display names are resolved when reading, so a rename also changes old
+comments. Threads with any reply can be resolved but not removed; only the author can
+move a thread.
+
+```bash
+export SUPABASE_URL=… SUPABASE_SERVICE_ROLE_KEY=…
+node scripts/annotation-admin.mjs project --id marketing-site --name "Marketing site" --domain example.com
+node scripts/annotation-admin.mjs project-link --id marketing-site --url https://example.com
+node scripts/annotation-admin.mjs staff --email anna@dayone.de --first-name Anna --url https://example.com
+node scripts/annotation-admin.mjs new-key --person <id> --url https://example.com
+node scripts/annotation-admin.mjs revoke --person <id>
 ```
 
-### Table Modes
-
-For one project per comments table, use the base schema above and omit `projectId`.
-
-If you want one comments table to back multiple projects, add a `project_id` column and pass
-`projectId` to `<Annotation />`.
-
-```sql
-alter table comments
-  add column project_id text not null default 'default-project';
-```
-
-```tsx
-<Annotation
-  supabaseUrl={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_URL!}
-  supabaseAnonKey={process.env.NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY!}
-  projectId="marketing-site"
-/>
-```
-
-When a table has a `project_id` column, `<Annotation />` requires `projectId`. This prevents
-loading comments from every project in a shared table by accident.
+Each link is printed once.
 
 ## Environment Variables
 
@@ -86,6 +77,9 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=
 - Threaded comments with resolve, remove, and bulk copy actions
 - Cross-page thread browsing from the dock
 - Dock positioning in all four corners
-- Optional shared-table scoping with `projectId`
-- Local annotator name and resolved-thread visibility preferences
-- Optional `pagePath`, `position`, `projectId`, `storageKeyPrefix`, and `tableName` props for advanced integration
+- Personal and per-project access keys, project isolation and server-side authors via row level security
+- Guests rename themselves in the settings; the new name applies to all of their comments
+- Optional `projectId`, `pagePath`, `position`, and `storageKeyPrefix` props for advanced integration
+
+**Breaking change:** the `tableName` prop is gone. The overlay always uses the `comments` table of
+the central schema.
