@@ -56,18 +56,9 @@ const client = createClient(url, serviceKey, { auth: { persistSession: false } }
 
 async function rpc(fn, args) {
   const { data, error } = await client.rpc(fn, args);
-  if (error?.code === "23505" && fn === "annotation_set_project") {
-    const domain = /\(host\)=\((.*)\)/.exec(error.details ?? "")?.[1];
-    fail(
-      `Domain${domain ? ` ${domain}` : ""} already belongs to another project; remove it there first.`,
-    );
-  }
-  if (error?.code === "23514" && /_(first|last|display)_name_check"/.test(error.message)) {
-    fail(
-      "Name not allowed: first and last name together may have at most 48 characters and need at least two letters or digits.",
-    );
-  }
-  if (error) fail(`${fn}: ${error.message}`);
+  // 23505/23514 carry a readable message from the database (domain taken, e-mail, name).
+  if (error)
+    fail(["23505", "23514"].includes(error.code) ? error.message : `${fn}: ${error.message}`);
   return data;
 }
 
