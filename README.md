@@ -111,12 +111,17 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=
 - Guests rename themselves in the settings; the new name applies to all of their comments
 - Mentions: staff type `@` in a comment or reply and pick a colleague; the name is highlighted.
   Only staff can mention and be mentioned; for guests `@` is plain text
-- "For you" tab in the comment list: mentions of you and replies in threads you started, from all
+- Comment list tabs: "All" (open threads on all pages), "For you" and "Resolved" (resolved threads on
+  all pages, also shown as markers). The chosen tab is kept
+- "For you" tab: mentions of you and replies in threads you started, from all
   projects your key can access (guests: their project only). The unread count also shows on the list
   button. Each entry shows the start of the comment (first 140 characters). Opening a thread marks
   its entries read; "Mark all as read" clears the rest; entries that arrive meanwhile stay unread;
   resolved threads drop out. An entry from another project links to its first domain and opens the
-  thread there (`#annotation-thread=<id>`), provided the key is stored on that domain too
+  thread there. A click there signs you in on that domain with a one-time code
+  (`#annotation-handoff=<code>&annotation-thread=<id>`; staff only, valid 2 minutes, usable once, only
+  on that project's domain; the database stores only its hash and the key encrypted with it). Opened
+  in a new tab, the link carries no code and needs the key stored on that domain
 - Optional `projectId`, `pagePath`, `position`, and `storageKeyPrefix` props for advanced integration
 
 **Breaking change:** the `tableName` prop is gone. The overlay always uses the `comments` table of
