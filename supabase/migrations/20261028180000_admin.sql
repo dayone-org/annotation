@@ -1,5 +1,5 @@
 -- Admins: staff members flagged in the database may use the admin tile in the overlay.
--- The flag is set only by the service role (scripts/annotation-admin.mjs admin --person <id>);
+-- The flag is set only by the service role (scripts/annotation-admin.mjs admin --person <id> [--off]);
 -- it is neither readable nor writable through the API. The browser learns it only through
 -- annotation_admin_me(), which checks the key in the x-annotation-key header, independent of the host.
 -- After the admin check, guest link and staff reuse the service-role functions. Projects have their own
@@ -165,20 +165,35 @@ begin
 end;
 $$;
 
--- Service role only: make a staff member an admin.
-create or replace function public.annotation_set_admin(p_person_id uuid)
+-- Service role only: make a staff member an admin, or with p_admin = false take the flag away again
+-- (the key stays valid).
+create or replace function public.annotation_set_admin(p_person_id uuid, p_admin boolean default true)
 returns void
 language plpgsql
 security definer
 set search_path = ''
 as $$
 begin
-  update public.annotation_people set is_admin = true where id = p_person_id and not is_guest;
+  update public.annotation_people set is_admin = p_admin where id = p_person_id and not is_guest;
 
   if not found then
     raise exception 'unknown staff member' using errcode = 'P0002';
   end if;
 end;
+$$;
+
+-- Service role only: all staff members with admin flag and whether they have a key; no keys, no hashes.
+create or replace function public.annotation_staff_list()
+returns table (person_id uuid, email text, first_name text, last_name text, is_admin boolean, has_key boolean)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select p.id, p.email, p.first_name, p.last_name, p.is_admin, p.key_hash is not null
+  from public.annotation_people p
+  where not p.is_guest
+  order by p.email;
 $$;
 
 -- Supabase grants EXECUTE to anon and authenticated by default; only the new functions here.
@@ -188,11 +203,13 @@ revoke all on function public.annotation_admin_set_project(text, text, text, tex
 revoke all on function public.annotation_admin_new_project_key(text) from public, anon, authenticated;
 revoke all on function public.annotation_admin_add_staff(text, text, text) from public, anon, authenticated;
 revoke all on function public.annotation_admin_project(text) from public, anon, authenticated;
-revoke all on function public.annotation_set_admin(uuid) from public, anon, authenticated;
+revoke all on function public.annotation_set_admin(uuid, boolean) from public, anon, authenticated;
+revoke all on function public.annotation_staff_list() from public, anon, authenticated;
 
 grant execute on function public.annotation_admin_me() to anon;
 grant execute on function public.annotation_admin_set_project(text, text, text, text[]) to anon;
 grant execute on function public.annotation_admin_new_project_key(text) to anon;
 grant execute on function public.annotation_admin_add_staff(text, text, text) to anon;
 grant execute on function public.annotation_admin_project(text) to anon;
-grant execute on function public.annotation_set_admin(uuid) to service_role;
+grant execute on function public.annotation_set_admin(uuid, boolean) to service_role;
+grant execute on function public.annotation_staff_list() to service_role;

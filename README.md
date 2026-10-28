@@ -33,7 +33,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 ## From a new site to the first comment
 
 1. **Once per admin:** add yourself as staff and flag yourself as admin with the admin script
-   (`staff`, then `admin --person <id>`). Keep your link like a password.
+   (`staff`, then `admin --person <id>`). Keep your link like a password. `staff-list` shows who
+   is staff and admin; `admin --person <id> --off` takes the admin flag away again.
 2. **Developer:** install the package and mount `<Annotation />` with the URL and key of the central
    database (see Usage). No `projectId` needed.
 3. **Admin:** open the new site with your key appended (`https://new-site.com/#key=…`). The site has
@@ -72,7 +73,8 @@ node scripts/annotation-admin.mjs project-link --id marketing-site --url https:/
 node scripts/annotation-admin.mjs staff --email anna@dayone.de --first-name Anna --url https://example.com
 node scripts/annotation-admin.mjs new-key --person <id> --url https://example.com
 node scripts/annotation-admin.mjs revoke --person <id>
-node scripts/annotation-admin.mjs admin --person <id>
+node scripts/annotation-admin.mjs admin --person <id> [--off]
+node scripts/annotation-admin.mjs staff-list
 ```
 
 Each link is printed once; admins can show the current guest link again in the admin tile.
@@ -82,7 +84,9 @@ shows an admin tile in the dock that can create or change the project of the pag
 stored name and domains), show or renew its guest link and add staff members (their link is shown
 once). The ID is fixed on a page that has a project; the tile cannot take over another project by
 its ID ("ID already in use by another project"), only the admin script can. The domain of the
-page stays in its project's list, so the tile keeps finding the project. `revoke` also removes
+page stays in its project's list, so the tile keeps finding the project. `admin --person <id> --off`
+removes only the flag; the person keeps their key. `staff-list` prints every staff member with
+e-mail, name, ID, admin yes/no and key yes/no, never a key or hash. `revoke` also removes
 the admin flag, so a later `new-key` gives a plain staff key. Guest links created before the plain text was stored cannot be shown, only renewed. The database checks the key on
 every call; the flag cannot be read or set through the overlay. On a page without a project the
 overlay shows admins only this tile, so they can register the page.

@@ -2,7 +2,7 @@
 -- readable nor writable through the API. Run like PostgREST (role anon, key in the x-annotation-key header).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(105);
+select plan(115);
 
 create function pg_temp.as_key(p_key text) returns void language plpgsql as $$
 begin
@@ -187,8 +187,8 @@ select ok(not public.annotation_admin_me(), 'flag: Max still no admin');
 reset role;
 select column_privs_are('public', 'annotation_people', 'is_admin', 'anon', array[]::text[], 'people.is_admin: anon without privileges');
 select column_privs_are('public', 'annotation_people', 'is_admin', 'authenticated', array[]::text[], 'people.is_admin: authenticated without privileges');
-select function_privs_are('public', 'annotation_set_admin', array['uuid'], 'anon', array[]::text[], 'set_admin: not for anon');
-select function_privs_are('public', 'annotation_set_admin', array['uuid'], 'authenticated', array[]::text[], 'set_admin: not for authenticated');
+select function_privs_are('public', 'annotation_set_admin', array['uuid', 'boolean'], 'anon', array[]::text[], 'set_admin: not for anon');
+select function_privs_are('public', 'annotation_set_admin', array['uuid', 'boolean'], 'authenticated', array[]::text[], 'set_admin: not for authenticated');
 select function_privs_are('public', 'annotation_admin_set_project', array['text', 'text', 'text', 'text[]'], 'authenticated', array[]::text[],
   'admin_set_project: not for authenticated');
 select function_privs_are('public', 'annotation_admin_add_staff', array['text', 'text', 'text'], 'authenticated', array[]::text[],
@@ -252,6 +252,38 @@ select throws_ok($$update public.annotation_people set is_admin = true where is_
   'constraint: guests are never admins');
 select pg_temp.as_key('k-max-adm');
 select ok(public.annotation_admin_me(), 'service: Max is admin now');
+
+-- ---------------------------------------------------------------- Service role takes the flag away, the key stays
+set local role service_role;
+select lives_ok($$select public.annotation_set_admin('30000000-0000-4000-8000-000000000002', false)$$, 'service: set_admin off');
+reset role;
+select pg_temp.as_key('k-max-adm');
+select ok(not public.annotation_admin_me(), 'off: Max is no admin any more');
+select results_eq($$select person_id from public.annotation_whoami('adm-eins.test')$$,
+  $$values ('30000000-0000-4000-8000-000000000002'::uuid)$$, 'off: the key of Max still works');
+select throws_ok($$select public.annotation_set_admin('30000000-0000-4000-8000-000000000002', true)$$, '42501', null,
+  'off: Max cannot switch the flag back on');
+
+-- ---------------------------------------------------------------- Staff list (service role only)
+select throws_ok($$select * from public.annotation_staff_list()$$, '42501', null, 'staff_list: not callable by anon');
+reset role;
+select function_privs_are('public', 'annotation_staff_list', array[]::text[], 'anon', array[]::text[], 'staff_list: not for anon');
+select function_privs_are('public', 'annotation_staff_list', array[]::text[], 'authenticated', array[]::text[],
+  'staff_list: not for authenticated');
+select function_privs_are('public', 'annotation_staff_list', array[]::text[], 'service_role', array['EXECUTE'],
+  'staff_list: for service_role');
+update public.annotation_people set key_hash = null where email = 'neu.adm@dayone.de';
+set local role service_role;
+select results_eq(
+  $$select email, first_name, last_name, is_admin, has_key from public.annotation_staff_list() where email like '%.adm@dayone.de'$$,
+  $$values ('ada.adm@dayone.de'::text, 'Ada'::text, null::text, true, true),
+           ('max.adm@dayone.de', 'Max', null, false, true),
+           ('neu.adm@dayone.de', 'Nele', 'Nürnberg', false, false),
+           ('rita.adm@dayone.de', 'Rita', null, false, true)$$,
+  'staff_list: e-mail, name, admin and key per staff member, no guests');
+select is((select count(*) from public.annotation_staff_list() s join public.annotation_people p on p.id = s.person_id where p.is_guest), 0::bigint,
+  'staff_list: no guests');
+reset role;
 
 select * from finish();
 rollback;

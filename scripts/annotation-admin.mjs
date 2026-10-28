@@ -9,7 +9,9 @@
 //   staff        --email a@dayone.de --first-name Anna [--last-name Muster] --url https://wika.de
 //   new-key      --person <id> --url https://wika.de   (staff; the old key stops working)
 //   revoke       --person <id>                         (staff; deletes the key and the admin flag)
-//   admin        --person <id>                         (staff; may use the admin tile in the overlay)
+//   admin        --person <id> [--off]                 (staff; may use the admin tile in the overlay;
+//                --off takes the flag away, the key stays valid)
+//   staff-list                                         (all staff: e-mail, name, ID, admin, key yes/no)
 import { createClient } from "@supabase/supabase-js";
 import { parseArgs } from "node:util";
 
@@ -24,6 +26,7 @@ const { positionals, values } = parseArgs({
     domain: { type: "string", multiple: true },
     person: { type: "string" },
     url: { type: "string" },
+    off: { type: "boolean" },
   },
 });
 
@@ -108,12 +111,31 @@ switch (positionals[0]) {
   }
   case "admin": {
     need("person");
-    await rpc("annotation_set_admin", { p_person_id: values.person });
-    console.log(`${values.person} is an admin.`);
+    const on = !values.off;
+    await rpc("annotation_set_admin", { p_person_id: values.person, p_admin: on });
+    console.log(
+      on
+        ? `${values.person} is an admin.`
+        : `${values.person} is no admin any more; the key stays valid.`,
+    );
+    break;
+  }
+  case "staff-list": {
+    const rows = await rpc("annotation_staff_list");
+    const yes = (flag) => (flag ? "yes" : "no");
+    console.table(
+      rows.map((r) => ({
+        email: r.email,
+        name: [r.first_name, r.last_name].filter(Boolean).join(" "),
+        person: r.person_id,
+        admin: yes(r.is_admin),
+        key: yes(r.has_key),
+      })),
+    );
     break;
   }
   default:
     fail(
-      "Command: project | project-link | staff | new-key | revoke | admin (see the file header).",
+      "Command: project | project-link | staff | new-key | revoke | admin | staff-list (see the file header).",
     );
 }
