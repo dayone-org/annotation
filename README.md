@@ -82,7 +82,12 @@ Each link is printed once; admins can show the current guest link again in the a
 **Admins** are staff members flagged with `admin --person <id>` (service role only). Their overlay
 shows an admin tile in the dock that can create or change the project of the page (it loads the
 stored name and domains), show or renew its guest link and add staff members (their link is shown
-once). The ID is fixed on a page that has a project; the tile cannot take over another project by
+once). "Import CSV" adds up to 200 staff members from a file with a header row `email`,
+`first_name`, `last_name` (any case; comma or semicolon; UTF-8 with or without BOM). A preview
+shows each row as OK or with the reason it is skipped (no @dayone.de address, invalid name, already
+registered, duplicate in the file); "Import N" creates only the valid ones and offers a file
+`name,email,link` once for download. It holds access links: delete it after sending. The links are
+not kept in the tile and are gone when it closes. The ID is fixed on a page that has a project; the tile cannot take over another project by
 its ID ("ID already in use by another project"), only the admin script can. The domain of the
 page stays in its project's list, so the tile keeps finding the project. `admin --person <id> --off`
 removes only the flag; the person keeps their key. `staff-list` prints every staff member with
@@ -121,8 +126,8 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=
   thread there. A click there signs you in on that domain with a one-time code
   (`#annotation-handoff=<code>&annotation-thread=<id>`; staff only, valid 2 minutes, usable once, only
   on that project's domain, never through the `projectId` prop; the database stores only its hash and the
-  key encrypted with it). The code is used up on landing in any case; a key that already works on that
-  domain stays and only the thread opens, so a link from someone else cannot replace it. Opened in a new
+  key encrypted with it). The code is used up on landing in any case; a key that is current for anyone
+  stays (also a guest key of another project, or with a `projectId` prop) and only the thread opens, so a link from someone else cannot replace it. Opened in a new
   tab, the link carries no code and needs the key stored on that domain
 - Known limit: a browser without a working key takes the key of whoever made the link, like with
   `#key=…`. `#key=…` itself still replaces a stored key on purpose, to switch people
