@@ -281,30 +281,30 @@ export function AnnotationProvider({
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
 
-  // Jump from "For you" with a one-time code: redeem it for the key unless a staff key already works here,
-  // then continue like a personal link. An invalid or used code changes nothing.
+  // Jump from "For you" with a one-time code: the code is always used up on landing. A key that already
+  // works here stays (a link from someone else must not replace it, guest or staff); otherwise the code's
+  // key signs in like a personal link. An invalid or used code changes nothing.
   useEffect(() => {
     if (!handoffCode) {
       return;
     }
     forgetHandoffCode();
     setHandoffCode("");
-    const args = { p_host: window.location.host, p_project_id: projectOverride };
     void (async () => {
+      let keepOwnKey = false;
       if (accessKey) {
-        const { data } = await getSupabaseClient(supabaseUrl, supabaseAnonKey, accessKey).rpc(
+        const { data, error } = await getSupabaseClient(supabaseUrl, supabaseAnonKey, accessKey).rpc(
           "annotation_whoami",
-          args,
+          { p_host: window.location.host, p_project_id: projectOverride },
         );
-        if ((data as Session[] | null)?.[0]?.is_guest === false) {
-          return;
-        }
+        // A failed check keeps the stored key too: unknown is not "no access".
+        keepOwnKey = Boolean(error) || Boolean((data as Session[] | null)?.[0]);
       }
       const { data } = await getSupabaseClient(supabaseUrl, supabaseAnonKey, "").rpc(
         "annotation_handoff_redeem",
-        { ...args, p_code: handoffCode },
+        { p_code: handoffCode, p_host: window.location.host, p_burn: keepOwnKey },
       );
-      if (typeof data === "string" && /^[0-9a-f]{64}$/.test(data)) {
+      if (!keepOwnKey && typeof data === "string" && /^[0-9a-f]{64}$/.test(data)) {
         // Loading again until the new key's comments are in, so the jump's thread is not dropped too early.
         setIsLoading(true);
         setLinkKey(data);

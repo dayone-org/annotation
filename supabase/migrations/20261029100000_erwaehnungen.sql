@@ -302,10 +302,12 @@ begin
 end;
 $$;
 
--- For the target page, without a key: the key of the code's person, if the code is current and the page
--- (host as for whoami) belongs to its project, and the key is still that person's. Otherwise null.
+-- For the target page, without a key: the key of the code's person, if the code is current, the host is a
+-- domain of the code's project (no project override: a page elsewhere must not get the key), and the key
+-- is still that person's. Otherwise null. p_burn only uses the code up, for a page that keeps its own key.
 -- A code is gone after the first attempt that finds it, also a failed one; expired codes are removed.
-create or replace function public.annotation_handoff_redeem(p_code text, p_host text, p_project_id text default null)
+drop function if exists public.annotation_handoff_redeem(text, text, text);
+create or replace function public.annotation_handoff_redeem(p_code text, p_host text, p_burn boolean default false)
 returns text
 language plpgsql
 volatile
@@ -319,7 +321,8 @@ begin
   delete from public.annotation_handoffs h where h.expires_at <= now();
   delete from public.annotation_handoffs h where h.code_hash = extensions.digest(p_code, 'sha256')
   returning * into v_row;
-  if not found or v_row.project_id is distinct from public.annotation_resolve_project(p_host, p_project_id) then
+  if not found or p_burn or v_row.project_id is distinct from
+      (select d.project_id from public.annotation_project_domains d where d.host = lower(btrim(p_host))) then
     return null;
   end if;
 
@@ -335,6 +338,6 @@ end;
 $$;
 
 revoke all on function public.annotation_handoff_create(text) from public, anon, authenticated;
-revoke all on function public.annotation_handoff_redeem(text, text, text) from public, anon, authenticated;
+revoke all on function public.annotation_handoff_redeem(text, text, boolean) from public, anon, authenticated;
 grant execute on function public.annotation_handoff_create(text) to anon;
-grant execute on function public.annotation_handoff_redeem(text, text, text) to anon;
+grant execute on function public.annotation_handoff_redeem(text, text, boolean) to anon;

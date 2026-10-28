@@ -3,7 +3,7 @@
 -- Run like PostgREST (role anon, key in the x-annotation-key header). Time is steered through expires_at.
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(38);
+select plan(44);
 
 create function pg_temp.as_key(p_key text) returns void language plpgsql as $$
 begin
@@ -51,9 +51,9 @@ select is_empty(
   'grants: anon and authenticated have nothing on the handoff table');
 select set_eq(
   $$select r, f from unnest(array['anon', 'authenticated']) r,
-      unnest(array['public.annotation_handoff_create(text)', 'public.annotation_handoff_redeem(text, text, text)']) f
+      unnest(array['public.annotation_handoff_create(text)', 'public.annotation_handoff_redeem(text, text, boolean)']) f
     where has_function_privilege(r, f, 'execute')$$,
-  $$values ('anon', 'public.annotation_handoff_create(text)'), ('anon', 'public.annotation_handoff_redeem(text, text, text)')$$,
+  $$values ('anon', 'public.annotation_handoff_create(text)'), ('anon', 'public.annotation_handoff_redeem(text, text, boolean)')$$,
   'grants: both functions for anon only');
 
 -- ---------------------------------------------------------------- Create: staff only
@@ -123,6 +123,23 @@ select pg_temp.as_key(pg_temp.k('hanna'));
 insert into codes values ('h3', public.annotation_handoff_create('ho-b'));
 select pg_temp.as_key(null);
 select is(public.annotation_handoff_redeem(pg_temp.c('h3'), 'ho-a.test'), null, 'redeem: another project''s host fails');
+
+-- Host binding without a project override: only a domain of the code's project gets the key.
+select hasnt_function('public', 'annotation_handoff_redeem', array['text', 'text', 'text'],
+  'host binding: no redeem that takes a project id');
+select pg_temp.as_key(pg_temp.k('hanna'));
+insert into codes values ('h9', public.annotation_handoff_create('ho-b')), ('h10', public.annotation_handoff_create('ho-b'));
+select pg_temp.as_key(null);
+select throws_ok($$select public.annotation_handoff_redeem(pg_temp.c('h9'), 'evil.example', 'ho-b')$$, '22P02', null,
+  'host binding: a project id next to a foreign host is refused');
+select is(public.annotation_handoff_redeem(pg_temp.c('h9'), 'evil.example'), null, 'host binding: a foreign host fails');
+select is(public.annotation_handoff_redeem(pg_temp.c('h9'), 'b.ho.test:5198'), null, 'host binding: that attempt used the code up');
+
+-- Burn: a page that keeps its own key only uses the code up; nothing comes back, not even on the target host.
+select is(public.annotation_handoff_redeem(pg_temp.c('h10'), 'b.ho.test:5198', true), null, 'burn: no key on the target host');
+reset role;
+select is((select count(*)::int from public.annotation_handoffs where code_hash = extensions.digest(pg_temp.c('h10'), 'sha256')), 0,
+  'burn: the code is gone');
 
 select pg_temp.as_key(pg_temp.k('hanna'));
 insert into codes values ('h4', public.annotation_handoff_create('ho-b'));
