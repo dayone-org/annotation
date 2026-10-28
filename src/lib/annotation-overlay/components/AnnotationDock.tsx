@@ -667,6 +667,10 @@ function ForYouCard({ entry }: { entry: ForYouEntry }) {
         <span className="annotation:shrink-0 annotation:text-xs annotation:text-muted-foreground">
           {formatTimestamp(entry.created_at)}
         </span>
+        {/* contain: the scroll area grows with its content, so the text must not widen the card. */}
+        <span className="annotation:basis-full annotation:truncate annotation:text-muted-foreground annotation:[contain:inline-size]">
+          {entry.text_start}
+        </span>
       </ItemContent>
     </>
   );

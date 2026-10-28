@@ -3,7 +3,7 @@
 -- Run like PostgREST (role anon, key in the x-annotation-key header).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(83);
+select plan(87);
 
 create function pg_temp.as_key(p_key text) returns void language plpgsql as $$
 begin
@@ -216,11 +216,18 @@ select is_empty($$select * from public.annotation_for_you() where comment_id in 
   'for you: own reply and self-mention create nothing');
 select is_empty($$select * from public.annotation_for_you() where thread_id = pg_temp.id('t4')$$,
   'for you: replying in another thread does not subscribe to it');
+select set_eq($$select comment_id, text_start from public.annotation_for_you()$$,
+  $$values (pg_temp.id('r1'), 'Antwort von Bo'::text), (pg_temp.id('r2'), 'Siehe @Ana Ärger')$$,
+  'for you: text start of the comment that created the entry, not of the thread');
 
 select pg_temp.as_key((select k from keys where name = 'g1'));
 select results_eq($$select project_id, page_path, thread_id, comment_id, kind, actor_name, is_read from public.annotation_for_you()$$,
   $$values ('mn-eins'::text, '/gast'::text, pg_temp.id('t3'), pg_temp.id('r_g1'), 'reply'::text, 'Bo Brandt'::text, false)$$,
   'for you: guest sees replies by others in own thread only in own project');
+select results_eq($$select text_start from public.annotation_for_you()$$, $$values ('Antwort an Gina'::text)$$,
+  'for you: guest gets text only from the own project');
+select is_empty($$select text_start from public.annotation_for_you() where comment_id = pg_temp.id('t2')$$,
+  'for you: no text of the mention stored for the guest in another project');
 select results_eq($$select project_domain from public.annotation_for_you()$$, $$values (null::text)$$,
   'for you: no domain for guests (the project has domains)');
 select results_eq($$select public.annotation_for_you_unread()$$, $$values (1)$$, 'for you: guest unread count');
@@ -236,6 +243,11 @@ select is_empty($$select * from public.annotation_for_you()$$, 'for you: nothing
 select results_eq($$select public.annotation_for_you_unread()$$, $$values (0)$$, 'for you: no unread without key');
 select pg_temp.as_key('k-falsch');
 select is_empty($$select * from public.annotation_for_you()$$, 'for you: nothing with a wrong key');
+reset role;
+update public.comments set text = repeat('ä', 139) || 'ßENDE' where id = pg_temp.id('t2');
+select pg_temp.as_key('k-bo');
+select results_eq($$select text_start from public.annotation_for_you() where comment_id = pg_temp.id('t2')$$,
+  $$values (repeat('ä', 139) || 'ß')$$, 'for you: text start cut to 140 characters by the database');
 
 -- ---------------------------------------------------------------- Read state
 select pg_temp.as_key(null);

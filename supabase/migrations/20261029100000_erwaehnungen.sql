@@ -119,7 +119,8 @@ $$;
 -- ---------------------------------------------------------------------------
 -- Entries of the key's person, newest first. A reply that also mentions me is one entry (mention).
 -- My own comments never create entries. project_domain: first domain in alphabetical order (null without,
--- and always null for guests, who never jump to another project).
+-- and always null for guests, who never jump to another project). text_start: the first 140 characters of
+-- the comment that created the entry.
 create function public.annotation_for_you()
 returns table (
   project_id text,
@@ -130,6 +131,7 @@ returns table (
   comment_id uuid,
   kind text,
   actor_name text,
+  text_start text,
   created_at timestamptz,
   is_read boolean
 )
@@ -161,7 +163,7 @@ as $$
   select c.project_id, pr.name,
     case when not me.is_guest then
       (select min(d.host) from public.annotation_project_domains d where d.project_id = c.project_id) end,
-    t.page_path, t.id, c.id, e.kind, a.display_name, c.created_at,
+    t.page_path, t.id, c.id, e.kind, a.display_name, left(c.text, 140), c.created_at,
     exists (
       select 1 from public.annotation_reads rd
       where rd.person_id = me.id and rd.thread_id = t.id and rd.read_at >= c.created_at)

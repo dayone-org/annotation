@@ -45,6 +45,8 @@ export type ForYouEntry = {
   comment_id: string;
   kind: "mention" | "reply";
   actor_name: string;
+  /** First 140 characters of the comment that created the entry (cut by the database). */
+  text_start: string;
   created_at: string;
   is_read: boolean;
 };
