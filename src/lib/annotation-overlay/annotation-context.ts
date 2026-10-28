@@ -13,7 +13,8 @@ export type AdminFunction =
   | "annotation_admin_project"
   | "annotation_admin_set_project"
   | "annotation_admin_new_project_key"
-  | "annotation_admin_add_staff";
+  | "annotation_admin_add_staff"
+  | "annotation_admin_add_staff_bulk";
 
 export type AnnotationContextValue = {
   activeThreadId: string | null;

@@ -30,6 +30,7 @@
     "build": "vite build && tsc -p tsconfig.lib.json",
     "prepare": "npm run build",
     "lint": "oxlint",
+    "test": "node --test 'src/**/*.test.ts'",
     "lint:fix": "oxlint --fix",
     "fmt": "oxfmt",
     "fmt:check": "oxfmt --check",

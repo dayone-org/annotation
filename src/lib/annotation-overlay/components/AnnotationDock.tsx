@@ -50,6 +50,7 @@ import type {
   CommentListTab,
   ForYouEntry,
 } from "../types";
+import { parseStaffCsv, toCsv, type StaffCsvRow } from "../csv";
 import { getStorageKey, readStoredString, writeStoredString } from "../storage";
 import { useAnnotation } from "../useAnnotation";
 import {
@@ -232,6 +233,15 @@ const ADMIN_TABS: Array<{ label: string; value: AdminTab }> = [
 
 type AdminProject = { id: string; name: string; domains: string[]; link_key: string | null };
 
+// One row of annotation_admin_add_staff_bulk: key only for a created staff member, skipped otherwise.
+type BulkRow = {
+  email: string | null;
+  name: string;
+  person_id: string | null;
+  key: string | null;
+  skipped: string | null;
+};
+
 // Links lead to the current page; the key goes into the fragment like in the admin script.
 function linkTo(key: string) {
   const target = new URL(window.location.origin + window.location.pathname);
@@ -276,6 +286,12 @@ function AdminCard() {
     domains: window.location.host,
   });
   const [staff, setStaff] = useState({ email: "", firstName: "", lastName: "" });
+  const csvInput = useRef<HTMLInputElement>(null);
+  // Rows of the chosen file until imported; statuses of preview or import, never with keys.
+  const [csvRows, setCsvRows] = useState<StaffCsvRow[] | null>(null);
+  const [csvStatus, setCsvStatus] = useState<BulkRow[]>([]);
+  // Blob URL of the result file with the links; revoked when replaced, downloaded or the tile closes.
+  const [csvDownload, setCsvDownload] = useState<string | null>(null);
   // In a project, Save waits for the stored domains so it never replaces them with location.host.
   const [loaded, setLoaded] = useState(!projectId);
 
@@ -301,6 +317,15 @@ function AdminCard() {
       isActive = false;
     };
   }, [callAdmin, projectId]);
+
+  useEffect(
+    () => () => {
+      if (csvDownload) {
+        URL.revokeObjectURL(csvDownload);
+      }
+    },
+    [csvDownload],
+  );
 
   const run = async (action: () => Promise<void>) => {
     setIsBusy(true);
@@ -353,6 +378,50 @@ function AdminCard() {
       }
     });
 
+  const previewCsv = (file: File) =>
+    run(async () => {
+      setCsvDownload(null);
+      setCsvRows(null);
+      setCsvStatus([]);
+      const parsed = parseStaffCsv(await file.text());
+      if ("error" in parsed) {
+        setError(parsed.error);
+        return;
+      }
+      const { data, error } = await callAdmin("annotation_admin_add_staff_bulk", {
+        p_rows: parsed.rows,
+        p_dry_run: true,
+      });
+      setError(error?.message ?? null);
+      if (!error) {
+        setCsvRows(parsed.rows);
+        setCsvStatus(data as BulkRow[]);
+      }
+    });
+
+  const importCsv = () =>
+    run(async () => {
+      const { data, error } = await callAdmin("annotation_admin_add_staff_bulk", {
+        p_rows: csvRows,
+      });
+      setError(error?.message ?? null);
+      if (error) {
+        return;
+      }
+      const result = data as BulkRow[];
+      const added = result.filter((row) => row.key);
+      if (added.length > 0) {
+        const csv = toCsv([
+          ["name", "email", "link"],
+          ...added.map((row) => [row.name, row.email ?? "", linkTo(row.key ?? "")]),
+        ]);
+        setCsvDownload(URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })));
+      }
+      setCsvRows(null);
+      setCsvStatus(result.map((row) => ({ ...row, key: null })));
+    });
+
+  const csvReady = csvStatus.filter((row) => !row.skipped).length;
   const canSaveProject =
     Boolean(project.id.trim() && project.name.trim() && project.domains.trim()) &&
     loaded &&
@@ -543,6 +612,83 @@ function AdminCard() {
               <Button disabled={!canAddStaff} size="sm" type="submit">
                 Add
               </Button>
+              <Button
+                disabled={isBusy}
+                onClick={() => csvInput.current?.click()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Import CSV
+              </Button>
+              <input
+                accept=".csv,text/csv"
+                aria-label="CSV file"
+                hidden
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  // Reset, so choosing the same file again reads it again.
+                  event.target.value = "";
+                  if (file) {
+                    void previewCsv(file);
+                  }
+                }}
+                ref={csvInput}
+                type="file"
+              />
+              {csvStatus.length > 0 ? (
+                <ScrollArea className="annotation:max-h-48 annotation:rounded-lg annotation:border">
+                  <ul aria-label="CSV rows" className="annotation:divide-y">
+                    {csvStatus.map((row, index) => (
+                      <li
+                        className="annotation:flex annotation:items-start annotation:gap-2 annotation:px-2.5 annotation:py-1.5 annotation:text-xs"
+                        key={index}
+                      >
+                        <div className="annotation:min-w-0 annotation:flex-1">
+                          {row.name ? (
+                            <p className="annotation:truncate annotation:font-medium">{row.name}</p>
+                          ) : null}
+                          <p className="annotation:truncate annotation:text-muted-foreground">
+                            {row.email}
+                          </p>
+                          {row.skipped ? (
+                            <p className="annotation:text-destructive">{row.skipped}</p>
+                          ) : null}
+                        </div>
+                        {row.skipped ? null : (
+                          <CheckIcon aria-label="OK" className="annotation:mt-0.5 annotation:size-3.5" />
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </ScrollArea>
+              ) : null}
+              {csvRows ? (
+                <Button
+                  disabled={isBusy || csvReady === 0}
+                  onClick={() => void importCsv()}
+                  size="sm"
+                  type="button"
+                >
+                  Import {csvReady}
+                </Button>
+              ) : null}
+              {csvDownload ? (
+                <div className="annotation:flex annotation:flex-col annotation:gap-1.5">
+                  <Button asChild className="annotation:no-underline" size="sm">
+                    <a
+                      download="staff-links.csv"
+                      href={csvDownload}
+                      onClick={() => window.setTimeout(() => setCsvDownload(null), 1000)}
+                    >
+                      Download CSV
+                    </a>
+                  </Button>
+                  <p className="annotation:text-xs annotation:text-muted-foreground">
+                    Contains access links. Delete after sending.
+                  </p>
+                </div>
+              ) : null}
             </FieldGroup>
           </form>
         ) : null}

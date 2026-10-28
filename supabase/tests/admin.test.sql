@@ -2,7 +2,7 @@
 -- readable nor writable through the API. Run like PostgREST (role anon, key in the x-annotation-key header).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(115);
+select plan(131);
 
 create function pg_temp.as_key(p_key text) returns void language plpgsql as $$
 begin
@@ -53,6 +53,8 @@ begin
     '42501', 'admins only', p_who || ': new_project_key refused');
   return next throws_ok($q$select * from public.annotation_admin_add_staff('dieb@dayone.de', 'Dieb')$q$,
     '42501', 'admins only', p_who || ': add_staff refused');
+  return next throws_ok($q$select * from public.annotation_admin_add_staff_bulk('[{"email": "dieb@dayone.de", "first_name": "Dieb"}]')$q$,
+    '42501', 'admins only', p_who || ': add_staff_bulk refused');
   return next throws_ok($q$select * from public.annotation_admin_project('adm-eins')$q$,
     '42501', 'admins only', p_who || ': admin_project refused');
   return next throws_ok($q$select link_key from public.annotation_projects$q$,
@@ -154,6 +156,80 @@ insert into keys select 'staff', key from public.annotation_admin_add_staff(' Ne
 select is((select length(k) from keys where name = 'staff'), 64, 'admin: staff key (256 bit)');
 select throws_ok($$select * from public.annotation_admin_add_staff('fremd@example.com', 'Fred')$$, '23514', null,
   'admin: DAYONE e-mail only');
+
+-- ---------------------------------------------------------------- CSV import (bulk)
+reset role;
+create temp table bulk_rows (r jsonb);
+create temp table bulk_out (n bigint, email text, name text, person_id uuid, key text, skipped text);
+grant select on bulk_rows to anon;
+grant select, insert on bulk_out to anon;
+-- Mixed rows: valid with spaces and capitals, foreign domain, duplicate, existing, one-letter name,
+-- valid with umlauts and without last name, a row that is no object.
+insert into bulk_rows values ('[
+  {"email": " Bulk.Eins@DAYONE.de ", "first_name": "Jürgen", "last_name": "Groß"},
+  {"email": "fremd@example.com", "first_name": "Fred"},
+  {"email": "bulk.eins@dayone.de", "first_name": "Jürgen", "last_name": "Zwei"},
+  {"email": "neu.adm@dayone.de", "first_name": "Nele"},
+  {"email": "bulk.zwei@dayone.de", "first_name": "X"},
+  {"email": "bulk.drei@dayone.de", "first_name": "Märta", "last_name": ""},
+  "x"
+]');
+select pg_temp.as_key('k-ada');
+select throws_ok($$select * from public.annotation_admin_add_staff_bulk(
+    (select jsonb_agg(jsonb_build_object('email', 'b' || i || '@dayone.de', 'first_name', 'Bea')) from generate_series(1, 201) i))$$,
+  '22023', 'At most 200 rows per import.', 'bulk: more than 200 rows refused');
+select results_eq($$select count(*)::int, count(*) filter (where skipped is null)::int from public.annotation_admin_add_staff_bulk(
+    (select jsonb_agg(jsonb_build_object('email', 'b' || i || '@dayone.de', 'first_name', 'Bea')) from generate_series(1, 200) i), true)$$,
+  $$values (200, 200)$$, 'bulk: 200 rows accepted');
+select throws_ok($$select * from public.annotation_admin_add_staff_bulk('{"email": "x@dayone.de"}')$$,
+  '22023', 'Rows must be a list.', 'bulk: no list refused');
+
+insert into bulk_out select o.n, o.email, o.name, o.person_id, o.key, o.skipped
+  from public.annotation_admin_add_staff_bulk((select r from bulk_rows), true)
+  with ordinality o(email, name, person_id, key, skipped, n);
+select results_eq($$select email, name, person_id is null, key is null, skipped from bulk_out order by n$$,
+  $$values ('bulk.eins@dayone.de'::text, 'Jürgen Groß'::text, true, true, null::text),
+           ('fremd@example.com', 'Fred', true, true, 'No @dayone.de address'),
+           ('bulk.eins@dayone.de', 'Jürgen Zwei', true, true, 'Duplicate in file'),
+           ('neu.adm@dayone.de', 'Nele', true, true, 'Already registered'),
+           ('bulk.zwei@dayone.de', 'X', true, true, 'Invalid name'),
+           ('bulk.drei@dayone.de', 'Märta', true, true, null),
+           (null, '', true, true, 'No @dayone.de address')$$,
+  'bulk preview: a status per row, in file order, no keys');
+reset role;
+select results_eq($$select count(*)::int from public.annotation_people where email like 'bulk.%' or email like 'b%@dayone.de' and first_name = 'Bea'$$,
+  $$values (0)$$, 'bulk preview: creates nobody');
+delete from bulk_out;
+
+select pg_temp.as_key('k-ada');
+insert into bulk_out select o.n, o.email, o.name, o.person_id, o.key, o.skipped
+  from public.annotation_admin_add_staff_bulk((select r from bulk_rows))
+  with ordinality o(email, name, person_id, key, skipped, n);
+select results_eq($$select email, name, person_id is null, length(key), skipped from bulk_out order by n$$,
+  $$values ('bulk.eins@dayone.de'::text, 'Jürgen Groß'::text, false, 64, null::text),
+           ('fremd@example.com', 'Fred', true, null, 'No @dayone.de address'),
+           ('bulk.eins@dayone.de', 'Jürgen Zwei', true, null, 'Duplicate in file'),
+           ('neu.adm@dayone.de', 'Nele', true, null, 'Already registered'),
+           ('bulk.zwei@dayone.de', 'X', true, null, 'Invalid name'),
+           ('bulk.drei@dayone.de', 'Märta', false, 64, null),
+           (null, '', true, null, 'No @dayone.de address')$$,
+  'bulk import: keys only for the valid rows, the rest skipped with a reason');
+reset role;
+select results_eq($$select p.email, p.first_name, p.last_name, p.display_name, p.is_admin, p.key_hash = extensions.digest(o.key, 'sha256')
+    from public.annotation_people p join bulk_out o on o.person_id = p.id order by p.email$$,
+  $$values ('bulk.drei@dayone.de'::text, 'Märta'::text, null::text, 'Märta'::text, false, true),
+           ('bulk.eins@dayone.de', 'Jürgen', 'Groß', 'Jürgen Groß', false, true)$$,
+  'bulk import: the two staff members stored with their key, no admins');
+select results_eq($$select count(*)::int from public.annotation_people where email like 'bulk.%'$$, $$values (2)$$,
+  'bulk import: nobody else created');
+select results_eq($$select count(*)::int from public.annotation_people where email = 'neu.adm@dayone.de' and display_name = 'Nele Nürnberg'$$,
+  $$values (1)$$, 'bulk import: the existing staff member is unchanged');
+select pg_temp.as_key((select key from bulk_out where email = 'bulk.eins@dayone.de' and key is not null));
+select results_eq($$select display_name, is_guest from public.annotation_whoami('adm-eins.test')$$,
+  $$values ('Jürgen Groß'::text, false)$$, 'bulk import: the new key signs in');
+reset role;
+select function_privs_are('public', 'annotation_admin_add_staff_bulk', array['jsonb', 'boolean'], 'authenticated', array[]::text[],
+  'admin_add_staff_bulk: not for authenticated');
 
 select pg_temp.as_key((select k from keys where name = 'guest'));
 select is_empty($$select * from public.annotation_whoami('adm-eins.test')$$, 'admin: guest of the old link locked out');
