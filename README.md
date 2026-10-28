@@ -30,6 +30,21 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 ```
 
+## From a new site to the first comment
+
+1. **Once per admin:** add yourself as staff and flag yourself as admin with the admin script
+   (`staff`, then `admin --person <id>`). Keep your link like a password.
+2. **Developer:** install the package and mount `<Annotation />` with the URL and key of the central
+   database (see Usage). No `projectId` needed.
+3. **Admin:** open the new site with your key appended (`https://new-site.com/#key=…`). The site has
+   no project yet, so only the admin tile shows. Create the project there; the domain is prefilled.
+4. **Admin:** in the admin tile, create the guest link and add staff who are not on the list yet.
+5. **Send the links** by mail or Slack. Staff open their personal link, guests open the project
+   link and enter their name. Without a link the overlay stays hidden.
+
+A new guest link locks out the old one and every guest who joined through it, so the tile asks
+before creating it. A lost staff link is replaced with `new-key`.
+
 ## Database
 
 One central Supabase database serves all projects. Apply `supabase/migrations/` once
