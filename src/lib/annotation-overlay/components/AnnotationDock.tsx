@@ -311,6 +311,7 @@ function AdminCard() {
   const saveProject = () =>
     run(async () => {
       const { error } = await callAdmin("annotation_admin_set_project", {
+        p_host: window.location.host,
         p_id: project.id.trim(),
         p_name: project.name.trim(),
         p_domains: project.domains.split(/[\s,]+/).filter(Boolean),
@@ -402,6 +403,7 @@ function AdminCard() {
                   id="annotation-admin-id"
                   onChange={(event) => setProject({ ...project, id: event.target.value })}
                   placeholder="marketing-site"
+                  disabled={Boolean(projectId)}
                   value={project.id}
                 />
               </Field>

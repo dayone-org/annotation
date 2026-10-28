@@ -2,7 +2,7 @@
 -- readable nor writable through the API. Run like PostgREST (role anon, key in the x-annotation-key header).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(80);
+select plan(93);
 
 create function pg_temp.als(p_key text) returns void language plpgsql as $$
 begin
@@ -47,7 +47,7 @@ select public.annotation_revoke_key('30000000-0000-4000-8000-000000000003');
 create function pg_temp.verweigert(p_wer text) returns setof text language plpgsql as $$
 begin
   return next ok(not public.annotation_admin_me(), p_wer || ': admin_me false');
-  return next throws_ok($q$select public.annotation_admin_set_project('adm-dieb', 'Dieb', array['dieb.test'])$q$,
+  return next throws_ok($q$select public.annotation_admin_set_project('dieb.test', 'adm-dieb', 'Dieb', array['dieb.test'])$q$,
     '42501', 'admins only', p_wer || ': set_project refused');
   return next throws_ok($q$select public.annotation_admin_new_project_key('adm-eins')$q$,
     '42501', 'admins only', p_wer || ': new_project_key refused');
@@ -83,7 +83,7 @@ select results_eq($$select count(*)::int from public.annotation_people where ema
 select pg_temp.als('k-ada');
 select ok(public.annotation_admin_me(), 'admin: admin_me true');
 select is_empty($$select * from public.annotation_whoami('adm-neu.test')$$, 'admin: unregistered domain has no project yet');
-select lives_ok($$select public.annotation_admin_set_project('adm-neu', 'Adm Neu', array['ADM-neu.test', 'adm-neu.test:5194'])$$,
+select lives_ok($$select public.annotation_admin_set_project('adm-neu.test', 'adm-neu', 'Adm Neu', array['ADM-neu.test', 'adm-neu.test:5194'])$$,
   'admin: creates a project');
 select results_eq($$select id, name, domains, link_key from public.annotation_admin_project('adm-neu')$$,
   $$values ('adm-neu'::text, 'Adm Neu'::text, array['adm-neu.test', 'adm-neu.test:5194'], null::text)$$,
@@ -91,12 +91,32 @@ select results_eq($$select id, name, domains, link_key from public.annotation_ad
 select is_empty($$select * from public.annotation_admin_project('adm-gibts-nicht')$$, 'admin: unknown project is empty');
 select results_eq($$select project_id, display_name from public.annotation_whoami('adm-neu.test:5194')$$,
   $$values ('adm-neu'::text, 'Ada Ärger'::text)$$, 'admin: overlay finds the new project by domain');
-select lives_ok($$select public.annotation_admin_set_project('adm-neu', 'Adm Neu Zwei', array['adm-neu.test'])$$,
-  'admin: changes name and domains');
+select lives_ok($$select public.annotation_admin_set_project('adm-neu.test:5194', 'adm-neu', 'Adm Neu Zwei', array['adm-neu.test'])$$,
+  'admin: changes name and domains of the page''s own project');
 select is_empty($$select * from public.annotation_whoami('adm-neu.test:5194')$$, 'admin: removed domain no longer resolves');
-select throws_ok($$select public.annotation_admin_set_project('adm-dup', 'Dup', array['adm-eins.test'])$$,
+
+-- Taking over another project by its ID: refused from its own page only.
+select throws_ok($$select public.annotation_admin_set_project('adm-neu.test', 'adm-eins', 'Gekapert', array['adm-neu.test'])$$,
+  '42501', 'ID already in use by another project', 'admin: ID of another project refused on a page of a different project');
+select throws_ok($$select public.annotation_admin_set_project('niemand.test', 'adm-eins', 'Gekapert', array['niemand.test'])$$,
+  '42501', 'ID already in use by another project', 'admin: ID of another project refused on a page without project');
+select throws_ok($$select public.annotation_admin_set_project('', 'adm-eins', 'Gekapert', array['niemand.test'])$$,
+  '42501', 'ID already in use by another project', 'admin: ID of another project refused without host');
+select throws_ok($$select public.annotation_admin_set_project('adm-eins.test', 'adm-neu', 'Gekapert', array['adm-eins.test'])$$,
+  '42501', 'ID already in use by another project', 'admin: the host of one project is no pretext to change another');
+select results_eq($$select id, name, domains from public.annotation_admin_project('adm-eins') union all
+    select id, name, domains from public.annotation_admin_project('adm-neu')$$,
+  $$values ('adm-eins'::text, 'Adm Eins'::text, array['adm-eins.test']), ('adm-neu', 'Adm Neu Zwei', array['adm-neu.test'])$$,
+  'admin: refused takeovers change nothing');
+select lives_ok($$select public.annotation_admin_set_project(' ADM-eins.test ', 'adm-eins', 'Adm Eins', array['adm-eins.test'])$$,
+  'admin: own project found by host regardless of case and spaces');
+select lives_ok($$select public.annotation_admin_set_project('adm-eins.test', 'adm-drei', 'Adm Drei', array['adm-drei.test'])$$,
+  'admin: new ID can be created on a page that has a project');
+select hasnt_function('public', 'annotation_admin_set_project', array['text', 'text', 'text[]'],
+  'admin: the old set_project without host is gone');
+select throws_ok($$select public.annotation_admin_set_project('adm-dup.test', 'adm-dup', 'Dup', array['adm-eins.test'])$$,
   '23505', null, 'admin: domain of another project rejected');
-select ok(pg_temp.details($$select public.annotation_admin_set_project('adm-dup', 'Dup', array['adm-eins.test'])$$)
+select ok(pg_temp.details($$select public.annotation_admin_set_project('adm-dup.test', 'adm-dup', 'Dup', array['adm-eins.test'])$$)
   like '%(host)=(adm-eins.test)%', 'admin: error names the domain');
 
 select is((select link_key from public.annotation_admin_project('adm-eins')), null,
@@ -150,7 +170,7 @@ select column_privs_are('public', 'annotation_people', 'is_admin', 'anon', array
 select column_privs_are('public', 'annotation_people', 'is_admin', 'authenticated', array[]::text[], 'people.is_admin: authenticated without privileges');
 select function_privs_are('public', 'annotation_set_admin', array['uuid'], 'anon', array[]::text[], 'set_admin: not for anon');
 select function_privs_are('public', 'annotation_set_admin', array['uuid'], 'authenticated', array[]::text[], 'set_admin: not for authenticated');
-select function_privs_are('public', 'annotation_admin_set_project', array['text', 'text', 'text[]'], 'authenticated', array[]::text[],
+select function_privs_are('public', 'annotation_admin_set_project', array['text', 'text', 'text', 'text[]'], 'authenticated', array[]::text[],
   'admin_set_project: not for authenticated');
 select function_privs_are('public', 'annotation_admin_add_staff', array['text', 'text', 'text'], 'authenticated', array[]::text[],
   'admin_add_staff: not for authenticated');
@@ -176,6 +196,25 @@ select is((select link_key from public.annotation_admin_project('adm-eins')), (s
   'script: admin sees the link from the script');
 select ok(not public.annotation_project_key_ok((select k from schluessel where name = 'neu-link'), 'adm-eins.test'),
   'script: the link shown before is locked');
+reset role;
+
+-- ---------------------------------------------------------------- Script (service role): any project by ID, as before
+set local role service_role;
+select lives_ok($$select public.annotation_set_project('adm-drei', 'Adm Drei Skript', array['adm-drei.test'])$$,
+  'script: service role still changes a project by ID');
+reset role;
+select results_eq($$select name from public.annotation_projects where id = 'adm-drei'$$, $$values ('Adm Drei Skript'::text)$$,
+  'script: name changed');
+
+-- ---------------------------------------------------------------- Revoke removes the admin flag
+select results_eq($$select is_admin, key_hash is null from public.annotation_people where email = 'rita.adm@dayone.de'$$,
+  $$values (false, true)$$, 'revoke: admin flag removed with the key');
+set local role service_role;
+insert into schluessel values ('rita-neu', public.annotation_new_key('30000000-0000-4000-8000-000000000003'));
+reset role;
+select pg_temp.als((select k from schluessel where name = 'rita-neu'));
+select ok(not public.annotation_admin_me(), 'revoke: a new key after revoke is no admin key');
+select ok(exists (select 1 from public.annotation_whoami('adm-eins.test')), 'revoke: the new key still works as staff');
 reset role;
 
 -- ---------------------------------------------------------------- Service role sets the flag
