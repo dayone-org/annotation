@@ -2,7 +2,7 @@
 -- readable nor writable through the API. Run like PostgREST (role anon, key in the x-annotation-key header).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(93);
+select plan(94);
 
 create function pg_temp.als(p_key text) returns void language plpgsql as $$
 begin
@@ -108,6 +108,7 @@ select results_eq($$select id, name, domains from public.annotation_admin_projec
     select id, name, domains from public.annotation_admin_project('adm-neu')$$,
   $$values ('adm-eins'::text, 'Adm Eins'::text, array['adm-eins.test']), ('adm-neu', 'Adm Neu Zwei', array['adm-neu.test'])$$,
   'admin: refused takeovers change nothing');
+select is_empty($$select * from public.annotation_whoami('niemand.test')$$, 'admin: a refused ID adds none of its domains');
 select lives_ok($$select public.annotation_admin_set_project(' ADM-eins.test ', 'adm-eins', 'Adm Eins', array['adm-eins.test'])$$,
   'admin: own project found by host regardless of case and spaces');
 select lives_ok($$select public.annotation_admin_set_project('adm-eins.test', 'adm-drei', 'Adm Drei', array['adm-drei.test'])$$,

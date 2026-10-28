@@ -381,10 +381,11 @@ export function AnnotationProvider({
   );
 
   // Admin tile: the database checks the key; after a change whoami runs again (e.g. a new project for this page).
+  // A refusal re-checks as well: pages without a project have no realtime topic that would report a revocation.
   const callAdmin = useCallback(
     async (fn: AdminFunction, args: Record<string, unknown>) => {
       const { data, error } = await client.rpc(fn, args);
-      if (!error && fn !== "annotation_admin_project") {
+      if (error?.message === "admins only" || (!error && fn !== "annotation_admin_project")) {
         setSessionCheck((value) => value + 1);
       }
       return { data: data as unknown, error };

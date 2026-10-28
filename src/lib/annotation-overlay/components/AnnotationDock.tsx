@@ -272,10 +272,8 @@ function AdminCard() {
   // In a project, Save waits for the stored domains so it never replaces them with location.host.
   const [loaded, setLoaded] = useState(!projectId);
 
+  // Also without a project: the call checks the admin flag when the tile opens.
   useEffect(() => {
-    if (!projectId) {
-      return;
-    }
     let isActive = true;
     void callAdmin("annotation_admin_project", { p_project_id: projectId }).then(
       ({ data, error }) => {
