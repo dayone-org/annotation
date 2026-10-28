@@ -39,14 +39,16 @@ export function takeLinkKey(): string {
   if (!match && linkKey !== undefined) {
     return linkKey;
   }
-  try {
-    linkKey = match ? decodeURIComponent(match[1]).trim() : "";
-  } catch {
-    // Malformed escape such as "%E0": ignore the key instead of crashing the host page.
-    linkKey = "";
-  }
+  // Keys are 64 lowercase hex characters. Anything else (bad escape, non-Latin-1, megabytes) is dropped
+  // here instead of failing later as a request header.
+  linkKey = match && /^[0-9a-f]{64}$/.test(match[1]) ? match[1] : "";
   if (match) {
-    const rest = hash.replace(match[0], "").replace(/^#?&?/, "");
+    // Remove every key= part, so "#key=A&key=B" leaves nothing behind.
+    const rest = hash
+      .slice(1)
+      .split("&")
+      .filter((part) => !part.startsWith("key="))
+      .join("&");
     window.history.replaceState(
       window.history.state,
       "",

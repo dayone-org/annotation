@@ -214,10 +214,8 @@ export function AnnotationProvider({
 
     void (async () => {
       if (linkKey && linkKey !== accessKey) {
+        // A failed link check falls through to the stored key, so a revocation still takes effect.
         const viaLink = await whoami(linkKey);
-        if (viaLink === undefined) {
-          return;
-        }
         if (viaLink) {
           if (isActive) {
             writeStoredString(keyStorageKey, linkKey);
