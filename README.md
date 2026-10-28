@@ -120,8 +120,12 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=
   resolved threads drop out. An entry from another project links to its first domain and opens the
   thread there. A click there signs you in on that domain with a one-time code
   (`#annotation-handoff=<code>&annotation-thread=<id>`; staff only, valid 2 minutes, usable once, only
-  on that project's domain; the database stores only its hash and the key encrypted with it). Opened
-  in a new tab, the link carries no code and needs the key stored on that domain
+  on that project's domain, never through the `projectId` prop; the database stores only its hash and the
+  key encrypted with it). The code is used up on landing in any case; a key that already works on that
+  domain stays and only the thread opens, so a link from someone else cannot replace it. Opened in a new
+  tab, the link carries no code and needs the key stored on that domain
+- Known limit: a browser without a working key takes the key of whoever made the link, like with
+  `#key=…`. `#key=…` itself still replaces a stored key on purpose, to switch people
 - Optional `projectId`, `pagePath`, `position`, and `storageKeyPrefix` props for advanced integration
 
 **Breaking change:** the `tableName` prop is gone. The overlay always uses the `comments` table of
