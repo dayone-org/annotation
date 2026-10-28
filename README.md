@@ -109,6 +109,13 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=
 - Dock positioning in all four corners
 - Personal and per-project access keys, project isolation and server-side authors via row level security
 - Guests rename themselves in the settings; the new name applies to all of their comments
+- Mentions: staff type `@` in a comment or reply and pick a colleague; the name is highlighted.
+  Only staff can mention and be mentioned; for guests `@` is plain text
+- "For you" filter in the comment list: mentions of you and replies in threads you started, from
+  all projects your key can access (guests: their project only). The unread count also shows on
+  the list button. Opening a thread marks its entries read; "Mark all as read" clears the rest;
+  resolved threads drop out. An entry from another project links to its first domain and opens the
+  thread there (`#annotation-thread=<id>`), provided the key is stored on that domain too
 - Optional `projectId`, `pagePath`, `position`, and `storageKeyPrefix` props for advanced integration
 
 **Breaking change:** the `tableName` prop is gone. The overlay always uses the `comments` table of
