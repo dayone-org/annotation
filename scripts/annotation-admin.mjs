@@ -62,6 +62,11 @@ async function rpc(fn, args) {
       `Domain${domain ? ` ${domain}` : ""} already belongs to another project; remove it there first.`,
     );
   }
+  if (error?.code === "23514" && /_(first|last|display)_name_check"/.test(error.message)) {
+    fail(
+      "Name not allowed: first and last name together may have at most 48 characters and need at least two letters or digits.",
+    );
+  }
   if (error) fail(`${fn}: ${error.message}`);
   return data;
 }
