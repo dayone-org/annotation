@@ -2,7 +2,7 @@
 -- readable nor writable through the API. Run like PostgREST (role anon, key in the x-annotation-key header).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(59);
+select plan(80);
 
 create function pg_temp.als(p_key text) returns void language plpgsql as $$
 begin
@@ -34,7 +34,7 @@ insert into public.annotation_people (id, email, first_name, display_name, key_h
   ('30000000-0000-4000-8000-000000000003', 'rita.adm@dayone.de', 'Rita', 'Rita', extensions.digest('k-rita', 'sha256'), true);
 
 create temp table schluessel (name text primary key, k text);
-grant select, insert on schluessel to anon;
+grant select, insert on schluessel to anon, service_role;
 
 select pg_temp.als(null);
 insert into schluessel values ('gast', public.annotation_join('pk-adm', 'Gesa Gast'));
@@ -53,6 +53,10 @@ begin
     '42501', 'admins only', p_wer || ': new_project_key refused');
   return next throws_ok($q$select * from public.annotation_admin_add_staff('dieb@dayone.de', 'Dieb')$q$,
     '42501', 'admins only', p_wer || ': add_staff refused');
+  return next throws_ok($q$select * from public.annotation_admin_project('adm-eins')$q$,
+    '42501', 'admins only', p_wer || ': admin_project refused');
+  return next throws_ok($q$select link_key from public.annotation_projects$q$,
+    '42501', null, p_wer || ': guest link not readable from the table');
 end $$;
 grant execute on function pg_temp.verweigert(text) to anon;
 
@@ -81,6 +85,10 @@ select ok(public.annotation_admin_me(), 'admin: admin_me true');
 select is_empty($$select * from public.annotation_whoami('adm-neu.test')$$, 'admin: unregistered domain has no project yet');
 select lives_ok($$select public.annotation_admin_set_project('adm-neu', 'Adm Neu', array['ADM-neu.test', 'adm-neu.test:5194'])$$,
   'admin: creates a project');
+select results_eq($$select id, name, domains, link_key from public.annotation_admin_project('adm-neu')$$,
+  $$values ('adm-neu'::text, 'Adm Neu'::text, array['adm-neu.test', 'adm-neu.test:5194'], null::text)$$,
+  'admin: reads name and all domains, no link yet');
+select is_empty($$select * from public.annotation_admin_project('adm-gibts-nicht')$$, 'admin: unknown project is empty');
 select results_eq($$select project_id, display_name from public.annotation_whoami('adm-neu.test:5194')$$,
   $$values ('adm-neu'::text, 'Ada Ärger'::text)$$, 'admin: overlay finds the new project by domain');
 select lives_ok($$select public.annotation_admin_set_project('adm-neu', 'Adm Neu Zwei', array['adm-neu.test'])$$,
@@ -91,7 +99,11 @@ select throws_ok($$select public.annotation_admin_set_project('adm-dup', 'Dup', 
 select ok(pg_temp.details($$select public.annotation_admin_set_project('adm-dup', 'Dup', array['adm-eins.test'])$$)
   like '%(host)=(adm-eins.test)%', 'admin: error names the domain');
 
+select is((select link_key from public.annotation_admin_project('adm-eins')), null,
+  'admin: link from before the plain text has none');
 insert into schluessel values ('neu-link', public.annotation_admin_new_project_key('adm-eins'));
+select is((select link_key from public.annotation_admin_project('adm-eins')), (select k from schluessel where name = 'neu-link'),
+  'admin: reads the current guest link');
 select is((select length(k) from schluessel where name = 'neu-link'), 64, 'admin: new project link (256 bit)');
 select ok(public.annotation_project_key_ok((select k from schluessel where name = 'neu-link'), 'adm-eins.test'),
   'admin: new project link valid');
@@ -142,6 +154,29 @@ select function_privs_are('public', 'annotation_admin_set_project', array['text'
   'admin_set_project: not for authenticated');
 select function_privs_are('public', 'annotation_admin_add_staff', array['text', 'text', 'text'], 'authenticated', array[]::text[],
   'admin_add_staff: not for authenticated');
+
+select column_privs_are('public', 'annotation_projects', 'link_key', 'anon', array[]::text[], 'projects.link_key: anon without privileges');
+select column_privs_are('public', 'annotation_projects', 'link_key', 'authenticated', array[]::text[],
+  'projects.link_key: authenticated without privileges');
+select function_privs_are('public', 'annotation_admin_project', array['text'], 'authenticated', array[]::text[],
+  'admin_project: not for authenticated');
+select is_empty($$select 1 from pg_publication_tables where schemaname = 'public' and tablename = 'annotation_projects'$$,
+  'projects: not in a realtime publication');
+-- Only these two functions touch the plain text; a new one has to be checked and added here.
+select is((select array_agg(proname::text order by proname) from pg_proc
+  where pronamespace = 'public'::regnamespace and prosrc like '%link_key%'),
+  array['annotation_admin_project', 'annotation_new_project_key'], 'link_key: read only by the admin function');
+
+-- ---------------------------------------------------------------- Script (service role): link is stored too
+set local role service_role;
+insert into schluessel values ('script-link', public.annotation_new_project_key('adm-eins'));
+reset role;
+select pg_temp.als('k-ada');
+select is((select link_key from public.annotation_admin_project('adm-eins')), (select k from schluessel where name = 'script-link'),
+  'script: admin sees the link from the script');
+select ok(not public.annotation_project_key_ok((select k from schluessel where name = 'neu-link'), 'adm-eins.test'),
+  'script: the link shown before is locked');
+reset role;
 
 -- ---------------------------------------------------------------- Service role sets the flag
 set local role service_role;

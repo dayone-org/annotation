@@ -380,11 +380,11 @@ export function AnnotationProvider({
     [client, loadComments, session],
   );
 
-  // Admin tile: the database checks the key; afterwards whoami runs again (e.g. a new project for this page).
+  // Admin tile: the database checks the key; after a change whoami runs again (e.g. a new project for this page).
   const callAdmin = useCallback(
     async (fn: AdminFunction, args: Record<string, unknown>) => {
       const { data, error } = await client.rpc(fn, args);
-      if (!error) {
+      if (!error && fn !== "annotation_admin_project") {
         setSessionCheck((value) => value + 1);
       }
       return { data: data as unknown, error };

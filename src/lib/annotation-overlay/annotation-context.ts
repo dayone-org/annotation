@@ -3,6 +3,7 @@ import { createContext } from "react";
 import type { AnnotationComment, AnnotationRect, PendingAnnotation } from "./types";
 
 export type AdminFunction =
+  | "annotation_admin_project"
   | "annotation_admin_set_project"
   | "annotation_admin_new_project_key"
   | "annotation_admin_add_staff";

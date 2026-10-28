@@ -223,8 +223,16 @@ const ADMIN_TABS: Array<{ label: string; value: AdminTab }> = [
   { label: "Staff", value: "staff" },
 ];
 
-// A link with a key is shown once; whoever closes the tile has to create a new one.
-function OneTimeLink({ url }: { url: string }) {
+type AdminProject = { id: string; name: string; domains: string[]; link_key: string | null };
+
+// Links lead to the current page; the key goes into the fragment like in the admin script.
+function linkTo(key: string) {
+  const target = new URL(window.location.origin + window.location.pathname);
+  target.hash = `key=${key}`;
+  return target.toString();
+}
+
+function CopyLink({ url }: { url: string }) {
   const [copyState, setCopyState] = useCopyState();
 
   return (
@@ -261,12 +269,33 @@ function AdminCard() {
     domains: window.location.host,
   });
   const [staff, setStaff] = useState({ email: "", firstName: "", lastName: "" });
-  // Links lead to the current page; the key goes into the fragment like in the admin script.
-  const linkTo = (key: string) => {
-    const target = new URL(window.location.origin + window.location.pathname);
-    target.hash = `key=${key}`;
-    return target.toString();
-  };
+  // In a project, Save waits for the stored domains so it never replaces them with location.host.
+  const [loaded, setLoaded] = useState(!projectId);
+
+  useEffect(() => {
+    if (!projectId) {
+      return;
+    }
+    let isActive = true;
+    void callAdmin("annotation_admin_project", { p_project_id: projectId }).then(
+      ({ data, error }) => {
+        const row = (data as AdminProject[] | null)?.[0];
+        if (!isActive) {
+          return;
+        }
+        setError(error?.message ?? null);
+        if (row) {
+          setProject({ id: row.id, name: row.name, domains: row.domains.join(", ") });
+          // Links created before the key was stored have none; then only "New link" is offered.
+          setGuestLink(row.link_key ? linkTo(row.link_key) : "");
+          setLoaded(true);
+        }
+      },
+    );
+    return () => {
+      isActive = false;
+    };
+  }, [callAdmin, projectId]);
 
   const run = async (action: () => Promise<void>) => {
     setIsBusy(true);
@@ -327,7 +356,9 @@ function AdminCard() {
     });
 
   const canSaveProject =
-    Boolean(project.id.trim() && project.name.trim() && project.domains.trim()) && !isBusy;
+    Boolean(project.id.trim() && project.name.trim() && project.domains.trim()) &&
+    loaded &&
+    !isBusy;
   const canAddStaff = Boolean(staff.email.trim() && staff.firstName.trim()) && !isBusy;
 
   return (
@@ -403,7 +434,7 @@ function AdminCard() {
             <div className="annotation:flex annotation:flex-col annotation:items-start annotation:gap-2">
               <Badge variant="secondary">{projectId}</Badge>
             </div>
-            {guestLink ? <OneTimeLink url={guestLink} /> : null}
+            {guestLink ? <CopyLink url={guestLink} /> : null}
             {confirmingLink ? (
               <div
                 className="annotation:flex annotation:flex-col annotation:gap-2"
@@ -497,7 +528,7 @@ function AdminCard() {
                   />
                 </Field>
               </div>
-              {staffLink ? <OneTimeLink url={staffLink} /> : null}
+              {staffLink ? <CopyLink url={staffLink} /> : null}
               <Button disabled={!canAddStaff} size="sm" type="submit">
                 Add
               </Button>
