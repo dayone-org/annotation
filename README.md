@@ -100,13 +100,17 @@ overlay shows admins only this tile, so they can register the page.
 
 **Images on comments** are files in the public storage bucket `comment-images`, at
 `<project>/<person>/<random UUID>.webp|jpg`; anyone with the address can open them, without a key.
-Uploading and deleting need a valid key: own folder in a project of the key, WebP or JPEG, at most
-5 MiB. A comment takes up to 5 of its author's own uploads in the same project
-(`annotation_add_comment_with_images`); the table `annotation_images` holds the references and is
-readable like the comment. Deleting a comment deletes its references; the uploader may then delete the
-files. A stored file never changes (also not through a signed upload URL), and its type must match its
-extension; a comment takes only uploads younger than an hour. `orphan-images` lists files no comment uses
-that are older than 24 hours; `--delete` removes them.
+Each image is stored twice: the image (longest side at most 1600 px) and a thumb (at most 144 px,
+same type, its own random name). The squares under a comment load only the thumbs; the large view
+loads the image. Uploading and deleting need a valid key: own folder in a project of the key, WebP or
+JPEG, at most 5 MiB. A comment takes up to 5 images, each with its thumb, from its author's own uploads
+in the same project, younger than an hour, each file once (`annotation_add_comment_with_images`), and
+needs text besides spaces and zero-width characters; the table `annotation_images` holds the references
+and is readable like the comment. Deleting a comment deletes its references; the uploader may then
+delete the files. A stored file never changes (also not through a signed upload URL), and its type must
+match its extension. `orphan-images` lists files no comment uses that are older than 24 hours;
+`--delete` removes them. The overlay reads `annotation_images.thumb_path`, so apply the migration before
+releasing a package version with images.
 
 ## Environment Variables
 
