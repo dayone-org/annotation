@@ -10,6 +10,7 @@ import {
 } from "react";
 import type {
   AnnotationComment,
+  AnnotationImage,
   AnnotationOverlayProps,
   AnnotationRect,
   CommentListTab,
@@ -22,6 +23,7 @@ import {
   type AdminFunction,
   type AnnotationContextValue,
 } from "./annotation-context";
+import { IMAGE_BUCKET, imageUrl, type PreparedImage } from "./images";
 import { querySelectorSafely } from "./selector";
 import {
   DEFAULT_STORAGE_KEY_PREFIX,
@@ -51,7 +53,7 @@ const NO_ENTRIES: ForYouEntry[] = [];
 const TABLE = "comments";
 // The display name is joined in when reading, so a rename also changes old comments.
 const AUTHOR_SELECT = "*, author:annotation_people(display_name, is_guest)";
-const COMMENT_SELECT = `${AUTHOR_SELECT}, mentions:annotation_mentions(person_id)`;
+const COMMENT_SELECT = `${AUTHOR_SELECT}, mentions:annotation_mentions(person_id), images:annotation_images(path, width, height, position)`;
 const LIST_TABS: CommentListTab[] = ["all", "for-you", "resolved"];
 
 function readStoredListTab(key: string): CommentListTab {
@@ -67,18 +69,31 @@ type Session = {
   realtime_topic: string;
 };
 
-type CommentRow = Omit<Partial<AnnotationComment>, "author" | "mentions"> & {
+type CommentRow = Omit<Partial<AnnotationComment>, "author" | "mentions" | "images"> & {
   id: string;
   author?: { display_name: string; is_guest: boolean } | null;
   mentions?: Array<{ person_id: string }> | null;
+  images?: Array<Omit<AnnotationImage, "url"> & { position: number }> | null;
 };
 
-function toComment({ author, mentions, ...row }: CommentRow): AnnotationComment {
+function toComment(
+  { author, mentions, images, ...row }: CommentRow,
+  supabaseUrl: string,
+): AnnotationComment {
   return normalizeComment({
     ...row,
     author: author?.display_name,
     author_is_guest: author?.is_guest ?? false,
     mentions: mentions?.map((mention) => mention.person_id),
+    images: images
+      ?.slice()
+      .sort((left, right) => left.position - right.position)
+      .map(({ path, width, height }) => ({
+        path,
+        url: imageUrl(supabaseUrl, path),
+        width,
+        height,
+      })),
   });
 }
 
@@ -191,10 +206,12 @@ export function AnnotationProvider({
     }
 
     startTransition(() => {
-      setComments(sortComments((data ?? []).map((row) => toComment(row as CommentRow))));
+      setComments(
+        sortComments((data ?? []).map((row) => toComment(row as CommentRow, supabaseUrl))),
+      );
       setIsLoading(false);
     });
-  }, [client, normalizedProjectId]);
+  }, [client, normalizedProjectId, supabaseUrl]);
 
   const forYouSequence = useRef(0);
   // Open mark_read writes: a list loaded meanwhile may predate the write and would undo the optimistic
@@ -748,8 +765,8 @@ export function AnnotationProvider({
   );
 
   const submitComment = useCallback(
-    async (text: string, mentionIds: string[] = []) => {
-      if (!normalizedProjectId) {
+    async (text: string, mentionIds: string[] = [], images: PreparedImage[] = []) => {
+      if (!normalizedProjectId || !personId) {
         return false;
       }
 
@@ -764,26 +781,65 @@ export function AnnotationProvider({
 
       setErrorMessage(null);
 
-      const { data, error } = await client
-        .rpc("annotation_add_comment", {
-          p_project_id: normalizedProjectId,
-          p_page_path: currentPath,
-          p_text: nextText,
-          p_selector: composer.parentId ? null : composer.selector,
-          p_rect: composer.parentId ? null : composer.rect,
-          p_parent_id: composer.parentId,
-          p_mentions: mentionIds,
-        })
-        // The function's row has no mentions yet; they are added below, the next ping loads them.
+      // Files first, then the comment that points to them. On any failure the composer keeps text and
+      // images; uploads no comment uses are removed (best effort, orphan-images catches the rest).
+      const bucket = client.storage.from(IMAGE_BUCKET);
+      const uploaded: AnnotationImage[] = [];
+      const dropUploads = () => {
+        if (uploaded.length) {
+          void bucket.remove(uploaded.map((image) => image.path)).catch(() => undefined);
+        }
+      };
+      for (const image of images) {
+        const path = `${normalizedProjectId}/${personId}/${crypto.randomUUID()}.${image.extension}`;
+        const { error: uploadError } = await bucket
+          .upload(path, image.blob, { contentType: image.blob.type, upsert: false })
+          .catch(() => ({ error: true }));
+        if (uploadError) {
+          dropUploads();
+          setErrorMessage("Image upload failed. Try again.");
+          return false;
+        }
+        uploaded.push({
+          path,
+          url: imageUrl(supabaseUrl, path),
+          width: image.width,
+          height: image.height,
+        });
+      }
+
+      const args = {
+        p_project_id: normalizedProjectId,
+        p_page_path: currentPath,
+        p_text: nextText,
+        p_selector: composer.parentId ? null : composer.selector,
+        p_rect: composer.parentId ? null : composer.rect,
+        p_parent_id: composer.parentId,
+        p_mentions: mentionIds,
+      };
+      const { data, error } = await (
+        uploaded.length
+          ? client.rpc("annotation_add_comment_with_images", {
+              ...args,
+              p_images: uploaded.map(({ path, width, height }) => ({ path, width, height })),
+            })
+          : client.rpc("annotation_add_comment", args)
+      )
+        // The function's row has no mentions or images yet; they are set below, the next ping loads them.
         .select(AUTHOR_SELECT)
         .single();
 
       if (error) {
+        dropUploads();
         setErrorMessage(error.message);
         return false;
       }
 
-      const inserted = { ...toComment(data as CommentRow), mentions: mentionIds };
+      const inserted = {
+        ...toComment(data as CommentRow, supabaseUrl),
+        mentions: mentionIds,
+        images: uploaded,
+      };
       startTransition(() => {
         setComments((previous) => sortComments([...previous, inserted]));
       });
@@ -795,7 +851,7 @@ export function AnnotationProvider({
       );
       return true;
     },
-    [client, commentMap, composer, currentPath, normalizedProjectId],
+    [client, commentMap, composer, currentPath, normalizedProjectId, personId, supabaseUrl],
   );
 
   const removeThread = useCallback(
@@ -833,6 +889,14 @@ export function AnnotationProvider({
       startTransition(() => {
         setComments((previous) => previous.filter((comment) => comment.id !== threadId));
       });
+      // The references went with the comment; now the files. A failure is not the user's problem,
+      // orphan-images removes what is left.
+      if (target.images.length) {
+        void client.storage
+          .from(IMAGE_BUCKET)
+          .remove(target.images.map((image) => image.path))
+          .catch(() => undefined);
+      }
 
       if (composer?.parentId === threadId) {
         closeComposer();

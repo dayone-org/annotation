@@ -1,18 +1,21 @@
-import { PaperPlaneRightIcon } from "@phosphor-icons/react";
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import { PaperclipIcon, PaperPlaneRightIcon, XIcon } from "@phosphor-icons/react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { StaffMember } from "../types";
+import { ACCEPTED_TYPES, MAX_IMAGES, prepareImage, type PreparedImage } from "../images";
 import { splitMentions } from "../utils";
 
 type AnnotationComposerProps = {
   /** Staff for the mention picker; empty (guests) means "@" is plain text. */
   directory?: StaffMember[];
   errorMessage?: string | null;
-  onSubmit: (text: string, mentionIds: string[]) => Promise<boolean>;
+  onSubmit: (text: string, mentionIds: string[], images: PreparedImage[]) => Promise<boolean>;
 };
+
+type Attachment = PreparedImage & { previewUrl: string };
 
 const MAX_OPTIONS = 6;
 
@@ -42,6 +45,44 @@ export function AnnotationComposer({
   // Caret after an inserted name, set right after React wrote the new value (before the next key).
   const pendingCaret = useRef<number | null>(null);
   const listId = useId();
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [isPreparing, setIsPreparing] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
+
+  // Free the preview blobs when the composer goes away.
+  useEffect(
+    () => () => attachmentsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl)),
+    [],
+  );
+
+  const attach = async (files: File[]) => {
+    setAttachError(null);
+    setIsPreparing(true);
+    const added: Attachment[] = [];
+    // shortcut: files beyond the fifth image are ignored without a hint (the paperclip is disabled at five).
+    for (const file of files.slice(0, MAX_IMAGES - attachmentsRef.current.length)) {
+      try {
+        const prepared = await prepareImage(file);
+        added.push({
+          ...prepared,
+          previewUrl: URL.createObjectURL(prepared.blob),
+        });
+      } catch (error) {
+        setAttachError(error instanceof Error ? error.message : "Image could not be read.");
+      }
+    }
+    setAttachments((previous) => [...previous, ...added]);
+    setIsPreparing(false);
+  };
+
+  const detach = (previewUrl: string) => {
+    URL.revokeObjectURL(previewUrl);
+    setAttachments((previous) => previous.filter((item) => item.previewUrl !== previewUrl));
+    setAttachError(null);
+  };
 
   useLayoutEffect(() => {
     if (pendingCaret.current !== null) {
@@ -106,10 +147,13 @@ export function AnnotationComposer({
         const mentionIds = picked
           .filter((person) => mentioned.has(person.display_name))
           .map((person) => person.person_id);
-        const didSave = await onSubmit(value, mentionIds);
+        const didSave = await onSubmit(value, mentionIds, attachments);
         if (didSave) {
           setValue("");
           setPicked([]);
+          attachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+          setAttachments([]);
+          setAttachError(null);
         }
         setIsSubmitting(false);
       }}
@@ -198,6 +242,38 @@ export function AnnotationComposer({
         </div>
       ) : null}
 
+      {attachments.length ? (
+        <div className="annotation:flex annotation:flex-wrap annotation:gap-2 annotation:px-2 annotation:pb-2">
+          {attachments.map((item, index) => (
+            <div className="annotation:relative annotation:size-12" key={item.previewUrl}>
+              <img
+                alt={`Attachment ${index + 1}`}
+                className="annotation:size-full annotation:rounded-md annotation:border annotation:border-border annotation:object-cover"
+                src={item.previewUrl}
+              />
+              <button
+                aria-label={`Remove attachment ${index + 1}`}
+                className="annotation:absolute annotation:-top-1.5 annotation:-right-1.5 annotation:flex annotation:size-5 annotation:items-center annotation:justify-center annotation:rounded-full annotation:bg-foreground annotation:text-background annotation:outline-none annotation:focus-visible:ring-2 annotation:focus-visible:ring-ring"
+                disabled={isSubmitting}
+                onClick={() => detach(item.previewUrl)}
+                type="button"
+              >
+                <XIcon className="annotation:size-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {attachError ? (
+        <div
+          className="annotation:rounded-lg annotation:border annotation:border-destructive/30 annotation:bg-destructive/10 annotation:px-3 annotation:py-2 annotation:text-sm annotation:text-destructive"
+          role="alert"
+        >
+          {attachError}
+        </div>
+      ) : null}
+
       {errorMessage ? (
         <div className="annotation:rounded-lg annotation:border annotation:border-destructive/30 annotation:bg-destructive/10 annotation:px-3 annotation:py-2 annotation:text-sm annotation:text-destructive">
           {errorMessage}
@@ -205,7 +281,36 @@ export function AnnotationComposer({
       ) : null}
 
       <div className="annotation:flex annotation:items-center annotation:justify-end annotation:gap-2">
-        <Button disabled={isSubmitting || !value.trim()} type="submit" size="icon">
+        <input
+          accept={ACCEPTED_TYPES.join(",")}
+          className="annotation:hidden"
+          multiple
+          onChange={(event) => {
+            const files = [...(event.target.files ?? [])];
+            // Same file again must fire a change next time.
+            event.target.value = "";
+            void attach(files);
+          }}
+          ref={fileInputRef}
+          tabIndex={-1}
+          type="file"
+        />
+        <Button
+          aria-label="Attach image"
+          disabled={isSubmitting || isPreparing || attachments.length >= MAX_IMAGES}
+          onClick={() => fileInputRef.current?.click()}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          {isPreparing ? <Spinner /> : <PaperclipIcon />}
+        </Button>
+        <Button
+          aria-label="Send"
+          disabled={isSubmitting || isPreparing || !value.trim()}
+          type="submit"
+          size="icon"
+        >
           {isSubmitting ? <Spinner /> : <PaperPlaneRightIcon />}
         </Button>
       </div>

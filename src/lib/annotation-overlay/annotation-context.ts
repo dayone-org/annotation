@@ -1,5 +1,6 @@
 import type { PostgrestError } from "@supabase/supabase-js";
 import { createContext } from "react";
+import type { PreparedImage } from "./images";
 import type {
   AnnotationComment,
   AnnotationRect,
@@ -66,7 +67,11 @@ export type AnnotationContextValue = {
     selector?: string | null,
   ) => Promise<boolean>;
   closeComposer: () => void;
-  submitComment: (text: string, mentionIds?: string[]) => Promise<boolean>;
+  submitComment: (
+    text: string,
+    mentionIds?: string[],
+    images?: PreparedImage[],
+  ) => Promise<boolean>;
   scrollToComment: (commentId: string) => void;
   removeThread: (commentId: string) => Promise<boolean>;
   resolveAllComments: () => Promise<boolean>;

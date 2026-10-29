@@ -94,6 +94,7 @@ export function normalizeComment(
     resolved_at: row.resolved_at ?? null,
     parent_id: row.parent_id ?? null,
     mentions: row.mentions ?? [],
+    images: row.images ?? [],
   };
 }
 
@@ -187,6 +188,7 @@ function formatThreadMessages(root: AnnotationComment, comments: AnnotationComme
   threadComments.forEach((comment, index) => {
     lines.push(
       `${index + 1}. ${comment.author}: ${normalizeWhitespace(comment.text) || "(empty comment)"}`,
+      ...comment.images.map((image, imageIndex) => `   - [Image ${imageIndex + 1}](${image.url})`),
     );
   });
 
