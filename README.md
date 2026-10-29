@@ -38,7 +38,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 2. **Developer:** install the package and mount `<Annotation />` with the URL and key of the central
    database (see Usage). No `projectId` needed.
 3. **Admin:** open the new site with your key appended (`https://new-site.com/#key=…`). The site has
-   no project yet, so only the admin tile shows. Create the project there; the domain is prefilled.
+   no project yet, so only the admin tile shows. Create the project there: the ID follows the name and is confirmed before the project is created; the domain is prefilled.
 4. **Admin:** in the admin tile, create the guest link and add staff who are not on the list yet.
 5. **Send the links** by mail or Slack. Staff open their personal link, guests open the project
    link and enter their name. Without a link the overlay stays hidden.
