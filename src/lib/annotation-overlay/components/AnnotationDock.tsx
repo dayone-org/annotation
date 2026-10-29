@@ -35,7 +35,7 @@ import useMeasure from "react-use-measure";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Item, ItemContent, ItemHeader } from "@/components/ui/item";
 import { Kbd } from "@/components/ui/kbd";
@@ -51,7 +51,6 @@ import type {
   ForYouEntry,
 } from "../types";
 import { parseStaffCsv, toCsv, type StaffCsvRow } from "../csv";
-import { projectIdFromName } from "../project-id";
 import { getStorageKey, readStoredString, writeStoredString } from "../storage";
 import { useAnnotation } from "../useAnnotation";
 import {
@@ -378,15 +377,15 @@ function AdminCard() {
     }
   };
 
-  // Without a project the ID follows the name; with one it stays as stored.
-  const projectIdValue = projectId ? project.id : (projectIdFromName(project.name) ?? "");
+  // Same pattern as the check in annotation_admin_set_project.
+  const projectIdValid = /^[a-z0-9][a-z0-9-]{1,62}$/.test(project.id);
 
   const saveProject = () =>
     run(async () => {
       setConfirmingCreate(false);
       const { error } = await callAdmin("annotation_admin_set_project", {
         p_host: window.location.host,
-        p_id: projectIdValue,
+        p_id: project.id,
         p_name: project.name.trim(),
         p_domains: project.domains.split(/[\s,]+/).filter(Boolean),
       });
@@ -467,9 +466,7 @@ function AdminCard() {
 
   const csvReady = csvStatus.filter((row) => !row.skipped).length;
   const canSaveProject =
-    Boolean(projectIdValue && project.name.trim() && project.domains.trim()) &&
-    loaded &&
-    !isBusy;
+    projectIdValid && Boolean(project.name.trim() && project.domains.trim()) && loaded && !isBusy;
   const canAddStaff =
     Boolean(staff.email.trim() && staff.firstName.trim()) &&
     isValidName(`${staff.firstName} ${staff.lastName}`) &&
@@ -518,7 +515,27 @@ function AdminCard() {
             <FieldGroup className="annotation:gap-3">
               <Field>
                 <FieldLabel htmlFor="annotation-admin-id">ID</FieldLabel>
-                <Input disabled id="annotation-admin-id" value={projectIdValue} />
+                <Input
+                  aria-describedby={
+                    project.id && !projectIdValid ? "annotation-admin-id-error" : undefined
+                  }
+                  aria-invalid={Boolean(project.id) && !projectIdValid}
+                  disabled={Boolean(projectId)}
+                  id="annotation-admin-id"
+                  maxLength={63}
+                  onChange={(event) => {
+                    setSaved(false);
+                    setConfirmingCreate(null);
+                    setError(null);
+                    setProject({ ...project, id: event.target.value });
+                  }}
+                  value={project.id}
+                />
+                {project.id && !projectIdValid ? (
+                  <FieldError id="annotation-admin-id-error">
+                    2–63 characters: a–z, 0–9 or hyphen, no hyphen first.
+                  </FieldError>
+                ) : null}
               </Field>
               <Field>
                 <FieldLabel htmlFor="annotation-admin-name">Name</FieldLabel>
@@ -550,7 +567,7 @@ function AdminCard() {
                   id="annotation-admin-create-confirm"
                   onCancel={() => setConfirmingCreate(false)}
                   onConfirm={() => void saveProject()}
-                  text={`Create project with ID ${projectIdValue}? The ID can't be changed later.`}
+                  text={`Create project with ID ${project.id}? The ID can't be changed later.`}
                 />
               ) : (
                 <Button
