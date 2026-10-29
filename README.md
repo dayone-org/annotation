@@ -104,7 +104,9 @@ Uploading and deleting need a valid key: own folder in a project of the key, Web
 5 MiB. A comment takes up to 5 of its author's own uploads in the same project
 (`annotation_add_comment_with_images`); the table `annotation_images` holds the references and is
 readable like the comment. Deleting a comment deletes its references; the uploader may then delete the
-files. `orphan-images` lists files no comment uses that are older than 24 hours; `--delete` removes them.
+files. A stored file never changes (also not through a signed upload URL), and its type must match its
+extension; a comment takes only uploads younger than an hour. `orphan-images` lists files no comment uses
+that are older than 24 hours; `--delete` removes them.
 
 ## Environment Variables
 
