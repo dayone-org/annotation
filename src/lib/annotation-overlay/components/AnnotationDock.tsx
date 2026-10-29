@@ -51,6 +51,7 @@ import type {
   ForYouEntry,
 } from "../types";
 import { parseStaffCsv, toCsv, type StaffCsvRow } from "../csv";
+import { projectIdFromName } from "../project-id";
 import { getStorageKey, readStoredString, writeStoredString } from "../storage";
 import { useAnnotation } from "../useAnnotation";
 import {
@@ -270,6 +271,43 @@ function CopyLink({ url }: { url: string }) {
   );
 }
 
+type ConfirmPanelProps = {
+  disabled: boolean;
+  id: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+  text: string;
+  variant?: "default" | "destructive";
+};
+
+function ConfirmPanel({ disabled, id, onCancel, onConfirm, text, variant }: ConfirmPanelProps) {
+  return (
+    <div
+      className="annotation:flex annotation:flex-col annotation:gap-2"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onCancel();
+        }
+      }}
+      aria-describedby={id}
+      role="group"
+    >
+      <p className="annotation:text-sm annotation:text-muted-foreground" id={id}>
+        {text}
+      </p>
+      <div className="annotation:grid annotation:grid-cols-2 annotation:gap-2">
+        <Button autoFocus onClick={onCancel} size="sm" type="button" variant="outline">
+          Cancel
+        </Button>
+        <Button disabled={disabled} onClick={onConfirm} size="sm" type="button" variant={variant}>
+          Confirm
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function AdminCard() {
   const { callAdmin, projectId } = useAnnotation();
   const [tab, setTab] = useState<AdminTab>("project");
@@ -279,6 +317,8 @@ function AdminCard() {
   const [guestLink, setGuestLink] = useState("");
   // null: never asked; false: asked and closed, so "New link" takes the focus back.
   const [confirmingLink, setConfirmingLink] = useState<boolean | null>(null);
+  // Same for "Create": a new project's ID can't be changed later, so it is confirmed first.
+  const [confirmingCreate, setConfirmingCreate] = useState<boolean | null>(null);
   const [staffLink, setStaffLink] = useState("");
   const [project, setProject] = useState({
     id: projectId ?? "",
@@ -338,11 +378,15 @@ function AdminCard() {
     }
   };
 
+  // Without a project the ID follows the name; with one it stays as stored.
+  const projectIdValue = projectId ? project.id : (projectIdFromName(project.name) ?? "");
+
   const saveProject = () =>
     run(async () => {
+      setConfirmingCreate(false);
       const { error } = await callAdmin("annotation_admin_set_project", {
         p_host: window.location.host,
-        p_id: project.id.trim(),
+        p_id: projectIdValue,
         p_name: project.name.trim(),
         p_domains: project.domains.split(/[\s,]+/).filter(Boolean),
       });
@@ -423,7 +467,7 @@ function AdminCard() {
 
   const csvReady = csvStatus.filter((row) => !row.skipped).length;
   const canSaveProject =
-    Boolean(project.id.trim() && project.name.trim() && project.domains.trim()) &&
+    Boolean(projectIdValue && project.name.trim() && project.domains.trim()) &&
     loaded &&
     !isBusy;
   const canAddStaff =
@@ -443,6 +487,7 @@ function AdminCard() {
               onClick={() => {
                 setTab(option.value);
                 setConfirmingLink(null);
+                setConfirmingCreate(null);
                 setError(null);
                 setSaved(false);
               }}
@@ -460,24 +505,20 @@ function AdminCard() {
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              if (canSaveProject) {
+              if (!canSaveProject) {
+                return;
+              }
+              if (projectId) {
                 void saveProject();
+              } else {
+                setConfirmingCreate(true);
               }
             }}
           >
             <FieldGroup className="annotation:gap-3">
               <Field>
                 <FieldLabel htmlFor="annotation-admin-id">ID</FieldLabel>
-                <Input
-                  id="annotation-admin-id"
-                  onChange={(event) => {
-                    setSaved(false);
-                    setProject({ ...project, id: event.target.value });
-                  }}
-                  placeholder="marketing-site"
-                  disabled={Boolean(projectId)}
-                  value={project.id}
-                />
+                <Input disabled id="annotation-admin-id" value={projectIdValue} />
               </Field>
               <Field>
                 <FieldLabel htmlFor="annotation-admin-name">Name</FieldLabel>
@@ -486,6 +527,7 @@ function AdminCard() {
                   maxLength={120}
                   onChange={(event) => {
                     setSaved(false);
+                    setConfirmingCreate(null);
                     setProject({ ...project, name: event.target.value });
                   }}
                   value={project.name}
@@ -502,10 +544,25 @@ function AdminCard() {
                   value={project.domains}
                 />
               </Field>
-              <Button disabled={!canSaveProject} size="sm" type="submit">
-                {saved ? <CheckIcon /> : null}
-                {saved ? "Saved" : "Save"}
-              </Button>
+              {confirmingCreate ? (
+                <ConfirmPanel
+                  disabled={isBusy}
+                  id="annotation-admin-create-confirm"
+                  onCancel={() => setConfirmingCreate(false)}
+                  onConfirm={() => void saveProject()}
+                  text={`Create project with ID ${projectIdValue}? The ID can't be changed later.`}
+                />
+              ) : (
+                <Button
+                  autoFocus={confirmingCreate === false}
+                  disabled={!canSaveProject}
+                  size="sm"
+                  type="submit"
+                >
+                  {saved ? <CheckIcon /> : null}
+                  {saved ? "Saved" : projectId ? "Save" : "Create"}
+                </Button>
+              )}
             </FieldGroup>
           </form>
         ) : null}
@@ -516,44 +573,14 @@ function AdminCard() {
             </div>
             {guestLink ? <CopyLink url={guestLink} /> : null}
             {confirmingLink ? (
-              <div
-                className="annotation:flex annotation:flex-col annotation:gap-2"
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    setConfirmingLink(false);
-                  }
-                }}
-                aria-describedby="annotation-admin-link-confirm"
-                role="group"
-              >
-                <p
-                  className="annotation:text-sm annotation:text-muted-foreground"
-                  id="annotation-admin-link-confirm"
-                >
-                  The current link and every guest who joined through it lose access right away.
-                </p>
-                <div className="annotation:grid annotation:grid-cols-2 annotation:gap-2">
-                  <Button
-                    autoFocus
-                    onClick={() => setConfirmingLink(false)}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    disabled={isBusy}
-                    onClick={() => void createGuestLink()}
-                    size="sm"
-                    type="button"
-                    variant="destructive"
-                  >
-                    Confirm
-                  </Button>
-                </div>
-              </div>
+              <ConfirmPanel
+                disabled={isBusy}
+                id="annotation-admin-link-confirm"
+                onCancel={() => setConfirmingLink(false)}
+                onConfirm={() => void createGuestLink()}
+                text="The current link and every guest who joined through it lose access right away."
+                variant="destructive"
+              />
             ) : (
               <Button
                 autoFocus={confirmingLink === false}
