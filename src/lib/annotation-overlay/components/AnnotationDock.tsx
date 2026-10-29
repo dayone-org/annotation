@@ -854,13 +854,6 @@ function ForYouCard({ entry }: { entry: ForYouEntry }) {
             />
           )}
           <span className="annotation:font-medium">{entry.actor_name}</span>
-          {entry.has_images ? (
-            <ImageSquareIcon
-              aria-label="Has images"
-              className="annotation:shrink-0 annotation:text-muted-foreground"
-              role="img"
-            />
-          ) : null}
           {entry.kind === "mention" ? (
             <AtIcon
               aria-label="Mentioned you"
@@ -873,7 +866,11 @@ function ForYouCard({ entry }: { entry: ForYouEntry }) {
             />
           )}
         </span>
-        <span className="annotation:shrink-0 annotation:text-xs annotation:text-muted-foreground">
+        {/* Image icon before the time, as in the thread list. */}
+        <span className="annotation:flex annotation:shrink-0 annotation:items-center annotation:gap-2 annotation:text-xs annotation:text-muted-foreground">
+          {entry.has_images ? (
+            <ImageSquareIcon aria-label="Has images" className="annotation:size-3" role="img" />
+          ) : null}
           {formatTimestamp(entry.created_at)}
         </span>
         {/* contain: the scroll area grows with its content, so the text must not widen the card. */}

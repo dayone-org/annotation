@@ -101,6 +101,11 @@ export function normalizeComment(
 // Same rule as the database (comments_page_path_plain): one leading slash but not two, no # ? or
 // backslash, no whitespace or control characters, no . or .. segment (also as %2e). Older rows may
 // break it, so check before using a path.
+// Spaces and zero-width characters are no text; the database refuses such a comment with images as well.
+export function isBlankText(text: string): boolean {
+  return !text.replace(/\u200B|\u200C|\u200D|\u2060|\uFEFF/g, "").trim();
+}
+
 export function isPlainPagePath(path: string): boolean {
   return (
     path.length <= 512 &&
@@ -188,7 +193,11 @@ function formatThreadMessages(root: AnnotationComment, comments: AnnotationComme
   threadComments.forEach((comment, index) => {
     lines.push(
       `${index + 1}. ${comment.author}: ${normalizeWhitespace(comment.text) || "(empty comment)"}`,
-      ...comment.images.map((image, imageIndex) => `   - [Image ${imageIndex + 1}](${image.url})`),
+      // Indented under the number ("10. " too), so the links stay inside the list item.
+      ...comment.images.map(
+        (image, imageIndex) =>
+          `${" ".repeat(`${index + 1}. `.length)}- [Image ${imageIndex + 1}](${image.url})`,
+      ),
     );
   });
 

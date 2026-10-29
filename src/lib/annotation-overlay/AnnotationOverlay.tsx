@@ -134,11 +134,15 @@ function ComposerPopover({
     composer,
     directory,
     errorMessage,
+    isSubmitting,
     personId,
     removeThread,
     submitComment,
     toggleResolved,
   } = useAnnotation();
+  const [isPreparing, setIsPreparing] = useState(false);
+  // While images are prepared or a comment is sent, Escape and a click outside keep the composer and its draft.
+  const isBusy = isSubmitting || isPreparing;
 
   if (!composer || !composer.rect) {
     return null;
@@ -195,16 +199,15 @@ function ComposerPopover({
           ) {
             event.preventDefault();
           }
-          // While sending, the composer stays; a failed send keeps its text.
-          if (portalContainer?.querySelector('form[aria-busy="true"]')) {
+          if (isBusy) {
             event.preventDefault();
           }
         }}
         onInteractOutside={(event) => {
           const target = event.target;
           if (
-            target instanceof Element &&
-            target.closest('[data-annotation-overlay-root="true"]')
+            isBusy ||
+            (target instanceof Element && target.closest('[data-annotation-overlay-root="true"]'))
           ) {
             event.preventDefault();
           }
@@ -252,6 +255,10 @@ function ComposerPopover({
             // Nobody mentions themselves; the highlighting still knows the own name.
             directory={directory.filter((person) => person.person_id !== personId)}
             errorMessage={errorMessage}
+            isSubmitting={isSubmitting}
+            // A draft per thread: another thread opened meanwhile starts empty, a later send leaves it alone.
+            key={composer.parentId ?? "new"}
+            onPreparingChange={setIsPreparing}
             onSubmit={submitComment}
           />
         </div>

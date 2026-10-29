@@ -146,9 +146,11 @@ switch (positionals[0]) {
     }
     console.table(rows.map((r) => ({ path: r.path, bytes: r.size_bytes, created: r.created_at })));
     if (values.delete) {
-      const { error } = await client.storage.from("comment-images").remove(rows.map((r) => r.path));
+      const { data, error } = await client.storage
+        .from("comment-images")
+        .remove(rows.map((r) => r.path));
       if (error) fail(`Delete: ${error.message}`);
-      console.log(`${rows.length} files deleted.`);
+      console.log(`${data.length} files deleted.`);
     }
     break;
   }

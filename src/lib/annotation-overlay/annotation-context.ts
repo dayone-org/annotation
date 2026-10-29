@@ -38,6 +38,8 @@ export type AnnotationContextValue = {
   isAdmin: boolean;
   isGuest: boolean;
   isJoining: boolean;
+  /** A comment is being sent (uploads and insert). */
+  isSubmitting: boolean;
   joinAsGuest: (name: string) => Promise<boolean>;
   /**
    * hidden: no valid key, overlay invisible; join: guest with a project link enters a name;

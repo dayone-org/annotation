@@ -31,11 +31,18 @@ export type AnnotationComment = {
   parent_id: string | null;
   /** IDs of mentioned staff. */
   mentions: string[];
-  /** In display order; url is the public address of the stored file. */
+  /** In display order; url is the public address of the stored file, thumbUrl that of its thumb. */
   images: AnnotationImage[];
 };
 
-export type AnnotationImage = { path: string; url: string; width: number; height: number };
+export type AnnotationImage = {
+  path: string;
+  url: string;
+  thumbPath: string;
+  thumbUrl: string;
+  width: number;
+  height: number;
+};
 
 export type StaffMember = { person_id: string; display_name: string };
 

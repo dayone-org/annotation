@@ -6,12 +6,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { StaffMember } from "../types";
 import { ACCEPTED_TYPES, MAX_IMAGES, prepareImage, type PreparedImage } from "../images";
-import { splitMentions } from "../utils";
+import { isBlankText, splitMentions } from "../utils";
 
 type AnnotationComposerProps = {
   /** Staff for the mention picker; empty (guests) means "@" is plain text. */
   directory?: StaffMember[];
   errorMessage?: string | null;
+  /** A comment is being sent (held by the provider). */
+  isSubmitting?: boolean;
+  /** Tells the popover while picked images are being prepared. */
+  onPreparingChange?: (isPreparing: boolean) => void;
   onSubmit: (text: string, mentionIds: string[], images: PreparedImage[]) => Promise<boolean>;
 };
 
@@ -32,10 +36,11 @@ function getMentionQuery(text: string, caret: number): { start: number; query: s
 export function AnnotationComposer({
   directory = [],
   errorMessage = null,
+  isSubmitting = false,
+  onPreparingChange,
   onSubmit,
 }: AnnotationComposerProps) {
   const [value, setValue] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [caret, setCaret] = useState(0);
   const [activeIndex, setActiveIndex] = useState(0);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
@@ -51,31 +56,44 @@ export function AnnotationComposer({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
+  const isMounted = useRef(false);
 
-  // Free the preview blobs when the composer goes away.
-  useEffect(
-    () => () => attachmentsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl)),
-    [],
-  );
+  // Free the preview blobs when the composer goes away; a preparation still running ends with it.
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      attachmentsRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      onPreparingChange?.(false);
+    };
+  }, []);
+
+  const setPreparing = (next: boolean) => {
+    setIsPreparing(next);
+    onPreparingChange?.(next);
+  };
 
   const attach = async (files: File[]) => {
-    setAttachError(null);
-    setIsPreparing(true);
-    const added: Attachment[] = [];
-    // shortcut: files beyond the fifth image are ignored without a hint (the paperclip is disabled at five).
-    for (const file of files.slice(0, MAX_IMAGES - attachmentsRef.current.length)) {
+    const room = MAX_IMAGES - attachmentsRef.current.length;
+    setAttachError(files.length > room ? `Max. ${MAX_IMAGES} images` : null);
+    setPreparing(true);
+    const prepared: PreparedImage[] = [];
+    for (const file of files.slice(0, room)) {
       try {
-        const prepared = await prepareImage(file);
-        added.push({
-          ...prepared,
-          previewUrl: URL.createObjectURL(prepared.blob),
-        });
+        prepared.push(await prepareImage(file));
       } catch (error) {
         setAttachError(error instanceof Error ? error.message : "Image could not be read.");
       }
     }
-    setAttachments((previous) => [...previous, ...added]);
-    setIsPreparing(false);
+    // Gone meanwhile (another thread opened): nothing to show, so no preview URL to create.
+    if (!isMounted.current) {
+      return;
+    }
+    setAttachments((previous) => [
+      ...previous,
+      ...prepared.map((image) => ({ ...image, previewUrl: URL.createObjectURL(image.blob) })),
+    ]);
+    setPreparing(false);
   };
 
   const detach = (previewUrl: string) => {
@@ -127,17 +145,15 @@ export function AnnotationComposer({
 
   return (
     <form
-      // The popover keeps the composer open on Escape while this is set (text survives a failed send).
-      aria-busy={isSubmitting}
+      aria-busy={isSubmitting || isPreparing}
       className="annotation:flex annotation:flex-col"
       onSubmit={async (event) => {
         event.preventDefault();
         // Enter calls requestSubmit, which skips the disabled Send button.
-        if (isPreparing || isSubmitting || !value.trim()) {
+        if (isPreparing || isSubmitting || isBlankText(value)) {
           return;
         }
 
-        setIsSubmitting(true);
         // Same matching as the highlighting: whole names only, the longest name wins.
         const mentioned = new Set(
           splitMentions(
@@ -150,17 +166,13 @@ export function AnnotationComposer({
         const mentionIds = picked
           .filter((person) => mentioned.has(person.display_name))
           .map((person) => person.person_id);
-        try {
-          const didSave = await onSubmit(value, mentionIds, attachments);
-          if (didSave) {
-            setValue("");
-            setPicked([]);
-            attachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-            setAttachments([]);
-            setAttachError(null);
-          }
-        } finally {
-          setIsSubmitting(false);
+        const didSave = await onSubmit(value, mentionIds, attachments);
+        if (didSave) {
+          setValue("");
+          setPicked([]);
+          attachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+          setAttachments([]);
+          setAttachError(null);
         }
       }}
     >
@@ -257,32 +269,28 @@ export function AnnotationComposer({
                 className="annotation:size-full annotation:rounded-md annotation:border annotation:border-border annotation:object-cover"
                 src={item.previewUrl}
               />
-              <button
+              <Button
                 aria-label={`Remove attachment ${index + 1}`}
-                className="annotation:absolute annotation:-top-1.5 annotation:-right-1.5 annotation:flex annotation:size-5 annotation:items-center annotation:justify-center annotation:rounded-full annotation:bg-foreground annotation:text-background annotation:outline-none annotation:focus-visible:ring-2 annotation:focus-visible:ring-ring"
+                className="annotation:absolute annotation:-top-2 annotation:-right-2 annotation:rounded-full"
                 disabled={isSubmitting}
                 onClick={() => detach(item.previewUrl)}
+                size="icon-xs"
                 type="button"
+                variant="secondary"
               >
-                <XIcon className="annotation:size-3" />
-              </button>
+                <XIcon />
+              </Button>
             </div>
           ))}
         </div>
       ) : null}
 
-      {attachError ? (
+      {(attachError ?? errorMessage) ? (
         <div
           className="annotation:rounded-lg annotation:border annotation:border-destructive/30 annotation:bg-destructive/10 annotation:px-3 annotation:py-2 annotation:text-sm annotation:text-destructive"
           role="alert"
         >
-          {attachError}
-        </div>
-      ) : null}
-
-      {errorMessage ? (
-        <div className="annotation:rounded-lg annotation:border annotation:border-destructive/30 annotation:bg-destructive/10 annotation:px-3 annotation:py-2 annotation:text-sm annotation:text-destructive">
-          {errorMessage}
+          {attachError ?? errorMessage}
         </div>
       ) : null}
 
@@ -313,7 +321,7 @@ export function AnnotationComposer({
         </Button>
         <Button
           aria-label="Send"
-          disabled={isSubmitting || isPreparing || !value.trim()}
+          disabled={isSubmitting || isPreparing || isBlankText(value)}
           type="submit"
           size="icon"
         >

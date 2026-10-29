@@ -1,10 +1,11 @@
 -- Images on comments: upload only into the own folder of a project of the key (webp/jpeg, at most 5 MiB,
--- unguessable name), attach only own uploads of the same project to a new comment (at most 5), read like the
--- comment, delete files only as uploader once no comment uses them; deleting a comment removes its references.
+-- unguessable name), stored files never change, attach only own fresh uploads (image and thumb) of the same
+-- project to a new comment (at most 5, each once), read like the comment, delete files only as uploader once
+-- no comment uses them; deleting a comment removes its references.
 -- Run like PostgREST and the storage service (role anon, key in the x-annotation-key header).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(70);
+select plan(80);
 
 create function pg_temp.as_key(p_key text) returns void language plpgsql as $$
 begin
@@ -50,14 +51,17 @@ language sql as $$
   insert into storage.objects (bucket_id, name, metadata)
   values ('comment-images', p_name, jsonb_build_object('mimetype', p_type, 'size', p_size, 'contentLength', p_size))
 $$;
-create function pg_temp.img(p_path text, p_w int default 1200, p_h int default 800) returns jsonb language sql as $$
-  select jsonb_build_object('path', p_path, 'width', p_w, 'height', p_h)
+-- Small version (thumb) of an image: the same name with bbbbbbbb instead of aaaaaaaa.
+create function pg_temp.t(p_path text) returns text language sql as $$ select replace(p_path, '/aaaaaaaa-', '/bbbbbbbb-') $$;
+create function pg_temp.img(p_path text, p_w int default 1200, p_h int default 800, p_thumb text default null) returns jsonb
+language sql as $$
+  select jsonb_build_object('path', p_path, 'thumb_path', coalesce(p_thumb, pg_temp.t(p_path)), 'width', p_w, 'height', p_h)
 $$;
 create function pg_temp.exists_file(p_name text) returns boolean language sql security definer as $$
   select exists (select 1 from storage.objects where bucket_id = 'comment-images' and name = p_name)
 $$;
 grant execute on function pg_temp.id(text), pg_temp.p(text, text, int, text), pg_temp.upload(text, text, bigint),
-  pg_temp.img(text, int, int), pg_temp.exists_file(text) to anon;
+  pg_temp.t(text), pg_temp.img(text, int, int, text), pg_temp.exists_file(text) to anon;
 
 -- ---------------------------------------------------------------- Bucket and privileges
 reset role;
@@ -85,6 +89,9 @@ select lives_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'ana', 1))$$, 'uplo
 select lives_ok($$select pg_temp.upload(pg_temp.p('bi-zwei', 'ana', 2))$$, 'upload: staff into another project (staff see all)');
 select lives_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'ana', 3, 'jpg'), 'image/jpeg')$$, 'upload: jpeg as .jpg');
 select lives_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'ana', 4), 'image/webp', 5242880)$$, 'upload: exactly 5 MiB');
+-- Thumbs of the files attached below.
+select pg_temp.upload(pg_temp.t(pg_temp.p('bi-eins', 'ana', 1)), 'image/webp', 300);
+select pg_temp.upload(pg_temp.t(pg_temp.p('bi-eins', 'ana', 3, 'jpg')), 'image/jpeg', 300);
 -- Before the upload the service knows only type and declared length; the size check follows with the real size.
 select lives_ok($$insert into storage.objects (bucket_id, name, metadata)
     values ('comment-images', pg_temp.p('bi-eins', 'ana', 5), '{"mimetype": "image/webp"}')$$,
@@ -115,6 +122,7 @@ select throws_ok($$insert into storage.objects (bucket_id, name, metadata)
 select pg_temp.as_key((select k from keys where name = 'g1'));
 select lives_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'g1', 21))$$, 'upload: guest into own folder');
 select lives_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'g1', 22))$$, 'upload: guest, second file');
+select pg_temp.upload(pg_temp.t(pg_temp.p('bi-eins', 'g1', 21)), 'image/webp', 300);
 select throws_ok($$select pg_temp.upload(pg_temp.p('bi-zwei', 'g1', 23))$$, '42501', null,
   'upload: guest into another project refused');
 
@@ -127,6 +135,7 @@ select pg_temp.as_key('k-bo-bi');
 select lives_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'bo', 31))$$, 'upload: Bo into own folder');
 select lives_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'bo', 30 + n)) from generate_series(2, 6) n$$,
   'upload: Bo, five more files');
+select pg_temp.upload(pg_temp.t(pg_temp.p('bi-eins', 'bo', 30 + n)), 'image/webp', 300) from generate_series(1, 5) n;
 
 -- A file the service would never accept, to show that attaching checks the size again.
 reset role;
@@ -145,6 +154,12 @@ select throws_ok($$update storage.objects set metadata = metadata || '{"size": 9
 select throws_ok($$update storage.objects set version = 'ausgetauscht'
     where bucket_id = 'comment-images' and name = pg_temp.p('bi-eins', 'ana', 5)$$,
   'AN001', 'Images cannot be changed.', 'fixed: content (version) of a stored file cannot change');
+select throws_ok($$update storage.objects set metadata = metadata || '{"mimetype": "image/jpeg"}'
+    where bucket_id = 'comment-images' and name = pg_temp.p('bi-eins', 'ana', 5)$$,
+  'AN001', 'Images cannot be changed.', 'fixed: the type of a stored file cannot change');
+select lives_ok($$update storage.objects set last_accessed_at = now(), metadata = metadata || '{"eTag": "neu"}'
+    where bucket_id = 'comment-images' and name = pg_temp.p('bi-eins', 'ana', 5)$$,
+  'fixed: other columns (last access, eTag) stay writable, e.g. for storage migrations');
 select throws_ok($$update storage.objects set name = pg_temp.p('bi-eins', 'ana', 44)
     where bucket_id = 'comment-images' and name = pg_temp.p('bi-eins', 'ana', 5)$$,
   'AN001', 'Images cannot be changed.', 'fixed: a stored file cannot be renamed');
@@ -164,7 +179,7 @@ select throws_ok($$insert into storage.objects (bucket_id, name, metadata)
 
 -- ---------------------------------------------------------------- Listing own files only
 select pg_temp.as_key((select k from keys where name = 'g1'));
-select results_eq($$select count(*)::int from storage.objects where bucket_id = 'comment-images'$$, $$values (2)$$,
+select results_eq($$select count(*)::int from storage.objects where bucket_id = 'comment-images'$$, $$values (3)$$,
   'list: a guest sees only own files');
 select pg_temp.as_key(null);
 select is_empty($$select 1 from storage.objects where bucket_id = 'comment-images'$$, 'list: nothing without key');
@@ -179,11 +194,11 @@ reset role;
 grant select, insert on c to anon;
 select pg_temp.as_key('k-ana-bi');
 select results_eq(
-  $$select path, width, height, size_bytes, position, project_id from public.annotation_images
+  $$select path, thumb_path, width, height, size_bytes, position, project_id from public.annotation_images
     where comment_id = (select id from c where name = 'ana1') order by position$$,
-  $$values (pg_temp.p('bi-eins', 'ana', 3, 'jpg'), 900, 1600, 2000, 0::smallint, 'bi-eins'::text),
-      (pg_temp.p('bi-eins', 'ana', 1), 1200, 800, 2000, 1::smallint, 'bi-eins')$$,
-  'attach: staff, two images in order, size from the storage service');
+  $$values (pg_temp.p('bi-eins', 'ana', 3, 'jpg'), pg_temp.t(pg_temp.p('bi-eins', 'ana', 3, 'jpg')), 900, 1600, 2000, 0::smallint, 'bi-eins'::text),
+      (pg_temp.p('bi-eins', 'ana', 1), pg_temp.t(pg_temp.p('bi-eins', 'ana', 1)), 1200, 800, 2000, 1::smallint, 'bi-eins')$$,
+  'attach: staff, two images with thumbs in order, size from the storage service');
 select results_eq($$select author_id, text from public.comments where id = (select id from c where name = 'ana1')$$,
   $$values (pg_temp.id('ana'), 'Vorlage für die Kachel'::text)$$, 'attach: the comment is created as usual');
 
@@ -201,16 +216,37 @@ create temp table n0 as select count(*) as n from public.comments where project_
 grant select on n0 to anon;
 select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Fremd',
     jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'bo', 31))))$$,
-  'AN001', 'Image not found. Upload it again.', 'attach: an upload of another person refused');
+  'AN001', 'Image not found. Send again.', 'attach: an upload of another person refused');
 select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Falsches Projekt',
     jsonb_build_array(pg_temp.img(pg_temp.p('bi-zwei', 'ana', 2))))$$,
-  'AN001', 'Image not found. Upload it again.', 'attach: an upload in another project refused');
+  'AN001', 'Image not found. Send again.', 'attach: an upload in another project refused');
 select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Schon benutzt',
     jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 1))))$$,
   'AN001', 'This image belongs to another comment.', 'attach: an image of another comment refused');
+select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Vorschau fehlt',
+    jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 4), p_thumb => pg_temp.p('bi-eins', 'ana', 97))))$$,
+  'AN001', 'Image not found. Send again.', 'attach: a thumb that was never uploaded refused');
+select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Fremde Vorschau',
+    jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 4), p_thumb => pg_temp.p('bi-eins', 'bo', 31))))$$,
+  'AN001', 'Image not found. Send again.', 'attach: a thumb of another person refused');
+select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Alte Vorschau',
+    jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 4), p_thumb => pg_temp.p('bi-eins', 'ana', 43))))$$,
+  'AN001', 'Image not found. Send again.', 'attach: a thumb older than an hour refused');
+select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Benutzte Vorschau',
+    jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 4), p_thumb => pg_temp.t(pg_temp.p('bi-eins', 'ana', 1)))))$$,
+  'AN001', 'This image belongs to another comment.', 'attach: a thumb of another comment refused');
+select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Selbst als Vorschau',
+    jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 4), p_thumb => pg_temp.p('bi-eins', 'ana', 4))))$$,
+  'AN001', 'Image sent twice.', 'attach: an image as its own thumb refused');
+select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Doppelt',
+    jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 4)), pg_temp.img(pg_temp.p('bi-eins', 'ana', 4))))$$,
+  'AN001', 'Image sent twice.', 'attach: the same image twice refused');
+select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', E'\u200B\u200C\u200D\u2060\uFEFF \n',
+    jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 4))))$$,
+  'AN001', 'Write a comment to go with the images.', 'attach: only zero-width characters with an image refused');
 select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Alt',
     jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 43))))$$,
-  'AN001', 'Image not found. Upload it again.', 'attach: an upload older than an hour refused');
+  'AN001', 'Image not found. Send again.', 'attach: an upload older than an hour refused');
 select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', E' \n\t ',
     jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 4))))$$,
   'AN001', 'Write a comment to go with the images.', 'attach: only spaces with an image refused');
@@ -225,10 +261,10 @@ select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '
   'AN001', 'Image size is invalid.', 'attach: missing height refused');
 select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Zu groß',
     jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 42))))$$,
-  'AN001', 'Image not found. Upload it again.', 'attach: over 5 MiB refused');
+  'AN001', 'Image not found. Send again.', 'attach: over 5 MiB refused');
 select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Gibt es nicht',
     jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 99))))$$,
-  'AN001', 'Image not found. Upload it again.', 'attach: missing file refused');
+  'AN001', 'Image not found. Send again.', 'attach: missing file refused');
 select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Riesig',
     jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 4), 1200, 1601)))$$,
   'AN001', 'Image size is invalid.', 'attach: height over 1600 px refused');
@@ -268,19 +304,24 @@ select pg_temp.as_key(null);
 select is_empty($$select 1 from public.annotation_images$$, 'read: nothing without key');
 
 select pg_temp.as_key('k-bo-bi');
+insert into c select 'bo0', id from public.annotation_add_comment_with_images('bi-eins', '/start', 'Antwort ohne Bild', '[]',
+  p_parent_id => (select id from c where name = 'ana1'));
 select results_eq(
   $$select comment_id, has_images from public.annotation_for_you() where project_id = 'bi-eins' order by created_at$$,
   $$values ((select id from c where name = 'ana1'), true)$$, 'for you: has_images on an entry with images');
 select pg_temp.as_key('k-ana-bi');
-select results_eq(
+select set_eq(
   $$select comment_id, has_images from public.annotation_for_you() where project_id = 'bi-eins'$$,
-  $$values ((select id from c where name = 'g1'), true)$$, 'for you: has_images on a reply with an image');
+  $$values ((select id from c where name = 'g1'), true), ((select id from c where name = 'bo0'), false)$$,
+  'for you: has_images on a reply with an image, not on one without');
 
 -- ---------------------------------------------------------------- Deleting
 -- A file in use stays, also for its uploader.
 select pg_temp.as_key('k-ana-bi');
 delete from storage.objects where name = pg_temp.p('bi-eins', 'ana', 1);
 select ok(pg_temp.exists_file(pg_temp.p('bi-eins', 'ana', 1)), 'delete: a file in use stays');
+delete from storage.objects where name = pg_temp.t(pg_temp.p('bi-eins', 'ana', 1));
+select ok(pg_temp.exists_file(pg_temp.t(pg_temp.p('bi-eins', 'ana', 1))), 'delete: a thumb in use stays');
 -- Files of others stay, also unused ones.
 select pg_temp.as_key('k-bo-bi');
 delete from storage.objects where name = pg_temp.p('bi-eins', 'ana', 4);
@@ -304,8 +345,9 @@ select pg_temp.as_key('k-ana-bi');
 delete from storage.objects where name = pg_temp.p('bi-eins', 'g1', 21);
 select ok(pg_temp.exists_file(pg_temp.p('bi-eins', 'g1', 21)), 'delete: the thread author cannot delete a reply''s file');
 select pg_temp.as_key((select k from keys where name = 'g1'));
-delete from storage.objects where name = pg_temp.p('bi-eins', 'g1', 21);
-select ok(not pg_temp.exists_file(pg_temp.p('bi-eins', 'g1', 21)), 'delete: the uploader deletes the file of the deleted comment');
+delete from storage.objects where name in (pg_temp.p('bi-eins', 'g1', 21), pg_temp.t(pg_temp.p('bi-eins', 'g1', 21)));
+select ok(not pg_temp.exists_file(pg_temp.p('bi-eins', 'g1', 21)) and not pg_temp.exists_file(pg_temp.t(pg_temp.p('bi-eins', 'g1', 21))),
+  'delete: the uploader deletes the files (image and thumb) of the deleted comment');
 
 -- ---------------------------------------------------------------- Orphans (service role)
 -- Stored files cannot change, so age them by storing them again.
@@ -315,12 +357,12 @@ create function pg_temp.age(p_names text[]) returns void language sql as $$
   select 'comment-images', name, metadata, now() - interval '25 hours' from gone
 $$;
 reset role;
-select pg_temp.age(array[pg_temp.p('bi-zwei', 'ana', 2), pg_temp.p('bi-eins', 'ana', 1)]);
+select pg_temp.age(array[pg_temp.p('bi-zwei', 'ana', 2), pg_temp.p('bi-eins', 'ana', 1), pg_temp.t(pg_temp.p('bi-eins', 'ana', 1))]);
 set local role service_role;
 select results_eq(
   $$select path, size_bytes from public.annotation_orphan_images() where path like 'bi-%'$$,
   $$values (pg_temp.p('bi-zwei', 'ana', 2), 2000::bigint)$$,
-  'orphans: unused and older than 24 h; not files in use, not new ones');
+  'orphans: unused and older than 24 h; not files or thumbs in use, not new ones');
 reset role;
 select pg_temp.age(array(select name from storage.objects where bucket_id = 'comment-images' and name like 'bi-%'));
 set local role service_role;

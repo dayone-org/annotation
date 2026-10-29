@@ -1,15 +1,19 @@
 // Images on comments: the browser shrinks each picked file before it is uploaded to the bucket.
 export const IMAGE_BUCKET = "comment-images";
 export const MAX_IMAGES = 5;
-export const MAX_PICK_BYTES = 10 * 1024 * 1024;
+const MAX_PICK_BYTES = 10 * 1024 * 1024;
 // The bucket and the upload policy refuse more.
-export const MAX_STORED_BYTES = 5 * 1024 * 1024;
-export const MAX_SIDE = 1600;
+const MAX_STORED_BYTES = 5 * 1024 * 1024;
+const MAX_SIDE = 1600;
+// Thumb for the squares under a comment (4.5 rem, sharp at 2x); a thread loads only these.
+const THUMB_SIDE = 144;
 export const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const QUALITIES = [0.82, 0.6, 0.4];
 
 export type PreparedImage = {
   blob: Blob;
+  /** Same type, longest side at most 144 px. */
+  thumb: Blob;
   width: number;
   height: number;
   extension: "webp" | "jpg";
@@ -54,45 +58,51 @@ export async function prepareImage(file: File): Promise<PreparedImage> {
     throw new Error("Image could not be read.");
   });
   const { width, height } = fitWithin(bitmap.width, bitmap.height);
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-  if (!context) {
-    bitmap.close();
-    throw new Error("Image could not be read.");
-  }
-  const draw = (background?: string) => {
-    context.clearRect(0, 0, width, height);
+  const thumbSize = fitWithin(width, height, THUMB_SIDE);
+  const draw = (size: { width: number; height: number }, background?: string) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Image could not be read.");
+    }
+    context.imageSmoothingQuality = "high";
     if (background) {
       context.fillStyle = background;
-      context.fillRect(0, 0, width, height);
+      context.fillRect(0, 0, size.width, size.height);
     }
-    context.drawImage(bitmap, 0, 0, width, height);
+    context.drawImage(bitmap, 0, 0, size.width, size.height);
+    return canvas;
   };
-  const encode = (type: string, quality: number) =>
+  const encode = (canvas: HTMLCanvasElement, type: string, quality: number) =>
     new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, type, quality));
 
   try {
-    draw();
     // Safari cannot write WebP and silently returns PNG; JPEG then, on white (no transparency).
     let type = "image/webp";
-    let blob = await encode(type, QUALITIES[0]);
+    let canvas = draw({ width, height });
+    let blob = await encode(canvas, type, QUALITIES[0]);
     if (blob?.type !== type) {
       type = "image/jpeg";
-      draw("#fff");
-      blob = await encode(type, QUALITIES[0]);
+      canvas = draw({ width, height }, "#fff");
+      blob = await encode(canvas, type, QUALITIES[0]);
     }
     for (const quality of QUALITIES.slice(1)) {
       if (!blob || blob.size <= MAX_STORED_BYTES) {
         break;
       }
-      blob = await encode(type, quality);
+      blob = await encode(canvas, type, quality);
     }
-    if (!blob || blob.type !== type || blob.size > MAX_STORED_BYTES) {
+    const thumb = await encode(
+      draw(thumbSize, type === "image/jpeg" ? "#fff" : undefined),
+      type,
+      QUALITIES[0],
+    );
+    if (!blob || blob.type !== type || blob.size > MAX_STORED_BYTES || thumb?.type !== type) {
       throw new Error("Image could not be compressed.");
     }
-    return { blob, width, height, extension: type === "image/webp" ? "webp" : "jpg" };
+    return { blob, thumb, width, height, extension: type === "image/webp" ? "webp" : "jpg" };
   } finally {
     bitmap.close();
   }
