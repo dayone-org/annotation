@@ -1,7 +1,9 @@
 import {
   ArrowDownLeftIcon,
   ArrowDownRightIcon,
+  ArrowBendUpLeftIcon,
   ArrowRightIcon,
+  AtIcon,
   ArrowUpLeftIcon,
   ArrowUpRightIcon,
   ChatsIcon,
@@ -33,36 +35,42 @@ import useMeasure from "react-use-measure";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Item, ItemContent, ItemHeader } from "@/components/ui/item";
 import { Kbd } from "@/components/ui/kbd";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
-import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import logo from "@/logo.svg";
-import type { AnnotationComment, AnnotationPosition } from "../types";
-import {
-  getStorageKey,
-  readStoredBoolean,
-  readStoredString,
-  writeStoredBoolean,
-  writeStoredString,
-} from "../storage";
+import type {
+  AnnotationComment,
+  AnnotationPosition,
+  CommentListTab,
+  ForYouEntry,
+} from "../types";
+import { parseStaffCsv, toCsv, type StaffCsvRow } from "../csv";
+import { getStorageKey, readStoredString, writeStoredString } from "../storage";
 import { useAnnotation } from "../useAnnotation";
 import {
   formatAnnotationCollectionMarkdown,
   formatAnnotationThreadMarkdown,
   formatTimestamp,
+  getForYouHref,
   getReplies,
   getTopLevelComments,
   isValidName,
-  measureRect,
 } from "../utils";
+import { MentionText } from "./MentionText";
 
 type CopyState = "idle" | "copied" | "error";
+
+const LIST_TABS: Array<{ label: string; value: CommentListTab }> = [
+  { label: "All", value: "all" },
+  { label: "For you", value: "for-you" },
+  { label: "Resolved", value: "resolved" },
+];
 
 type ResolveSliderIconState = "idle" | "loading";
 
@@ -225,6 +233,15 @@ const ADMIN_TABS: Array<{ label: string; value: AdminTab }> = [
 
 type AdminProject = { id: string; name: string; domains: string[]; link_key: string | null };
 
+// One row of annotation_admin_add_staff_bulk: key only for a created staff member, skipped otherwise.
+type BulkRow = {
+  email: string | null;
+  name: string;
+  person_id: string | null;
+  key: string | null;
+  skipped: string | null;
+};
+
 // Links lead to the current page; the key goes into the fragment like in the admin script.
 function linkTo(key: string) {
   const target = new URL(window.location.origin + window.location.pathname);
@@ -253,6 +270,43 @@ function CopyLink({ url }: { url: string }) {
   );
 }
 
+type ConfirmPanelProps = {
+  disabled: boolean;
+  id: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+  text: string;
+  variant?: "default" | "destructive";
+};
+
+function ConfirmPanel({ disabled, id, onCancel, onConfirm, text, variant }: ConfirmPanelProps) {
+  return (
+    <div
+      className="annotation:flex annotation:flex-col annotation:gap-2"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onCancel();
+        }
+      }}
+      aria-describedby={id}
+      role="group"
+    >
+      <p className="annotation:text-sm annotation:text-muted-foreground" id={id}>
+        {text}
+      </p>
+      <div className="annotation:grid annotation:grid-cols-2 annotation:gap-2">
+        <Button autoFocus onClick={onCancel} size="sm" type="button" variant="outline">
+          Cancel
+        </Button>
+        <Button disabled={disabled} onClick={onConfirm} size="sm" type="button" variant={variant}>
+          Confirm
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function AdminCard() {
   const { callAdmin, projectId } = useAnnotation();
   const [tab, setTab] = useState<AdminTab>("project");
@@ -262,6 +316,8 @@ function AdminCard() {
   const [guestLink, setGuestLink] = useState("");
   // null: never asked; false: asked and closed, so "New link" takes the focus back.
   const [confirmingLink, setConfirmingLink] = useState<boolean | null>(null);
+  // Same for "Create": a new project's ID can't be changed later, so it is confirmed first.
+  const [confirmingCreate, setConfirmingCreate] = useState<boolean | null>(null);
   const [staffLink, setStaffLink] = useState("");
   const [project, setProject] = useState({
     id: projectId ?? "",
@@ -269,6 +325,12 @@ function AdminCard() {
     domains: window.location.host,
   });
   const [staff, setStaff] = useState({ email: "", firstName: "", lastName: "" });
+  const csvInput = useRef<HTMLInputElement>(null);
+  // Rows of the chosen file until imported; statuses of preview or import, never with keys.
+  const [csvRows, setCsvRows] = useState<StaffCsvRow[] | null>(null);
+  const [csvStatus, setCsvStatus] = useState<BulkRow[]>([]);
+  // Blob URL of the result file with the links; revoked when replaced, downloaded or the tile closes.
+  const [csvDownload, setCsvDownload] = useState<string | null>(null);
   // In a project, Save waits for the stored domains so it never replaces them with location.host.
   const [loaded, setLoaded] = useState(!projectId);
 
@@ -295,6 +357,15 @@ function AdminCard() {
     };
   }, [callAdmin, projectId]);
 
+  useEffect(
+    () => () => {
+      if (csvDownload) {
+        URL.revokeObjectURL(csvDownload);
+      }
+    },
+    [csvDownload],
+  );
+
   const run = async (action: () => Promise<void>) => {
     setIsBusy(true);
     setError(null);
@@ -306,11 +377,15 @@ function AdminCard() {
     }
   };
 
+  // Same pattern as the check in annotation_admin_set_project.
+  const projectIdValid = /^[a-z0-9][a-z0-9-]{1,62}$/.test(project.id);
+
   const saveProject = () =>
     run(async () => {
+      setConfirmingCreate(false);
       const { error } = await callAdmin("annotation_admin_set_project", {
         p_host: window.location.host,
-        p_id: project.id.trim(),
+        p_id: project.id,
         p_name: project.name.trim(),
         p_domains: project.domains.split(/[\s,]+/).filter(Boolean),
       });
@@ -346,10 +421,52 @@ function AdminCard() {
       }
     });
 
+  const previewCsv = (file: File) =>
+    run(async () => {
+      setCsvDownload(null);
+      setCsvRows(null);
+      setCsvStatus([]);
+      const parsed = parseStaffCsv(await file.text());
+      if ("error" in parsed) {
+        setError(parsed.error);
+        return;
+      }
+      const { data, error } = await callAdmin("annotation_admin_add_staff_bulk", {
+        p_rows: parsed.rows,
+        p_dry_run: true,
+      });
+      setError(error?.message ?? null);
+      if (!error) {
+        setCsvRows(parsed.rows);
+        setCsvStatus(data as BulkRow[]);
+      }
+    });
+
+  const importCsv = () =>
+    run(async () => {
+      const { data, error } = await callAdmin("annotation_admin_add_staff_bulk", {
+        p_rows: csvRows,
+      });
+      setError(error?.message ?? null);
+      if (error) {
+        return;
+      }
+      const result = data as BulkRow[];
+      const added = result.filter((row) => row.key);
+      if (added.length > 0) {
+        const csv = toCsv([
+          ["name", "email", "link"],
+          ...added.map((row) => [row.name, row.email ?? "", linkTo(row.key ?? "")]),
+        ]);
+        setCsvDownload(URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })));
+      }
+      setCsvRows(null);
+      setCsvStatus(result.map((row) => ({ ...row, key: null })));
+    });
+
+  const csvReady = csvStatus.filter((row) => !row.skipped).length;
   const canSaveProject =
-    Boolean(project.id.trim() && project.name.trim() && project.domains.trim()) &&
-    loaded &&
-    !isBusy;
+    projectIdValid && Boolean(project.name.trim() && project.domains.trim()) && loaded && !isBusy;
   const canAddStaff =
     Boolean(staff.email.trim() && staff.firstName.trim()) &&
     isValidName(`${staff.firstName} ${staff.lastName}`) &&
@@ -367,6 +484,7 @@ function AdminCard() {
               onClick={() => {
                 setTab(option.value);
                 setConfirmingLink(null);
+                setConfirmingCreate(null);
                 setError(null);
                 setSaved(false);
               }}
@@ -384,8 +502,13 @@ function AdminCard() {
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              if (canSaveProject) {
+              if (!canSaveProject) {
+                return;
+              }
+              if (projectId) {
                 void saveProject();
+              } else {
+                setConfirmingCreate(true);
               }
             }}
           >
@@ -393,15 +516,26 @@ function AdminCard() {
               <Field>
                 <FieldLabel htmlFor="annotation-admin-id">ID</FieldLabel>
                 <Input
+                  aria-describedby={
+                    project.id && !projectIdValid ? "annotation-admin-id-error" : undefined
+                  }
+                  aria-invalid={Boolean(project.id) && !projectIdValid}
+                  disabled={Boolean(projectId)}
                   id="annotation-admin-id"
+                  maxLength={63}
                   onChange={(event) => {
                     setSaved(false);
+                    setConfirmingCreate(null);
+                    setError(null);
                     setProject({ ...project, id: event.target.value });
                   }}
-                  placeholder="marketing-site"
-                  disabled={Boolean(projectId)}
                   value={project.id}
                 />
+                {project.id && !projectIdValid ? (
+                  <FieldError id="annotation-admin-id-error">
+                    2–63 characters: a–z, 0–9 or hyphen, no hyphen first.
+                  </FieldError>
+                ) : null}
               </Field>
               <Field>
                 <FieldLabel htmlFor="annotation-admin-name">Name</FieldLabel>
@@ -410,6 +544,7 @@ function AdminCard() {
                   maxLength={120}
                   onChange={(event) => {
                     setSaved(false);
+                    setConfirmingCreate(null);
                     setProject({ ...project, name: event.target.value });
                   }}
                   value={project.name}
@@ -426,10 +561,25 @@ function AdminCard() {
                   value={project.domains}
                 />
               </Field>
-              <Button disabled={!canSaveProject} size="sm" type="submit">
-                {saved ? <CheckIcon /> : null}
-                {saved ? "Saved" : "Save"}
-              </Button>
+              {confirmingCreate ? (
+                <ConfirmPanel
+                  disabled={isBusy}
+                  id="annotation-admin-create-confirm"
+                  onCancel={() => setConfirmingCreate(false)}
+                  onConfirm={() => void saveProject()}
+                  text={`Create project with ID ${project.id}? The ID can't be changed later.`}
+                />
+              ) : (
+                <Button
+                  autoFocus={confirmingCreate === false}
+                  disabled={!canSaveProject}
+                  size="sm"
+                  type="submit"
+                >
+                  {saved ? <CheckIcon /> : null}
+                  {saved ? "Saved" : projectId ? "Save" : "Create"}
+                </Button>
+              )}
             </FieldGroup>
           </form>
         ) : null}
@@ -440,44 +590,14 @@ function AdminCard() {
             </div>
             {guestLink ? <CopyLink url={guestLink} /> : null}
             {confirmingLink ? (
-              <div
-                className="annotation:flex annotation:flex-col annotation:gap-2"
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    setConfirmingLink(false);
-                  }
-                }}
-                aria-describedby="annotation-admin-link-confirm"
-                role="group"
-              >
-                <p
-                  className="annotation:text-sm annotation:text-muted-foreground"
-                  id="annotation-admin-link-confirm"
-                >
-                  The current link and every guest who joined through it lose access right away.
-                </p>
-                <div className="annotation:grid annotation:grid-cols-2 annotation:gap-2">
-                  <Button
-                    autoFocus
-                    onClick={() => setConfirmingLink(false)}
-                    size="sm"
-                    type="button"
-                    variant="outline"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    disabled={isBusy}
-                    onClick={() => void createGuestLink()}
-                    size="sm"
-                    type="button"
-                    variant="destructive"
-                  >
-                    Confirm
-                  </Button>
-                </div>
-              </div>
+              <ConfirmPanel
+                disabled={isBusy}
+                id="annotation-admin-link-confirm"
+                onCancel={() => setConfirmingLink(false)}
+                onConfirm={() => void createGuestLink()}
+                text="The current link and every guest who joined through it lose access right away."
+                variant="destructive"
+              />
             ) : (
               <Button
                 autoFocus={confirmingLink === false}
@@ -536,6 +656,83 @@ function AdminCard() {
               <Button disabled={!canAddStaff} size="sm" type="submit">
                 Add
               </Button>
+              <Button
+                disabled={isBusy}
+                onClick={() => csvInput.current?.click()}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Import CSV
+              </Button>
+              <input
+                accept=".csv,text/csv"
+                aria-label="CSV file"
+                hidden
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  // Reset, so choosing the same file again reads it again.
+                  event.target.value = "";
+                  if (file) {
+                    void previewCsv(file);
+                  }
+                }}
+                ref={csvInput}
+                type="file"
+              />
+              {csvStatus.length > 0 ? (
+                <ScrollArea className="annotation:max-h-48 annotation:rounded-lg annotation:border">
+                  <ul aria-label="CSV rows" className="annotation:divide-y">
+                    {csvStatus.map((row, index) => (
+                      <li
+                        className="annotation:flex annotation:items-start annotation:gap-2 annotation:px-2.5 annotation:py-1.5 annotation:text-xs"
+                        key={index}
+                      >
+                        <div className="annotation:min-w-0 annotation:flex-1">
+                          {row.name ? (
+                            <p className="annotation:truncate annotation:font-medium">{row.name}</p>
+                          ) : null}
+                          <p className="annotation:truncate annotation:text-muted-foreground">
+                            {row.email}
+                          </p>
+                          {row.skipped ? (
+                            <p className="annotation:text-destructive">{row.skipped}</p>
+                          ) : null}
+                        </div>
+                        {row.skipped ? null : (
+                          <CheckIcon aria-label="OK" className="annotation:mt-0.5 annotation:size-3.5" />
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </ScrollArea>
+              ) : null}
+              {csvRows ? (
+                <Button
+                  disabled={isBusy || csvReady === 0}
+                  onClick={() => void importCsv()}
+                  size="sm"
+                  type="button"
+                >
+                  Import {csvReady}
+                </Button>
+              ) : null}
+              {csvDownload ? (
+                <div className="annotation:flex annotation:flex-col annotation:gap-1.5">
+                  <Button asChild className="annotation:no-underline" size="sm">
+                    <a
+                      download="staff-links.csv"
+                      href={csvDownload}
+                      onClick={() => window.setTimeout(() => setCsvDownload(null), 1000)}
+                    >
+                      Download CSV
+                    </a>
+                  </Button>
+                  <p className="annotation:text-xs annotation:text-muted-foreground">
+                    Contains access links. Delete after sending.
+                  </p>
+                </div>
+              ) : null}
             </FieldGroup>
           </form>
         ) : null}
@@ -553,25 +750,10 @@ function AdminCard() {
 }
 
 function ThreadCard({ activeThreadId, comment, comments, currentPath }: ThreadCardProps) {
-  const { openThreadComposer, scrollToComment, toggleResolved } = useAnnotation();
+  const { openThread, toggleResolved } = useAnnotation();
   const [copyState, setCopyState] = useCopyState();
   const replies = getReplies(comments, comment.id);
   const isActive = activeThreadId === comment.id;
-
-  const goToThreadAndOpenComposer = useCallback(
-    (scrollTargetId: string) => {
-      scrollToComment(scrollTargetId);
-
-      const markerNode = document.querySelector<HTMLElement>(`[data-thread-id="${comment.id}"]`);
-      const anchorRect = markerNode ? measureRect(markerNode) : comment.rect;
-      if (!anchorRect) {
-        return;
-      }
-
-      openThreadComposer(comment.id, anchorRect);
-    },
-    [comment.id, comment.rect, openThreadComposer, scrollToComment],
-  );
 
   const handleCopy = useCallback(async () => {
     const markdown = formatAnnotationThreadMarkdown(comment, comments, currentPath);
@@ -586,7 +768,7 @@ function ThreadCard({ activeThreadId, comment, comments, currentPath }: ThreadCa
         isActive && "annotation:border annotation:border-primary",
         comment.resolved && "annotation:opacity-50",
       )}
-      onClick={() => goToThreadAndOpenComposer(comment.id)}
+      onClick={() => openThread(comment.id)}
       size="xs"
       variant="outline"
     >
@@ -625,7 +807,7 @@ function ThreadCard({ activeThreadId, comment, comments, currentPath }: ThreadCa
             {comment.author_is_guest ? <Badge variant="outline">External</Badge> : null}
           </p>
           <p className="annotation:whitespace-pre-wrap annotation:text-muted-foreground">
-            {comment.text}
+            <MentionText mentions={comment.mentions} text={comment.text} />
           </p>
         </div>
         <div className="annotation:flex annotation:justify-between annotation:gap-2 annotation:text-xs annotation:text-muted-foreground">
@@ -636,6 +818,100 @@ function ThreadCard({ activeThreadId, comment, comments, currentPath }: ThreadCa
           <span>{formatTimestamp(comment.created_at)}</span>
         </div>
       </ItemContent>
+    </Item>
+  );
+}
+
+// Same project: open the thread here. Other project: link to its page, which opens the thread there.
+// Without a domain the entry only names the project.
+function ForYouCard({ entry }: { entry: ForYouEntry }) {
+  const { createHandoff, openThread, projectId } = useAnnotation();
+  const isLeaving = useRef(false);
+  const isHere = entry.project_id === projectId;
+  const href = isHere
+    ? null
+    : getForYouHref(entry.project_domain, entry.page_path, entry.thread_id);
+  const body = (
+    <>
+      <ItemHeader className="annotation:justify-start annotation:gap-1">
+        {isHere ? null : <Badge variant="outline">{entry.project_name}</Badge>}
+        <Badge variant="secondary">{entry.page_path}</Badge>
+      </ItemHeader>
+      <ItemContent className="annotation:flex-row annotation:flex-wrap annotation:items-center annotation:justify-between annotation:gap-x-2 annotation:text-sm">
+        <span className="annotation:flex annotation:items-center annotation:gap-1.5">
+          {entry.is_read ? null : (
+            <span
+              aria-label="Unread"
+              className="annotation:size-2 annotation:shrink-0 annotation:rounded-full annotation:bg-primary-foreground"
+              role="img"
+            />
+          )}
+          <span className="annotation:font-medium">{entry.actor_name}</span>
+          {entry.kind === "mention" ? (
+            <AtIcon
+              aria-label="Mentioned you"
+              className="annotation:shrink-0 annotation:text-muted-foreground"
+            />
+          ) : (
+            <ArrowBendUpLeftIcon
+              aria-label="Replied"
+              className="annotation:shrink-0 annotation:text-muted-foreground"
+            />
+          )}
+        </span>
+        <span className="annotation:shrink-0 annotation:text-xs annotation:text-muted-foreground">
+          {formatTimestamp(entry.created_at)}
+        </span>
+        {/* contain: the scroll area grows with its content, so the text must not widen the card. */}
+        <span className="annotation:basis-full annotation:truncate annotation:text-muted-foreground annotation:[contain:inline-size]">
+          {entry.text_start}
+        </span>
+      </ItemContent>
+    </>
+  );
+  // Links keep the card look; host pages may style <a>.
+  const className =
+    "annotation:bg-background annotation:text-left annotation:text-foreground annotation:no-underline";
+
+  if (isHere) {
+    return (
+      <Item asChild className={className} size="xs" variant="outline">
+        <button onClick={() => openThread(entry.thread_id)} type="button">
+          {body}
+        </button>
+      </Item>
+    );
+  }
+  if (href) {
+    // A plain click logs the jump in on the target domain with a one-time code; a new tab or a failed
+    // request falls back to the plain link (the key must then already be stored there).
+    const jump = async (event: MouseEvent<HTMLAnchorElement>) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      event.preventDefault();
+      if (isLeaving.current) {
+        return;
+      }
+      isLeaving.current = true;
+      const code = await createHandoff(entry.project_id);
+      window.location.assign(
+        (code &&
+          getForYouHref(entry.project_domain, entry.page_path, entry.thread_id, code)) ||
+          href,
+      );
+    };
+    return (
+      <Item asChild className={className} size="xs" variant="outline">
+        <a href={href} onClick={(event) => void jump(event)}>
+          {body}
+        </a>
+      </Item>
+    );
+  }
+  return (
+    <Item className={className} size="xs" variant="outline">
+      {body}
     </Item>
   );
 }
@@ -785,34 +1061,31 @@ export function AnnotationDock({
     composer,
     currentPath,
     errorMessage,
+    forYou,
     isAdmin,
     isGuest,
     isJoining,
     joinAsGuest,
+    markAllRead,
     phase,
     isLoading,
+    listTab,
     renameSelf,
     resolveAllComments,
-    setShowResolved,
-    showResolved,
+    setListTab,
     startAnnotationMode,
     storageKeyPrefix,
   } = useAnnotation();
-  const onlyCurrentPageKey = useMemo(
-    () => getStorageKey(storageKeyPrefix, "only_current_page"),
-    [storageKeyPrefix],
-  );
   const positionKey = useMemo(
     () => getStorageKey(storageKeyPrefix, "position"),
     [storageKeyPrefix],
-  );
-  const [showOnlyCurrentPage, setShowOnlyCurrentPage] = useState(() =>
-    readStoredBoolean(onlyCurrentPageKey, false),
   );
   const [position, setPosition] = useState<AnnotationPosition>(() =>
     readStoredPosition(positionKey, defaultPosition),
   );
   const [isPanelOpen, setPanelOpen] = useState(false);
+  const showForYou = listTab === "for-you";
+  const unreadCount = forYou.filter((entry) => !entry.is_read).length;
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [nameDraft, setNameDraft] = useState(author);
@@ -829,11 +1102,9 @@ export function AnnotationDock({
   const sortedThreads = [...topLevelComments].sort((left, right) =>
     right.created_at.localeCompare(left.created_at),
   );
-  const showAllPages = !showOnlyCurrentPage;
-  const pageScopedThreads = showAllPages
-    ? sortedThreads
-    : sortedThreads.filter((comment) => comment.page_path === currentPath);
-  const visibleThreads = pageScopedThreads.filter((comment) => showResolved || !comment.resolved);
+  const visibleThreads = sortedThreads.filter(
+    (comment) => comment.resolved === (listTab === "resolved"),
+  );
   const currentRouteOpenThreads = sortedThreads.filter(
     (comment) => comment.page_path === currentPath && !comment.resolved,
   );
@@ -888,10 +1159,6 @@ export function AnnotationDock({
       }) satisfies Variants,
     [positionConfig.cardOffset],
   );
-
-  useEffect(() => {
-    setShowOnlyCurrentPage(readStoredBoolean(onlyCurrentPageKey, false));
-  }, [onlyCurrentPageKey]);
 
   useEffect(() => {
     setPosition(readStoredPosition(positionKey, defaultPosition));
@@ -1053,11 +1320,14 @@ export function AnnotationDock({
         </Button>
         <Button
           aria-expanded={isPanelOpen}
-          aria-label="Annotations panel"
+          aria-label={
+            unreadCount > 0 ? `Annotations panel, ${unreadCount} unread` : "Annotations panel"
+          }
           onClick={toggleAnnotationsPanel}
-          size="icon-sm"
+          size={unreadCount > 0 ? "sm" : "icon-sm"}
         >
           <ChatsIcon />
+          {unreadCount > 0 ? unreadCount : null}
         </Button>
         <Button
           aria-expanded={isSettingsOpen}
@@ -1100,31 +1370,35 @@ export function AnnotationDock({
             key="annotations"
             variants={variantsCard}
           >
-            <Card className="annotation:w-64 annotation:pb-0">
-              <CardHeader>
-                <FieldGroup>
-                  <Field orientation="horizontal">
-                    <FieldLabel htmlFor="annotation-panel-show-resolved">
-                      Resolved comments
-                    </FieldLabel>
-                    <Switch
-                      checked={showResolved}
-                      id="annotation-panel-show-resolved"
-                      onCheckedChange={setShowResolved}
-                    />
-                  </Field>
-                  <Field orientation="horizontal">
-                    <FieldLabel htmlFor="annotation-panel-show-all">All pages</FieldLabel>
-                    <Switch
-                      checked={showAllPages}
-                      id="annotation-panel-show-all"
-                      onCheckedChange={(checked) => {
-                        writeStoredBoolean(onlyCurrentPageKey, !checked);
-                        setShowOnlyCurrentPage(!checked);
-                      }}
-                    />
-                  </Field>
-                </FieldGroup>
+            <Card className="annotation:w-64 annotation:gap-0 annotation:pt-2 annotation:pb-0">
+              <CardHeader className="annotation:px-2">
+                <div
+                  aria-label="Comments"
+                  className="annotation:flex annotation:items-end annotation:gap-1"
+                  role="tablist"
+                >
+                  {LIST_TABS.map((tab) => (
+                    <button
+                      aria-selected={listTab === tab.value}
+                      className={cn(
+                        "annotation:-mb-px annotation:inline-flex annotation:h-8 annotation:items-center annotation:gap-1 annotation:border-b-2 annotation:px-2 annotation:text-sm annotation:font-medium annotation:outline-none annotation:focus-visible:ring-2 annotation:focus-visible:ring-ring",
+                        listTab === tab.value
+                          ? "annotation:border-foreground annotation:text-foreground"
+                          : "annotation:border-transparent annotation:text-muted-foreground annotation:hover:text-foreground",
+                      )}
+                      id={`annotation-panel-tab-${tab.value}`}
+                      key={tab.value}
+                      onClick={() => setListTab(tab.value)}
+                      role="tab"
+                      type="button"
+                    >
+                      {tab.label}
+                      {tab.value === "for-you" && unreadCount > 0 ? (
+                        <Badge className="annotation:h-4 annotation:px-1.5">{unreadCount}</Badge>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
               </CardHeader>
               <CardContent className="annotation:flex annotation:flex-col annotation:gap-0 annotation:border-t annotation:p-0">
                 <div className="annotation:grid annotation:h-[min(24rem,calc(100vh-8rem))] annotation:gap-0 annotation:bg-muted">
@@ -1133,17 +1407,38 @@ export function AnnotationDock({
                     type="scroll"
                   >
                     <div className="annotation:flex annotation:flex-col annotation:gap-2 annotation:p-2">
-                      {isLoading ? (
+                      {showForYou && forYou.length > 0 ? (
+                        <Button
+                          className="annotation:self-end"
+                          disabled={unreadCount === 0}
+                          onClick={() => void markAllRead()}
+                          size="xs"
+                          type="button"
+                          variant="ghost"
+                        >
+                          Mark all as read
+                        </Button>
+                      ) : null}
+                      {/* "For you" has its own data; the comments' loading state does not apply. */}
+                      {showForYou && forYou.length === 0 ? (
+                        <p className="annotation:p-2 annotation:text-center annotation:text-sm annotation:text-muted-foreground">
+                          No mentions or replies
+                        </p>
+                      ) : null}
+                      {showForYou
+                        ? forYou.map((entry) => <ForYouCard entry={entry} key={entry.comment_id} />)
+                        : null}
+                      {!showForYou && isLoading ? (
                         <p className="annotation:p-2 annotation:text-center annotation:text-sm annotation:text-muted-foreground">
                           Loading annotations…
                         </p>
                       ) : null}
-                      {!isLoading && visibleThreads.length === 0 ? (
+                      {!showForYou && !isLoading && visibleThreads.length === 0 ? (
                         <p className="annotation:p-2 annotation:text-center annotation:text-sm annotation:text-muted-foreground">
                           No annotations
                         </p>
                       ) : null}
-                      {!isLoading
+                      {!isLoading && !showForYou
                         ? visibleThreads.map((comment) => (
                             <ThreadCard
                               activeThreadId={activeThreadId}

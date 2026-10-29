@@ -12,7 +12,10 @@ import type {
   AnnotationComment,
   AnnotationOverlayProps,
   AnnotationRect,
+  CommentListTab,
+  ForYouEntry,
   PendingAnnotation,
+  StaffMember,
 } from "./types";
 import {
   AnnotationContext,
@@ -22,26 +25,39 @@ import {
 import { querySelectorSafely } from "./selector";
 import {
   DEFAULT_STORAGE_KEY_PREFIX,
+  dropLinkThread,
+  forgetHandoffCode,
   forgetLinkKey,
   getStorageKey,
-  readStoredBoolean,
+  readLinkThread,
   readStoredString,
+  takeHandoffCode,
   takeLinkKey,
-  writeStoredBoolean,
   writeStoredString,
 } from "./storage";
 import {
   getCommentMap,
+  getMarkerAnchorRect,
+  getMarkerPagePosition,
   getThreadRootId,
   isSameSitePath,
+  newestCreatedAt,
   normalizeComment,
   sortComments,
 } from "./utils";
 
 const supabaseClientCache = new Map<string, SupabaseClient>();
+const NO_ENTRIES: ForYouEntry[] = [];
 const TABLE = "comments";
 // The display name is joined in when reading, so a rename also changes old comments.
-const COMMENT_SELECT = "*, author:annotation_people(display_name, is_guest)";
+const AUTHOR_SELECT = "*, author:annotation_people(display_name, is_guest)";
+const COMMENT_SELECT = `${AUTHOR_SELECT}, mentions:annotation_mentions(person_id)`;
+const LIST_TABS: CommentListTab[] = ["all", "for-you", "resolved"];
+
+function readStoredListTab(key: string): CommentListTab {
+  const value = readStoredString(key);
+  return LIST_TABS.find((tab) => tab === value) ?? "all";
+}
 
 type Session = {
   project_id: string;
@@ -51,16 +67,18 @@ type Session = {
   realtime_topic: string;
 };
 
-type CommentRow = Omit<Partial<AnnotationComment>, "author"> & {
+type CommentRow = Omit<Partial<AnnotationComment>, "author" | "mentions"> & {
   id: string;
   author?: { display_name: string; is_guest: boolean } | null;
+  mentions?: Array<{ person_id: string }> | null;
 };
 
-function toComment({ author, ...row }: CommentRow): AnnotationComment {
+function toComment({ author, mentions, ...row }: CommentRow): AnnotationComment {
   return normalizeComment({
     ...row,
     author: author?.display_name,
     author_is_guest: author?.is_guest ?? false,
+    mentions: mentions?.map((mention) => mention.person_id),
   });
 }
 
@@ -105,6 +123,7 @@ export function AnnotationProvider({
 }: PropsWithChildren<AnnotationOverlayProps>) {
   const keyStorageKey = getStorageKey(storageKeyPrefix, "key");
   const [linkKey, setLinkKey] = useState(takeLinkKey);
+  const [handoffCode, setHandoffCode] = useState(takeHandoffCode);
   const [accessKey, setAccessKey] = useState(() => readStoredString(keyStorageKey));
   // Project link of a guest who has not entered a name yet.
   const [pendingProjectKey, setPendingProjectKey] = useState<string | null>(null);
@@ -115,8 +134,8 @@ export function AnnotationProvider({
     () => getSupabaseClient(supabaseUrl, supabaseAnonKey, accessKey),
     [accessKey, supabaseAnonKey, supabaseUrl],
   );
-  const showResolvedStorageKey = useMemo(
-    () => getStorageKey(storageKeyPrefix, "show_resolved"),
+  const listTabStorageKey = useMemo(
+    () => getStorageKey(storageKeyPrefix, "list_tab"),
     [storageKeyPrefix],
   );
   const projectOverride = projectId?.trim() || null;
@@ -124,9 +143,7 @@ export function AnnotationProvider({
   const personId = session?.person_id ?? null;
   const author = session?.display_name ?? "";
   const phase = session ? "ready" : pendingProjectKey ? "join" : isAdmin ? "admin" : "hidden";
-  const [showResolved, setShowResolvedState] = useState(() =>
-    readStoredBoolean(showResolvedStorageKey, false),
-  );
+  const [listTab, setListTabState] = useState(() => readStoredListTab(listTabStorageKey));
   const [currentPath, setCurrentPath] = useState(() => getActivePath(pagePath));
   const [comments, setComments] = useState<AnnotationComment[]>([]);
   const [composer, setComposer] = useState<PendingAnnotation | null>(null);
@@ -135,6 +152,12 @@ export function AnnotationProvider({
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [directory, setDirectory] = useState<StaffMember[]>([]);
+  // null until the first load: opening a thread before that still marks it read.
+  const [forYou, setForYou] = useState<ForYouEntry[] | null>(null);
+  // Thread to open from a "For you" jump (#annotation-thread=…), once the comments are loaded.
+  const [linkThread, setLinkThread] = useState(readLinkThread);
+  const isStaff = session ? !session.is_guest : false;
 
   const commentMap = useMemo(() => getCommentMap(comments), [comments]);
 
@@ -173,14 +196,66 @@ export function AnnotationProvider({
     });
   }, [client, normalizedProjectId]);
 
+  const forYouSequence = useRef(0);
+  // Open mark_read writes: a list loaded meanwhile may predate the write and would undo the optimistic
+  // "read"; the load after the write brings the result.
+  const pendingReads = useRef(0);
+  const loadForYou = useCallback(async () => {
+    const sequence = ++forYouSequence.current;
+    if (!personId) {
+      setForYou((previous) => (previous?.length === 0 ? previous : []));
+      return;
+    }
+    const { data, error } = await client.rpc("annotation_for_you");
+    if (sequence !== forYouSequence.current || pendingReads.current > 0) {
+      return;
+    }
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+    const next = (data ?? []) as ForYouEntry[];
+    // Pings arrive often; keep the old array when nothing changed, so the counter does not re-render.
+    setForYou((previous) => (JSON.stringify(previous) === JSON.stringify(next) ? previous : next));
+  }, [client, personId]);
+
+  // Every time the overlay opens (the list and its counter show only then).
+  useEffect(() => {
+    if (annotationMode) {
+      void loadForYou();
+    }
+  }, [annotationMode, loadForYou]);
+
+  // Mention picker: staff only; guests get no list (the database returns none either).
+  useEffect(() => {
+    let isActive = true;
+    if (!isStaff) {
+      setDirectory((previous) => (previous.length ? [] : previous));
+      return;
+    }
+    void client.rpc("annotation_staff_directory").then(({ data, error }) => {
+      if (!isActive) {
+        return;
+      }
+      if (error) {
+        setErrorMessage(error.message);
+        return;
+      }
+      setDirectory((data ?? []) as StaffMember[]);
+    });
+    return () => {
+      isActive = false;
+    };
+  }, [client, isStaff, personId]);
+
   const syncPath = useCallback(() => {
     const nextPath = getActivePath(pagePath);
     setCurrentPath((previous) => (previous === nextPath ? previous : nextPath));
   }, [pagePath]);
 
   useEffect(() => {
-    setShowResolvedState(readStoredBoolean(showResolvedStorageKey, false));
-  }, [showResolvedStorageKey]);
+    setListTabState(readStoredListTab(listTabStorageKey));
+  }, [listTabStorageKey]);
 
   useEffect(() => {
     setCurrentPath(getActivePath(pagePath));
@@ -194,10 +269,47 @@ export function AnnotationProvider({
 
   // A link opened in the already open tab only changes the hash; take its key like on page load.
   useEffect(() => {
-    const onHashChange = () => setLinkKey(takeLinkKey());
+    const onHashChange = () => {
+      setLinkKey(takeLinkKey());
+      setHandoffCode(takeHandoffCode());
+      const thread = readLinkThread();
+      if (thread) {
+        setLinkThread(thread);
+      }
+    };
     window.addEventListener("hashchange", onHashChange);
     return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+
+  // Jump from "For you" with a one-time code: the code is always used up on landing. A key that is current
+  // for anyone stays, whichever project this page shows (a link from someone else must not replace it,
+  // guest or staff); otherwise the code's key signs in like a personal link. An invalid or used code changes nothing.
+  useEffect(() => {
+    if (!handoffCode) {
+      return;
+    }
+    forgetHandoffCode();
+    setHandoffCode("");
+    void (async () => {
+      let keepOwnKey = false;
+      if (accessKey) {
+        const { data, error } = await getSupabaseClient(supabaseUrl, supabaseAnonKey, accessKey).rpc(
+          "annotation_me",
+        );
+        // A failed check keeps the stored key too: unknown is not "no access".
+        keepOwnKey = Boolean(error) || typeof data === "string";
+      }
+      const { data } = await getSupabaseClient(supabaseUrl, supabaseAnonKey, "").rpc(
+        "annotation_handoff_redeem",
+        { p_code: handoffCode, p_host: window.location.host, p_burn: keepOwnKey },
+      );
+      if (!keepOwnKey && typeof data === "string" && /^[0-9a-f]{64}$/.test(data)) {
+        // Loading again until the new key's comments are in, so the jump's thread is not dropped too early.
+        setIsLoading(true);
+        setLinkKey(data);
+      }
+    })();
+  }, [accessKey, handoffCode, supabaseAnonKey, supabaseUrl]);
 
   // Who am I on this page? Order: personal link, stored key, project link (then the overlay asks
   // for a name). Without a match the overlay stays invisible.
@@ -319,13 +431,14 @@ export function AnnotationProvider({
       .on("broadcast", { event: "changed" }, () => {
         setSessionCheck((value) => value + 1);
         void loadComments();
+        void loadForYou();
       })
       .subscribe();
 
     return () => {
       void client.removeChannel(channel);
     };
-  }, [client, loadComments, realtimeTopic]);
+  }, [client, loadComments, loadForYou, realtimeTopic]);
 
   // A ref, not only state: a fast second Enter arrives before the disabled button is rendered.
   const joiningRef = useRef(false);
@@ -397,12 +510,23 @@ export function AnnotationProvider({
     [client],
   );
 
-  const setShowResolved = useCallback(
-    (value: boolean) => {
-      writeStoredBoolean(showResolvedStorageKey, value);
-      setShowResolvedState(value);
+  const setListTab = useCallback(
+    (value: CommentListTab) => {
+      writeStoredString(listTabStorageKey, value);
+      setListTabState(value);
     },
-    [showResolvedStorageKey],
+    [listTabStorageKey],
+  );
+
+  // For a "For you" entry in another project: a one-time code that logs the jump in there. Null on failure.
+  const createHandoff = useCallback(
+    async (targetProjectId: string) => {
+      const { data, error } = await client.rpc("annotation_handoff_create", {
+        p_project_id: targetProjectId,
+      });
+      return !error && typeof data === "string" ? data : null;
+    },
+    [client],
   );
 
   const closeComposer = useCallback(() => {
@@ -435,12 +559,61 @@ export function AnnotationProvider({
     setActiveThreadId(null);
   }, []);
 
+  // Opening a thread reads its "For you" entries up to the newest comment loaded in it; later ones stay unread.
+  const markRead = useCallback(
+    async (threadId: string) => {
+      const until = newestCreatedAt(
+        comments.filter((comment) => comment.id === threadId || comment.parent_id === threadId),
+      );
+      if (!until) {
+        return;
+      }
+      const isCovered = (entry: ForYouEntry) =>
+        entry.thread_id === threadId && !entry.is_read && entry.created_at <= until;
+      // Nothing unread in this thread: no write, no reload.
+      if (forYou && !forYou.some(isCovered)) {
+        return;
+      }
+      setForYou(
+        (previous) =>
+          previous?.map((entry) => (isCovered(entry) ? { ...entry, is_read: true } : entry)) ??
+          null,
+      );
+      pendingReads.current += 1;
+      const { error } = await client.rpc("annotation_mark_read", {
+        p_thread_id: threadId,
+        p_until: until,
+      });
+      pendingReads.current -= 1;
+      if (error) {
+        setErrorMessage(error.message);
+      }
+      void loadForYou();
+    },
+    [client, comments, forYou, loadForYou],
+  );
+
+  // Up to the newest loaded entry: an entry that arrives meanwhile stays unread.
+  const markAllRead = useCallback(async () => {
+    const until = newestCreatedAt(forYou ?? []);
+    if (!until) {
+      return;
+    }
+    setErrorMessage(null);
+    const { error } = await client.rpc("annotation_mark_all_read", { p_until: until });
+    if (error) {
+      setErrorMessage(error.message);
+    }
+    void loadForYou();
+  }, [client, forYou, loadForYou]);
+
   const openThreadComposer = useCallback(
     (threadId: string, rect: AnnotationRect) => {
       if (!session) {
         return;
       }
 
+      void markRead(threadId);
       const target = commentMap.get(threadId);
       setComposer({
         parentId: threadId,
@@ -449,7 +622,7 @@ export function AnnotationProvider({
       });
       setActiveThreadId(threadId);
     },
-    [commentMap, session],
+    [commentMap, markRead, session],
   );
 
   const updateThreadRect = useCallback(
@@ -575,7 +748,7 @@ export function AnnotationProvider({
   );
 
   const submitComment = useCallback(
-    async (text: string) => {
+    async (text: string, mentionIds: string[] = []) => {
       if (!normalizedProjectId) {
         return false;
       }
@@ -591,19 +764,18 @@ export function AnnotationProvider({
 
       setErrorMessage(null);
 
-      const payload = {
-        page_path: currentPath,
-        selector: composer.parentId ? null : composer.selector,
-        rect: composer.parentId ? null : composer.rect,
-        text: nextText,
-        parent_id: composer.parentId,
-        project_id: normalizedProjectId,
-      };
-
       const { data, error } = await client
-        .from(TABLE)
-        .insert(payload)
-        .select(COMMENT_SELECT)
+        .rpc("annotation_add_comment", {
+          p_project_id: normalizedProjectId,
+          p_page_path: currentPath,
+          p_text: nextText,
+          p_selector: composer.parentId ? null : composer.selector,
+          p_rect: composer.parentId ? null : composer.rect,
+          p_parent_id: composer.parentId,
+          p_mentions: mentionIds,
+        })
+        // The function's row has no mentions yet; they are added below, the next ping loads them.
+        .select(AUTHOR_SELECT)
         .single();
 
       if (error) {
@@ -611,7 +783,7 @@ export function AnnotationProvider({
         return false;
       }
 
-      const inserted = toComment(data as CommentRow);
+      const inserted = { ...toComment(data as CommentRow), mentions: mentionIds };
       startTransition(() => {
         setComments((previous) => sortComments([...previous, inserted]));
       });
@@ -775,6 +947,35 @@ export function AnnotationProvider({
     [client, closeComposer, commentMap, composer, normalizedProjectId],
   );
 
+  // From the list, "For you" or a jump link: go to the thread (switching the page if needed) and open it.
+  const openThread = useCallback(
+    (threadId: string) => {
+      const thread = commentMap.get(threadId);
+      // A thread on a path that would leave the site (older rows) is not opened.
+      if (!thread || !isSameSitePath(thread.page_path)) {
+        return;
+      }
+      setAnnotationMode(true);
+      scrollToComment(threadId);
+      // Where the marker is (or will be, while the overlay is still closed), not where the thread was created.
+      const position = getMarkerPagePosition(thread.rect, querySelectorSafely(thread.selector));
+      if (position) {
+        openThreadComposer(threadId, getMarkerAnchorRect(position));
+      }
+    },
+    [commentMap, openThreadComposer, scrollToComment],
+  );
+
+  // Jump link: open the thread once the project's comments are loaded, then drop it from the address.
+  useEffect(() => {
+    if (!linkThread || !session || isLoading) {
+      return;
+    }
+    dropLinkThread();
+    setLinkThread("");
+    openThread(linkThread);
+  }, [isLoading, linkThread, openThread, session]);
+
   // Shortcuts only with access; otherwise "c" and Escape belong to the host page.
   useEffect(() => {
     if (!session) {
@@ -837,6 +1038,8 @@ export function AnnotationProvider({
       callAdmin,
       cancelAnnotationMode,
       comments,
+      directory,
+      forYou: forYou ?? NO_ENTRIES,
       isAdmin,
       isGuest: session?.is_guest ?? false,
       isJoining,
@@ -846,11 +1049,14 @@ export function AnnotationProvider({
       projectId: normalizedProjectId,
       closeComposer,
       composer,
+      createHandoff,
       currentPath,
       errorMessage,
       isLoading,
       isMarkerHovered,
+      markAllRead,
       storageKeyPrefix,
+      openThread,
       openThreadComposer,
       removeThread,
       resolveAllComments,
@@ -858,8 +1064,8 @@ export function AnnotationProvider({
       selectElement,
       renameSelf,
       setMarkerHovered,
-      setShowResolved,
-      showResolved,
+      setListTab,
+      listTab,
       startAnnotationMode,
       submitComment,
       toggleResolved,
@@ -872,6 +1078,8 @@ export function AnnotationProvider({
       callAdmin,
       cancelAnnotationMode,
       comments,
+      directory,
+      forYou,
       isAdmin,
       isJoining,
       joinAsGuest,
@@ -881,11 +1089,14 @@ export function AnnotationProvider({
       session,
       closeComposer,
       composer,
+      createHandoff,
       currentPath,
       errorMessage,
       isLoading,
       isMarkerHovered,
+      markAllRead,
       storageKeyPrefix,
+      openThread,
       openThreadComposer,
       removeThread,
       resolveAllComments,
@@ -893,8 +1104,8 @@ export function AnnotationProvider({
       selectElement,
       renameSelf,
       setMarkerHovered,
-      setShowResolved,
-      showResolved,
+      setListTab,
+      listTab,
       startAnnotationMode,
       submitComment,
       toggleResolved,

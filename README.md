@@ -38,7 +38,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 2. **Developer:** install the package and mount `<Annotation />` with the URL and key of the central
    database (see Usage). No `projectId` needed.
 3. **Admin:** open the new site with your key appended (`https://new-site.com/#key=…`). The site has
-   no project yet, so only the admin tile shows. Create the project there; the domain is prefilled.
+   no project yet, so only the admin tile shows. Create the project there: type the ID once
+   (it can't be changed later, so Create asks to confirm it); the domain is prefilled.
 4. **Admin:** in the admin tile, create the guest link and add staff who are not on the list yet.
 5. **Send the links** by mail or Slack. Staff open their personal link, guests open the project
    link and enter their name. Without a link the overlay stays hidden.
@@ -82,7 +83,12 @@ Each link is printed once; admins can show the current guest link again in the a
 **Admins** are staff members flagged with `admin --person <id>` (service role only). Their overlay
 shows an admin tile in the dock that can create or change the project of the page (it loads the
 stored name and domains), show or renew its guest link and add staff members (their link is shown
-once). The ID is fixed on a page that has a project; the tile cannot take over another project by
+once). "Import CSV" adds up to 200 staff members from a file with a header row `email`,
+`first_name`, `last_name` (any case; comma or semicolon; UTF-8 with or without BOM). A preview
+shows each row as OK or with the reason it is skipped (no @dayone.de address, invalid name, already
+registered, duplicate in the file); "Import N" creates only the valid ones and offers a file
+`name,email,link` once for download. It holds access links: delete it after sending. The links are
+not kept in the tile and are gone when it closes. The ID is fixed on a page that has a project; the tile cannot take over another project by
 its ID ("ID already in use by another project"), only the admin script can. The domain of the
 page stays in its project's list, so the tile keeps finding the project. `admin --person <id> --off`
 removes only the flag; the person keeps their key. `staff-list` prints every staff member with
@@ -109,6 +115,23 @@ NEXT_PUBLIC_ANNOTATION_SUPABASE_ANON_KEY=
 - Dock positioning in all four corners
 - Personal and per-project access keys, project isolation and server-side authors via row level security
 - Guests rename themselves in the settings; the new name applies to all of their comments
+- Mentions: staff type `@` in a comment or reply and pick a colleague; the name is highlighted.
+  Only staff can mention and be mentioned; for guests `@` is plain text
+- Comment list tabs: "All" (open threads on all pages), "For you" and "Resolved" (resolved threads on
+  all pages, also shown as markers). The chosen tab is kept
+- "For you" tab: mentions of you and replies in threads you started, from all
+  projects your key can access (guests: their project only). The unread count also shows on the list
+  button. Each entry shows the start of the comment (first 140 characters). Opening a thread marks
+  its entries read; "Mark all as read" clears the rest; entries that arrive meanwhile stay unread;
+  resolved threads drop out. An entry from another project links to its first domain and opens the
+  thread there. A click there signs you in on that domain with a one-time code
+  (`#annotation-handoff=<code>&annotation-thread=<id>`; staff only, valid 2 minutes, usable once, only
+  on that project's domain, never through the `projectId` prop; the database stores only its hash and the
+  key encrypted with it). The code is used up on landing in any case; a key that is current for anyone
+  stays (also a guest key of another project, or with a `projectId` prop) and only the thread opens, so a link from someone else cannot replace it. Opened in a new
+  tab, the link carries no code and needs the key stored on that domain
+- Known limit: a browser without a working key takes the key of whoever made the link, like with
+  `#key=…`. `#key=…` itself still replaces a stored key on purpose, to switch people
 - Optional `projectId`, `pagePath`, `position`, and `storageKeyPrefix` props for advanced integration
 
 **Breaking change:** the `tableName` prop is gone. The overlay always uses the `comments` table of

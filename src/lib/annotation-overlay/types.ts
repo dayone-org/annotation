@@ -29,7 +29,29 @@ export type AnnotationComment = {
   created_at: string;
   resolved_at: string | null;
   parent_id: string | null;
+  /** IDs of mentioned staff. */
+  mentions: string[];
 };
+
+export type StaffMember = { person_id: string; display_name: string };
+
+/** A "For you" entry: a mention of me or a reply in a thread I started, from any accessible project. */
+export type ForYouEntry = {
+  project_id: string;
+  project_name: string;
+  project_domain: string | null;
+  page_path: string;
+  thread_id: string;
+  comment_id: string;
+  kind: "mention" | "reply";
+  actor_name: string;
+  /** First 140 characters of the comment that created the entry (cut by the database). */
+  text_start: string;
+  created_at: string;
+  is_read: boolean;
+};
+
+export type CommentListTab = "all" | "for-you" | "resolved";
 
 export type AnnotationPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 

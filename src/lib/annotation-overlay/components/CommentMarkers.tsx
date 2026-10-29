@@ -20,13 +20,13 @@ import {
   getInitials,
   getThreadCount,
   getTopLevelComments,
+  MARKER_SIZE,
   markerPositionsEqual,
   measurePoint,
   measureRect,
 } from "../utils";
 import { AnnotationHighlight } from "./AnnotationHighlight";
 
-const MARKER_SIZE = 32;
 const MARKER_OFFSET_X = -(MARKER_SIZE / 2);
 const MARKER_OFFSET_Y = -(MARKER_SIZE / 2);
 const DRAG_DISTANCE_THRESHOLD = 4;
@@ -95,8 +95,8 @@ export function CommentMarkers() {
     currentPath,
     openThreadComposer,
     personId,
+    listTab,
     setMarkerHovered,
-    showResolved,
     updateThreadRect,
   } = useAnnotation();
   const [positions, setPositions] = useState<Record<string, MarkerPosition>>({});
@@ -116,9 +116,10 @@ export function CommentMarkers() {
     }
 
     return getTopLevelComments(comments).filter(
-      (comment) => comment.page_path === currentPath && (showResolved || !comment.resolved),
+      (comment) =>
+        comment.page_path === currentPath && (listTab === "resolved" || !comment.resolved),
     );
-  }, [annotationMode, comments, currentPath, showResolved]);
+  }, [annotationMode, comments, currentPath, listTab]);
 
   const syncMarkerPositions = useCallback((syncState: boolean) => {
     const previousPositions = positionsRef.current;

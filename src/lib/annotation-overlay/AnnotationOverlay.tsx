@@ -19,6 +19,7 @@ import { AnnotationComposer } from "./components/AnnotationComposer";
 import { AnnotationDock } from "./components/AnnotationDock";
 import { CommentMarkers } from "./components/CommentMarkers";
 import { InteractionLayer } from "./components/InteractionLayer";
+import { MentionText } from "./components/MentionText";
 import { useAnnotation } from "./useAnnotation";
 import { formatTimestamp } from "./utils";
 
@@ -27,6 +28,7 @@ type ThreadCommentProps = {
   isRoot?: boolean;
   isResolved?: boolean;
   author: string;
+  mentions: string[];
   createdAt: string;
   portalContainer: Element | DocumentFragment | null;
   text: string;
@@ -40,6 +42,7 @@ function ThreadComment({
   isGuest = false,
   isResolved = false,
   isRoot = false,
+  mentions,
   portalContainer,
   onRemove,
   onToggleResolved,
@@ -109,7 +112,7 @@ function ThreadComment({
           ) : null}
         </div>
         <p className="annotation:text-sm annotation:leading-6 annotation:whitespace-pre-wrap annotation:text-foreground">
-          {text}
+          <MentionText mentions={mentions} text={text} />
         </p>
       </div>
     </article>
@@ -125,6 +128,7 @@ function ComposerPopover({
     closeComposer,
     comments,
     composer,
+    directory,
     errorMessage,
     personId,
     removeThread,
@@ -179,6 +183,15 @@ function ComposerPopover({
         collisionPadding={16}
         data-annotation-overlay-root="true"
         data-annotation-overlay-scene="true"
+        onEscapeKeyDown={(event) => {
+          // An open mention picker takes the Escape (it runs after this capture listener).
+          if (
+            event.target instanceof Element &&
+            event.target.getAttribute("aria-expanded") === "true"
+          ) {
+            event.preventDefault();
+          }
+        }}
         onInteractOutside={(event) => {
           const target = event.target;
           if (
@@ -208,6 +221,7 @@ function ComposerPopover({
                     isResolved={comment.resolved}
                     isRoot={comment.id === parentComment.id}
                     key={comment.id}
+                    mentions={comment.mentions}
                     portalContainer={portalContainer}
                     onRemove={
                       comment.id === parentComment.id && canRemoveThread
@@ -225,7 +239,12 @@ function ComposerPopover({
           </div>
         ) : null}
         <div className={cn("annotation:p-2", !parentComment && "annotation:bg-background")}>
-          <AnnotationComposer errorMessage={errorMessage} onSubmit={submitComment} />
+          <AnnotationComposer
+            // Nobody mentions themselves; the highlighting still knows the own name.
+            directory={directory.filter((person) => person.person_id !== personId)}
+            errorMessage={errorMessage}
+            onSubmit={submitComment}
+          />
         </div>
       </PopoverContent>
     </Popover>
