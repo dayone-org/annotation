@@ -12,11 +12,12 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { AnnotationOverlayProps, AnnotationPosition } from "./types";
+import type { AnnotationImage, AnnotationOverlayProps, AnnotationPosition } from "./types";
 import { cn } from "../utils";
 import { AnnotationProvider } from "./AnnotationProvider";
 import { AnnotationComposer } from "./components/AnnotationComposer";
 import { AnnotationDock } from "./components/AnnotationDock";
+import { CommentImages } from "./components/CommentImages";
 import { CommentMarkers } from "./components/CommentMarkers";
 import { InteractionLayer } from "./components/InteractionLayer";
 import { MentionText } from "./components/MentionText";
@@ -30,6 +31,7 @@ type ThreadCommentProps = {
   author: string;
   mentions: string[];
   createdAt: string;
+  images: AnnotationImage[];
   portalContainer: Element | DocumentFragment | null;
   text: string;
   onToggleResolved?: () => void;
@@ -39,6 +41,7 @@ type ThreadCommentProps = {
 function ThreadComment({
   author,
   createdAt,
+  images,
   isGuest = false,
   isResolved = false,
   isRoot = false,
@@ -114,6 +117,7 @@ function ThreadComment({
         <p className="annotation:text-sm annotation:leading-6 annotation:whitespace-pre-wrap annotation:text-foreground">
           <MentionText mentions={mentions} text={text} />
         </p>
+        <CommentImages images={images} portalContainer={portalContainer} />
       </div>
     </article>
   );
@@ -130,11 +134,15 @@ function ComposerPopover({
     composer,
     directory,
     errorMessage,
+    isSubmitting,
     personId,
     removeThread,
     submitComment,
     toggleResolved,
   } = useAnnotation();
+  const [isPreparing, setIsPreparing] = useState(false);
+  // While images are prepared or a comment is sent, Escape and a click outside keep the composer and its draft.
+  const isBusy = isSubmitting || isPreparing;
 
   if (!composer || !composer.rect) {
     return null;
@@ -191,12 +199,15 @@ function ComposerPopover({
           ) {
             event.preventDefault();
           }
+          if (isBusy) {
+            event.preventDefault();
+          }
         }}
         onInteractOutside={(event) => {
           const target = event.target;
           if (
-            target instanceof Element &&
-            target.closest('[data-annotation-overlay-root="true"]')
+            isBusy ||
+            (target instanceof Element && target.closest('[data-annotation-overlay-root="true"]'))
           ) {
             event.preventDefault();
           }
@@ -217,6 +228,7 @@ function ComposerPopover({
                   <ThreadComment
                     author={comment.author}
                     createdAt={comment.created_at}
+                    images={comment.images}
                     isGuest={comment.author_is_guest}
                     isResolved={comment.resolved}
                     isRoot={comment.id === parentComment.id}
@@ -243,6 +255,10 @@ function ComposerPopover({
             // Nobody mentions themselves; the highlighting still knows the own name.
             directory={directory.filter((person) => person.person_id !== personId)}
             errorMessage={errorMessage}
+            isSubmitting={isSubmitting}
+            // A draft per thread: another thread opened meanwhile starts empty, a later send leaves it alone.
+            key={composer.parentId ?? "new"}
+            onPreparingChange={setIsPreparing}
             onSubmit={submitComment}
           />
         </div>

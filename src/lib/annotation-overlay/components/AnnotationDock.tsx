@@ -11,6 +11,7 @@ import {
   CheckIcon,
   CopySimpleIcon,
   GearSixIcon,
+  ImageSquareIcon,
   ShieldCheckIcon,
   XIcon,
 } from "@phosphor-icons/react";
@@ -754,6 +755,7 @@ function ThreadCard({ activeThreadId, comment, comments, currentPath }: ThreadCa
   const [copyState, setCopyState] = useCopyState();
   const replies = getReplies(comments, comment.id);
   const isActive = activeThreadId === comment.id;
+  const hasImages = [comment, ...replies].some((threadComment) => threadComment.images.length > 0);
 
   const handleCopy = useCallback(async () => {
     const markdown = formatAnnotationThreadMarkdown(comment, comments, currentPath);
@@ -815,7 +817,12 @@ function ThreadCard({ activeThreadId, comment, comments, currentPath }: ThreadCa
             {replies.length > 0 &&
               `${replies.length} ${replies.length === 1 ? "reply" : "replies"}`}
           </span>
-          <span>{formatTimestamp(comment.created_at)}</span>
+          <span className="annotation:flex annotation:items-center annotation:gap-2">
+            {hasImages ? (
+              <ImageSquareIcon aria-label="Has images" className="annotation:size-3" role="img" />
+            ) : null}
+            {formatTimestamp(comment.created_at)}
+          </span>
         </div>
       </ItemContent>
     </Item>
@@ -859,7 +866,11 @@ function ForYouCard({ entry }: { entry: ForYouEntry }) {
             />
           )}
         </span>
-        <span className="annotation:shrink-0 annotation:text-xs annotation:text-muted-foreground">
+        {/* Image icon before the time, as in the thread list. */}
+        <span className="annotation:flex annotation:shrink-0 annotation:items-center annotation:gap-2 annotation:text-xs annotation:text-muted-foreground">
+          {entry.has_images ? (
+            <ImageSquareIcon aria-label="Has images" className="annotation:size-3" role="img" />
+          ) : null}
           {formatTimestamp(entry.created_at)}
         </span>
         {/* contain: the scroll area grows with its content, so the text must not widen the card. */}

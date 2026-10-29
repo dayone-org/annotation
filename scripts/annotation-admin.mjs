@@ -12,6 +12,8 @@
 //   admin        --person <id> [--off]                 (staff; may use the admin tile in the overlay;
 //                --off takes the flag away, the key stays valid)
 //   staff-list                                         (all staff: e-mail, name, ID, admin, key yes/no)
+//   orphan-images [--delete]                           (image files no comment uses, older than 24 h;
+//                --delete removes them from storage)
 import { createClient } from "@supabase/supabase-js";
 import { parseArgs } from "node:util";
 
@@ -27,6 +29,7 @@ const { positionals, values } = parseArgs({
     person: { type: "string" },
     url: { type: "string" },
     off: { type: "boolean" },
+    delete: { type: "boolean" },
   },
 });
 
@@ -134,8 +137,25 @@ switch (positionals[0]) {
     );
     break;
   }
+  case "orphan-images": {
+    // shortcut: PostgREST returns at most max_rows (1000 locally) per call; run again for the rest.
+    const rows = await rpc("annotation_orphan_images");
+    if (!rows.length) {
+      console.log("No orphaned images.");
+      break;
+    }
+    console.table(rows.map((r) => ({ path: r.path, bytes: r.size_bytes, created: r.created_at })));
+    if (values.delete) {
+      const { data, error } = await client.storage
+        .from("comment-images")
+        .remove(rows.map((r) => r.path));
+      if (error) fail(`Delete: ${error.message}`);
+      console.log(`${data.length} files deleted.`);
+    }
+    break;
+  }
   default:
     fail(
-      "Command: project | project-link | staff | new-key | revoke | admin | staff-list (see the file header).",
+      "Command: project | project-link | staff | new-key | revoke | admin | staff-list | orphan-images (see the file header).",
     );
 }

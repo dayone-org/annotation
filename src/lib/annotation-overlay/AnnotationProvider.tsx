@@ -10,6 +10,7 @@ import {
 } from "react";
 import type {
   AnnotationComment,
+  AnnotationImage,
   AnnotationOverlayProps,
   AnnotationRect,
   CommentListTab,
@@ -22,6 +23,7 @@ import {
   type AdminFunction,
   type AnnotationContextValue,
 } from "./annotation-context";
+import { IMAGE_BUCKET, imageUrl, randomUuid, type PreparedImage } from "./images";
 import { querySelectorSafely } from "./selector";
 import {
   DEFAULT_STORAGE_KEY_PREFIX,
@@ -40,6 +42,7 @@ import {
   getMarkerAnchorRect,
   getMarkerPagePosition,
   getThreadRootId,
+  isBlankText,
   isSameSitePath,
   newestCreatedAt,
   normalizeComment,
@@ -51,8 +54,16 @@ const NO_ENTRIES: ForYouEntry[] = [];
 const TABLE = "comments";
 // The display name is joined in when reading, so a rename also changes old comments.
 const AUTHOR_SELECT = "*, author:annotation_people(display_name, is_guest)";
-const COMMENT_SELECT = `${AUTHOR_SELECT}, mentions:annotation_mentions(person_id)`;
+const COMMENT_SELECT = `${AUTHOR_SELECT}, mentions:annotation_mentions(person_id), images:annotation_images(path, thumb_path, width, height, position)`;
 const LIST_TABS: CommentListTab[] = ["all", "for-you", "resolved"];
+
+// The storage service names the cause (size, type, key); a network error carries no HTTP status.
+function uploadErrorMessage(error: unknown): string {
+  const { status, message } = (error ?? {}) as { status?: unknown; message?: unknown };
+  return typeof status === "number" && typeof message === "string" && message
+    ? message
+    : "Image upload failed. Try again.";
+}
 
 function readStoredListTab(key: string): CommentListTab {
   const value = readStoredString(key);
@@ -67,18 +78,39 @@ type Session = {
   realtime_topic: string;
 };
 
-type CommentRow = Omit<Partial<AnnotationComment>, "author" | "mentions"> & {
+type CommentRow = Omit<Partial<AnnotationComment>, "author" | "mentions" | "images"> & {
   id: string;
   author?: { display_name: string; is_guest: boolean } | null;
   mentions?: Array<{ person_id: string }> | null;
+  images?: Array<{
+    path: string;
+    thumb_path: string;
+    width: number;
+    height: number;
+    position: number;
+  }> | null;
 };
 
-function toComment({ author, mentions, ...row }: CommentRow): AnnotationComment {
+function toComment(
+  { author, mentions, images, ...row }: CommentRow,
+  supabaseUrl: string,
+): AnnotationComment {
   return normalizeComment({
     ...row,
     author: author?.display_name,
     author_is_guest: author?.is_guest ?? false,
     mentions: mentions?.map((mention) => mention.person_id),
+    images: images
+      ?.slice()
+      .sort((left, right) => left.position - right.position)
+      .map(({ path, thumb_path, width, height }) => ({
+        path,
+        url: imageUrl(supabaseUrl, path),
+        thumbPath: thumb_path,
+        thumbUrl: imageUrl(supabaseUrl, thumb_path),
+        width,
+        height,
+      })),
   });
 }
 
@@ -147,6 +179,11 @@ export function AnnotationProvider({
   const [currentPath, setCurrentPath] = useState(() => getActivePath(pagePath));
   const [comments, setComments] = useState<AnnotationComment[]>([]);
   const [composer, setComposer] = useState<PendingAnnotation | null>(null);
+  // The composer as last rendered: a send that ends later only closes the composer it was sent from.
+  const composerRef = useRef(composer);
+  composerRef.current = composer;
+  // While a comment is sent, Escape and a click outside keep its composer (a failed send keeps the text).
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [annotationMode, setAnnotationMode] = useState(false);
   const [isMarkerHovered, setMarkerHovered] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -191,10 +228,12 @@ export function AnnotationProvider({
     }
 
     startTransition(() => {
-      setComments(sortComments((data ?? []).map((row) => toComment(row as CommentRow))));
+      setComments(
+        sortComments((data ?? []).map((row) => toComment(row as CommentRow, supabaseUrl))),
+      );
       setIsLoading(false);
     });
-  }, [client, normalizedProjectId]);
+  }, [client, normalizedProjectId, supabaseUrl]);
 
   const forYouSequence = useRef(0);
   // Open mark_read writes: a list loaded meanwhile may predate the write and would undo the optimistic
@@ -748,24 +787,64 @@ export function AnnotationProvider({
   );
 
   const submitComment = useCallback(
-    async (text: string, mentionIds: string[] = []) => {
-      if (!normalizedProjectId) {
-        return false;
-      }
-
-      if (!composer) {
+    async (text: string, mentionIds: string[] = [], images: PreparedImage[] = []) => {
+      if (!normalizedProjectId || !personId || !composer || isBlankText(text)) {
         return false;
       }
 
       const nextText = text.trim();
-      if (!nextText) {
-        return false;
-      }
-
       setErrorMessage(null);
+      setIsSubmitting(true);
+      try {
+        // Files first (image and thumb, all at once), then the comment that points to them. On any failure
+        // the composer keeps text and images; uploads no comment uses are removed (best effort,
+        // orphan-images catches the rest).
+        const bucket = client.storage.from(IMAGE_BUCKET);
+        const folder = `${normalizedProjectId}/${personId}`;
+        const planned: AnnotationImage[] = images.map((image) => {
+          const path = `${folder}/${randomUuid()}.${image.extension}`;
+          const thumbPath = `${folder}/${randomUuid()}.${image.extension}`;
+          return {
+            path,
+            url: imageUrl(supabaseUrl, path),
+            thumbPath,
+            thumbUrl: imageUrl(supabaseUrl, thumbPath),
+            width: image.width,
+            height: image.height,
+          };
+        });
+        const stored: string[] = [];
+        const dropUploads = () => {
+          if (stored.length) {
+            void bucket.remove(stored).catch(() => undefined);
+          }
+        };
+        const uploadErrors = await Promise.all(
+          images.flatMap((image, index) =>
+            (
+              [
+                [planned[index].path, image.blob],
+                [planned[index].thumbPath, image.thumb],
+              ] as const
+            ).map(async ([path, blob]) => {
+              const { error } = await bucket
+                .upload(path, blob, { contentType: blob.type, upsert: false })
+                .catch((caught: unknown) => ({ error: caught }));
+              if (!error) {
+                stored.push(path);
+              }
+              return error;
+            }),
+          ),
+        );
+        const uploadError = uploadErrors.find(Boolean);
+        if (uploadError) {
+          dropUploads();
+          setErrorMessage(uploadErrorMessage(uploadError));
+          return false;
+        }
 
-      const { data, error } = await client
-        .rpc("annotation_add_comment", {
+        const args = {
           p_project_id: normalizedProjectId,
           p_page_path: currentPath,
           p_text: nextText,
@@ -773,29 +852,53 @@ export function AnnotationProvider({
           p_rect: composer.parentId ? null : composer.rect,
           p_parent_id: composer.parentId,
           p_mentions: mentionIds,
-        })
-        // The function's row has no mentions yet; they are added below, the next ping loads them.
-        .select(AUTHOR_SELECT)
-        .single();
+        };
+        const { data, error } = await (
+          planned.length
+            ? client.rpc("annotation_add_comment_with_images", {
+                ...args,
+                p_images: planned.map(({ path, thumbPath, width, height }) => ({
+                  path,
+                  thumb_path: thumbPath,
+                  width,
+                  height,
+                })),
+              })
+            : client.rpc("annotation_add_comment", args)
+        )
+          // The function's row has no mentions or images yet; they are set below, the next ping loads them.
+          .select(AUTHOR_SELECT)
+          .single();
 
-      if (error) {
-        setErrorMessage(error.message);
-        return false;
-      }
+        if (error) {
+          dropUploads();
+          setErrorMessage(error.message);
+          return false;
+        }
 
-      const inserted = { ...toComment(data as CommentRow), mentions: mentionIds };
-      startTransition(() => {
-        setComments((previous) => sortComments([...previous, inserted]));
-      });
-      if (!composer.parentId) {
-        setComposer(null);
+        const inserted = {
+          ...toComment(data as CommentRow, supabaseUrl),
+          mentions: mentionIds,
+          images: planned,
+        };
+        startTransition(() => {
+          setComments((previous) => sortComments([...previous, inserted]));
+        });
+        // Meanwhile another composer may have opened (marker, dock); that one stays as it is.
+        if (composerRef.current === composer) {
+          if (!composer.parentId) {
+            setComposer(null);
+          }
+          setActiveThreadId(
+            inserted.parent_id ? getThreadRootId(inserted.parent_id, commentMap) : null,
+          );
+        }
+        return true;
+      } finally {
+        setIsSubmitting(false);
       }
-      setActiveThreadId(
-        inserted.parent_id ? getThreadRootId(inserted.parent_id, commentMap) : null,
-      );
-      return true;
     },
-    [client, commentMap, composer, currentPath, normalizedProjectId],
+    [client, commentMap, composer, currentPath, normalizedProjectId, personId, supabaseUrl],
   );
 
   const removeThread = useCallback(
@@ -833,6 +936,14 @@ export function AnnotationProvider({
       startTransition(() => {
         setComments((previous) => previous.filter((comment) => comment.id !== threadId));
       });
+      // The references went with the comment; now the files. A failure is not the user's problem,
+      // orphan-images removes what is left.
+      if (target.images.length) {
+        void client.storage
+          .from(IMAGE_BUCKET)
+          .remove(target.images.flatMap((image) => [image.path, image.thumbPath]))
+          .catch(() => undefined);
+      }
 
       if (composer?.parentId === threadId) {
         closeComposer();
@@ -988,6 +1099,10 @@ export function AnnotationProvider({
       }
 
       const target = event.target instanceof HTMLElement ? event.target : null;
+      // The large image view has its own keys (arrows, Escape); "r" or "c" must not act behind it.
+      if (target?.closest("[data-annotation-image-viewer]")) {
+        return;
+      }
       const isTyping =
         Boolean(target?.isContentEditable) ||
         ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName ?? "");
@@ -1054,6 +1169,7 @@ export function AnnotationProvider({
       errorMessage,
       isLoading,
       isMarkerHovered,
+      isSubmitting,
       markAllRead,
       storageKeyPrefix,
       openThread,
@@ -1094,6 +1210,7 @@ export function AnnotationProvider({
       errorMessage,
       isLoading,
       isMarkerHovered,
+      isSubmitting,
       markAllRead,
       storageKeyPrefix,
       openThread,
