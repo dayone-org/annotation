@@ -76,6 +76,7 @@ node scripts/annotation-admin.mjs new-key --person <id> --url https://example.co
 node scripts/annotation-admin.mjs revoke --person <id>
 node scripts/annotation-admin.mjs admin --person <id> [--off]
 node scripts/annotation-admin.mjs staff-list
+node scripts/annotation-admin.mjs orphan-images [--delete]
 ```
 
 Each link is printed once; admins can show the current guest link again in the admin tile.
@@ -96,6 +97,14 @@ e-mail, name, ID, admin yes/no and key yes/no, never a key or hash. `revoke` als
 the admin flag, so a later `new-key` gives a plain staff key. Guest links created before the plain text was stored cannot be shown, only renewed. The database checks the key on
 every call; the flag cannot be read or set through the overlay. On a page without a project the
 overlay shows admins only this tile, so they can register the page.
+
+**Images on comments** are files in the public storage bucket `comment-images`, at
+`<project>/<person>/<random UUID>.webp|jpg`; anyone with the address can open them, without a key.
+Uploading and deleting need a valid key: own folder in a project of the key, WebP or JPEG, at most
+5 MiB. A comment takes up to 5 of its author's own uploads in the same project
+(`annotation_add_comment_with_images`); the table `annotation_images` holds the references and is
+readable like the comment. Deleting a comment deletes its references; the uploader may then delete the
+files. `orphan-images` lists files no comment uses that are older than 24 hours; `--delete` removes them.
 
 ## Environment Variables
 
