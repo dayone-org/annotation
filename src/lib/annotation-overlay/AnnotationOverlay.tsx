@@ -195,6 +195,10 @@ function ComposerPopover({
           ) {
             event.preventDefault();
           }
+          // While sending, the composer stays; a failed send keeps its text.
+          if (portalContainer?.querySelector('form[aria-busy="true"]')) {
+            event.preventDefault();
+          }
         }}
         onInteractOutside={(event) => {
           const target = event.target;

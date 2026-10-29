@@ -23,7 +23,7 @@ import {
   type AdminFunction,
   type AnnotationContextValue,
 } from "./annotation-context";
-import { IMAGE_BUCKET, imageUrl, type PreparedImage } from "./images";
+import { IMAGE_BUCKET, imageUrl, randomUuid, type PreparedImage } from "./images";
 import { querySelectorSafely } from "./selector";
 import {
   DEFAULT_STORAGE_KEY_PREFIX,
@@ -791,7 +791,7 @@ export function AnnotationProvider({
         }
       };
       for (const image of images) {
-        const path = `${normalizedProjectId}/${personId}/${crypto.randomUUID()}.${image.extension}`;
+        const path = `${normalizedProjectId}/${personId}/${randomUuid()}.${image.extension}`;
         const { error: uploadError } = await bucket
           .upload(path, image.blob, { contentType: image.blob.type, upsert: false })
           .catch(() => ({ error: true }));

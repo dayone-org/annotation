@@ -4,7 +4,7 @@
 -- Run like PostgREST and the storage service (role anon, key in the x-annotation-key header).
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(59);
+select plan(70);
 
 create function pg_temp.as_key(p_key text) returns void language plpgsql as $$
 begin
@@ -94,11 +94,11 @@ select throws_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'ana', 6), 'image/
 select throws_ok($$insert into storage.objects (bucket_id, name, metadata)
     values ('comment-images', pg_temp.p('bi-eins', 'ana', 7), '{"mimetype": "image/webp", "contentLength": 5242881}')$$,
   '42501', null, 'upload: declared length over 5 MiB refused before the upload');
-select throws_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'ana', 8, 'png'), 'image/png')$$, '42501', null,
+select throws_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'ana', 8, 'png'), 'image/png')$$, 'AN001', 'Image type and extension do not match.',
   'upload: png refused');
-select throws_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'ana', 9), 'image/png')$$, '42501', null,
+select throws_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'ana', 9), 'image/png')$$, 'AN001', 'Image type and extension do not match.',
   'upload: png named .webp refused');
-select throws_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'ana', 10, 'jpg'), 'image/webp')$$, '42501', null,
+select throws_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'ana', 10, 'jpg'), 'image/webp')$$, 'AN001', 'Image type and extension do not match.',
   'upload: type and extension must match');
 select throws_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'bo', 11))$$, '42501', null,
   'upload: into the folder of another person refused');
@@ -128,11 +128,39 @@ select lives_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'bo', 31))$$, 'uplo
 select lives_ok($$select pg_temp.upload(pg_temp.p('bi-eins', 'bo', 30 + n)) from generate_series(2, 6) n$$,
   'upload: Bo, five more files');
 
--- Files the service would never accept, to show that attaching checks type and size again.
+-- A file the service would never accept, to show that attaching checks the size again.
 reset role;
 insert into storage.objects (bucket_id, name, metadata) values
-  ('comment-images', pg_temp.p('bi-eins', 'ana', 41), '{"mimetype": "image/png", "size": 2000}'),
   ('comment-images', pg_temp.p('bi-eins', 'ana', 42), '{"mimetype": "image/webp", "size": 5242881}');
+-- An upload older than an hour (attaching it races orphan-images --delete).
+insert into storage.objects (bucket_id, name, metadata, created_at) values
+  ('comment-images', pg_temp.p('bi-eins', 'ana', 43), '{"mimetype": "image/webp", "size": 2000}', now() - interval '61 minutes');
+
+-- ---------------------------------------------------------------- Stored files are fixed
+-- A signed upload URL writes past the policies (storage service as owner, token valid for two hours), so
+-- the table itself refuses changes and checks type against extension. Run without role: the policies do not apply.
+select throws_ok($$update storage.objects set metadata = metadata || '{"size": 9}'
+    where bucket_id = 'comment-images' and name = pg_temp.p('bi-eins', 'ana', 5)$$,
+  'AN001', 'Images cannot be changed.', 'fixed: metadata of a stored file cannot change');
+select throws_ok($$update storage.objects set version = 'ausgetauscht'
+    where bucket_id = 'comment-images' and name = pg_temp.p('bi-eins', 'ana', 5)$$,
+  'AN001', 'Images cannot be changed.', 'fixed: content (version) of a stored file cannot change');
+select throws_ok($$update storage.objects set name = pg_temp.p('bi-eins', 'ana', 44)
+    where bucket_id = 'comment-images' and name = pg_temp.p('bi-eins', 'ana', 5)$$,
+  'AN001', 'Images cannot be changed.', 'fixed: a stored file cannot be renamed');
+select throws_ok($$insert into storage.objects (bucket_id, name, metadata, version)
+    values ('comment-images', pg_temp.p('bi-eins', 'ana', 5), '{"mimetype": "image/webp", "size": 9}', 'ausgetauscht')
+    on conflict (bucket_id, name collate "C") where archived_at is null do update set version = excluded.version$$,
+  'AN001', 'Images cannot be changed.', 'fixed: an upsert onto a stored file is refused');
+select throws_ok($$insert into storage.objects (bucket_id, name, metadata)
+    values ('comment-images', pg_temp.p('bi-eins', 'ana', 45), '{"mimetype": "image/jpeg", "size": 2000}')$$,
+  'AN001', 'Image type and extension do not match.', 'fixed: jpeg named .webp refused past the policies');
+select throws_ok($$insert into storage.objects (bucket_id, name, metadata)
+    values ('comment-images', pg_temp.p('bi-eins', 'ana', 46, 'jpg'), '{"mimetype": "image/webp", "size": 2000}')$$,
+  'AN001', 'Image type and extension do not match.', 'fixed: webp named .jpg refused past the policies');
+select throws_ok($$insert into storage.objects (bucket_id, name, metadata)
+    values ('comment-images', pg_temp.p('bi-eins', 'ana', 41), '{"mimetype": "image/png", "size": 2000}')$$,
+  'AN001', 'Image type and extension do not match.', 'fixed: png named .webp refused past the policies');
 
 -- ---------------------------------------------------------------- Listing own files only
 select pg_temp.as_key((select k from keys where name = 'g1'));
@@ -180,9 +208,21 @@ select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '
 select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Schon benutzt',
     jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 1))))$$,
   'AN001', 'This image belongs to another comment.', 'attach: an image of another comment refused');
-select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'PNG',
-    jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 41))))$$,
-  'AN001', 'Image not found. Upload it again.', 'attach: wrong type refused');
+select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Alt',
+    jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 43))))$$,
+  'AN001', 'Image not found. Upload it again.', 'attach: an upload older than an hour refused');
+select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', E' \n\t ',
+    jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 4))))$$,
+  'AN001', 'Write a comment to go with the images.', 'attach: only spaces with an image refused');
+select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Null breit',
+    jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 4), 0, 800)))$$,
+  'AN001', 'Image size is invalid.', 'attach: width 0 refused');
+select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Text statt Zahl',
+    jsonb_build_array(jsonb_build_object('path', pg_temp.p('bi-eins', 'ana', 4), 'width', 'breit', 'height', 800)))$$,
+  'AN001', 'Image size is invalid.', 'attach: width that is no number refused');
+select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Ohne Höhe',
+    jsonb_build_array(jsonb_build_object('path', pg_temp.p('bi-eins', 'ana', 4), 'width', 800)))$$,
+  'AN001', 'Image size is invalid.', 'attach: missing height refused');
 select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Zu groß',
     jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 42))))$$,
   'AN001', 'Image not found. Upload it again.', 'attach: over 5 MiB refused');
@@ -190,8 +230,8 @@ select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '
     jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 99))))$$,
   'AN001', 'Image not found. Upload it again.', 'attach: missing file refused');
 select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Riesig',
-    jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 4), 1601, 800)))$$,
-  '23514', null, 'attach: width over 1600 px refused');
+    jsonb_build_array(pg_temp.img(pg_temp.p('bi-eins', 'ana', 4), 1200, 1601)))$$,
+  'AN001', 'Image size is invalid.', 'attach: height over 1600 px refused');
 
 select pg_temp.as_key('k-bo-bi');
 select throws_ok($$select public.annotation_add_comment_with_images('bi-eins', '/start', 'Sechs',
@@ -268,21 +308,26 @@ delete from storage.objects where name = pg_temp.p('bi-eins', 'g1', 21);
 select ok(not pg_temp.exists_file(pg_temp.p('bi-eins', 'g1', 21)), 'delete: the uploader deletes the file of the deleted comment');
 
 -- ---------------------------------------------------------------- Orphans (service role)
+-- Stored files cannot change, so age them by storing them again.
+create function pg_temp.age(p_names text[]) returns void language sql as $$
+  with gone as (delete from storage.objects where bucket_id = 'comment-images' and name = any (p_names) returning name, metadata)
+  insert into storage.objects (bucket_id, name, metadata, created_at)
+  select 'comment-images', name, metadata, now() - interval '25 hours' from gone
+$$;
 reset role;
-update storage.objects set created_at = now() - interval '25 hours'
-where bucket_id = 'comment-images' and name in (pg_temp.p('bi-zwei', 'ana', 2), pg_temp.p('bi-eins', 'ana', 1));
+select pg_temp.age(array[pg_temp.p('bi-zwei', 'ana', 2), pg_temp.p('bi-eins', 'ana', 1)]);
 set local role service_role;
 select results_eq(
   $$select path, size_bytes from public.annotation_orphan_images() where path like 'bi-%'$$,
   $$values (pg_temp.p('bi-zwei', 'ana', 2), 2000::bigint)$$,
   'orphans: unused and older than 24 h; not files in use, not new ones');
 reset role;
-update storage.objects set created_at = now() - interval '25 hours' where bucket_id = 'comment-images' and name like 'bi-%';
+select pg_temp.age(array(select name from storage.objects where bucket_id = 'comment-images' and name like 'bi-%'));
 set local role service_role;
 select set_eq(
   $$select path from public.annotation_orphan_images() where path like 'bi-%'$$,
-  $$values (pg_temp.p('bi-zwei', 'ana', 2)), (pg_temp.p('bi-eins', 'ana', 5)), (pg_temp.p('bi-eins', 'ana', 41)),
-      (pg_temp.p('bi-eins', 'ana', 42)), (pg_temp.p('bi-eins', 'bo', 36))$$,
+  $$values (pg_temp.p('bi-zwei', 'ana', 2)), (pg_temp.p('bi-eins', 'ana', 5)), (pg_temp.p('bi-eins', 'ana', 42)),
+      (pg_temp.p('bi-eins', 'ana', 43)), (pg_temp.p('bi-eins', 'bo', 36))$$,
   'orphans: every unused file, none in use');
 reset role;
 

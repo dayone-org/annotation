@@ -127,10 +127,13 @@ export function AnnotationComposer({
 
   return (
     <form
+      // The popover keeps the composer open on Escape while this is set (text survives a failed send).
+      aria-busy={isSubmitting}
       className="annotation:flex annotation:flex-col"
       onSubmit={async (event) => {
         event.preventDefault();
-        if (!value.trim()) {
+        // Enter calls requestSubmit, which skips the disabled Send button.
+        if (isPreparing || isSubmitting || !value.trim()) {
           return;
         }
 
@@ -147,15 +150,18 @@ export function AnnotationComposer({
         const mentionIds = picked
           .filter((person) => mentioned.has(person.display_name))
           .map((person) => person.person_id);
-        const didSave = await onSubmit(value, mentionIds, attachments);
-        if (didSave) {
-          setValue("");
-          setPicked([]);
-          attachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
-          setAttachments([]);
-          setAttachError(null);
+        try {
+          const didSave = await onSubmit(value, mentionIds, attachments);
+          if (didSave) {
+            setValue("");
+            setPicked([]);
+            attachments.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+            setAttachments([]);
+            setAttachError(null);
+          }
+        } finally {
+          setIsSubmitting(false);
         }
-        setIsSubmitting(false);
       }}
     >
       <Textarea
